@@ -1,7 +1,4 @@
 .vscode
 __pycache__
 *.pyc
-*.gpkg
-*.gpkg-journal
-*.gpkg-wal
-*.gpkg-shm
+outputs

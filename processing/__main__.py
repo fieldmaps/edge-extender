@@ -10,8 +10,9 @@ if __name__ == '__main__':
     pool = Pool()
     results = []
     for file in sorted(files.iterdir()):
-        if file.is_file() and file.suffix == '.gpkg':
-            args = (file.stem, inputs.main, lines.main, points.main, voronoi.main,
+        if file.is_file() and file.suffix in ['.gpkg', '.shp']:
+            args = (file.name.replace('.', '_'), file,
+                    inputs.main, lines.main, points.main, voronoi.main,
                     merge.main, outputs.main, cleanup.main)
             result = pool.apply_async(apply_func, args=args)
             results.append(result)

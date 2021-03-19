@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
-def main(name):
+def main(name, *args):
     logger.info(f'Starting {name}')
     con = connect(database='polygon_voronoi')
     cur = con.cursor()
@@ -51,14 +51,25 @@ def main(name):
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
         SELECT
+            b.id,
+            a.geom
+        FROM {table_in1} as a
+        LEFT JOIN {table_in2} as b
+        ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
+        CREATE INDEX ON {table_out} USING GIST(geom);
+    """
+    query_5 = """
+        DROP TABLE IF EXISTS {table_out};
+        CREATE TABLE {table_out} AS
+        SELECT
             COALESCE(a.id, b.id) as id,
             a.geom
         FROM {table_in1} as a
         LEFT JOIN {table_in2} as b
-        ON ST_Within(ST_Buffer(a.geom, -0.000001), b.geom);
+        ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
         CREATE INDEX ON {table_out} USING GIST(geom);
     """
-    query_5 = """
+    query_6 = """
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
         SELECT
@@ -96,12 +107,12 @@ def main(name):
         table_in2=Identifier(f'{name}_00'),
         table_out=Identifier(f'{name}_tmp4'),
     ))
-    cur.execute(SQL(query_4).format(
+    cur.execute(SQL(query_5).format(
         table_in1=Identifier(f'{name}_tmp4'),
         table_in2=Identifier(f'{name}_03'),
         table_out=Identifier(f'{name}_tmp5'),
     ))
-    cur.execute(SQL(query_5).format(
+    cur.execute(SQL(query_6).format(
         table_in=Identifier(f'{name}_tmp5'),
         table_out=Identifier(f'{name}_04'),
     ))

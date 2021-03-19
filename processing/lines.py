@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
-def main(name):
+def main(name, *args):
     logger.info(f'Starting {name}')
     con = connect(database='polygon_voronoi')
     cur = con.cursor()
