@@ -1,4 +1,4 @@
-# Polygon Voronoi
+# Polygon to Voronoi
 
 This tool takes a polygon as input and applies a voronoi algorithm along the edges, giving a result similar to a euclidean allocation distance raster. Unlike euclidean allocation, the source is never transformed from vector to raster. All internal polygon topolygy remains unchanged, with the exception of internal holes which are filled in the same way the exterior is filled out.
 
