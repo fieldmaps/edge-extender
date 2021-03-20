@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
-def main(name, file):
+def main(name, file, layer):
     logger.info(f'Starting {name}')
     subprocess.run([
         'ogr2ogr',
@@ -21,7 +21,7 @@ def main(name, file):
         '-nlt', 'PROMOTE_TO_MULTI',
         '-nln', f'{name}_attr',
         '-f', 'PostgreSQL', 'PG:dbname=polygon_voronoi',
-        file,
+        file, layer,
     ])
     con = connect(database='polygon_voronoi')
     cur = con.cursor()

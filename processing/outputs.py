@@ -15,7 +15,7 @@ outputs = (cwd / '../outputs').resolve()
 outputs.mkdir(exist_ok=True, parents=True)
 
 
-def main(name, file):
+def main(name, file, layer):
     logger.info(f'Starting {name}')
     con = connect(database='polygon_voronoi')
     cur = con.cursor()
@@ -42,7 +42,7 @@ def main(name, file):
     subprocess.run([
         'ogr2ogr',
         '-overwrite',
-        '-nln', file.stem,
+        '-nln', layer,
         (outputs / file.name).resolve(),
         'PG:dbname=polygon_voronoi', f'{name}_05',
     ] + shp)

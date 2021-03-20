@@ -17,9 +17,9 @@ def main(name, *args):
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
         SELECT 
-            ST_Union(
+            ST_Multi(ST_Union(
                 ST_Buffer(ST_Boundary(geom), 0.000000001)
-            )::GEOMETRY(MultiPolygon, 4326) as geom
+            ))::GEOMETRY(MultiPolygon, 4326) as geom
         FROM {table_in};
         CREATE INDEX ON {table_out} USING GIST(geom);
     """
