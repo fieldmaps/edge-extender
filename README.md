@@ -4,7 +4,7 @@ This tool takes polygons as inputs and applies a voronoi algorithm along the edg
 
 ## Usage
 
-Currently, supported inputs are polygon layers in GeoPackage (.gpkg), Shapefile (.shp), or GeoJSON (.geojson) formats. For GeoPackages, all polygon layers inside are be processed. Outputs retain their original format, projected to EPSG:4326 (WGS84). Running the tool requires files to be added to the `inputs` directory, where they're processed in parallel into the `outputs` directory. To use the tool, make sure docker is installed and running. From the command line, navigate to this directory and run `docker-compose up`. For those on Linux or macOS who want to run processing outside of docker, install GDAL and PostGIS with a `polygon_voronoi` table. After that, run `python3 -m processing` from this directory.
+Currently, supported inputs are polygon layers in GeoPackage (.gpkg), Shapefile (.shp), or GeoJSON (.geojson) formats. For GeoPackages, all polygon layers inside are processed. Outputs retain their original format, projected to EPSG:4326 (WGS84). To get started, add files to the `inputs` directory, where they're processed in parallel into `outputs`. Make sure docker is installed and running, and run `docker-compose up`. For those on Linux or macOS who want to process outside of docker for more native performance, install GDAL and PostGIS with a `polygon_voronoi` table. After that, run `python3 -m processing` from this directory.
 
 ## Configuration
 
