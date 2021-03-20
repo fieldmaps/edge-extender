@@ -4,7 +4,7 @@ This tool takes a polygon as input and applies a voronoi algorithm along the edg
 
 ## Usage
 
-Currently, GeoPackage (GPKG) and Shapefile (SHP) are supported input formats, with outputs in EPSG:4326 (WGS84). Running the tool requires files to be added to the `inputs` directory, where they will be processed in parallel. Resulting files are added to an `outputs` folder. To run the tool, make sure docker is installed, and use `docker-compose up` from the command line. For those on Linux or macOS who want to run processing outside of docker, install GDAL and PostGIS with a `polygon_voronoi` table created. After that, the tool can be invoked with `python3 -m processing`.
+Currently, GeoPackage (GPKG) and Shapefile (SHP) are supported input formats, with outputs in EPSG:4326 (WGS84). Running the tool requires files to be added to the `inputs` directory, where they will be processed in parallel. Resulting files are added to an `outputs` folder. To use the tool, make sure docker is installed and running. From the command line, navigate to this directory and run `docker-compose up`. For those on Linux or macOS who want to run processing outside of docker, install GDAL and PostGIS with a `polygon_voronoi` table created. After that, run `python3 -m processing` from this directory.
 
 ## Configuration
 
