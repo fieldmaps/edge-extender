@@ -23,7 +23,7 @@ WORKDIR /usr/src/app
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-COPY config.ini ./config.ini
 COPY processing ./processing
+COPY config.ini ./config.ini
 
 CMD /etc/init.d/postgresql start && su postgres -c 'python3 -m processing'

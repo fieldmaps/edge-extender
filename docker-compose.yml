@@ -1,0 +1,6 @@
+services:
+  polygon-voronoi:
+    build: .
+    volumes:
+      - ./inputs:/usr/src/app/inputs
+      - ./outputs:/usr/src/app/outputs
