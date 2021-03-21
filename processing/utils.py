@@ -30,6 +30,6 @@ def is_polygon(file):
     return regex.search(str(result.stdout))
 
 
-def apply_func(name, file, layer, *args):
+def apply_funcs(name, file, layer, *args):
     for func in args:
         func(name, file, layer)

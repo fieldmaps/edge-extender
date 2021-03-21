@@ -31,7 +31,9 @@ def main(name, file, layer):
         SELECT
             {id} AS id,
             ST_Transform(ST_Multi(ST_Union(
-                ST_Force2D(ST_MakeValid(geom))
+                ST_Force2D(ST_MakeValid(
+                    ST_SnapToGrid(geom, 0.000000001)
+                ))
             )), 4326)::GEOMETRY(MultiPolygon, 4326) as geom
         FROM {table_in}
         GROUP BY id;

@@ -32,7 +32,9 @@ def main(name, *args):
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
         SELECT 
-            ST_Union(geom)::GEOMETRY(MultiLineString, 4326) as geom
+            ST_Multi(
+                ST_Union(geom)
+            )::GEOMETRY(MultiLineString, 4326) as geom
         FROM {table_in};
         CREATE INDEX ON {table_out} USING GIST(geom);
     """
