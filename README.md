@@ -75,9 +75,9 @@ The use case above demonstrates how useful it is to have a topologically clean g
 | :---------------------: | :-----------------: |
 |   ![](img/wld_01.png)   | ![](img/wld_02.png) |
 
-|    Original ADM0    | Coastline replaced with OSM |
-| :-----------------: | :-------------------------: |
-| ![](img/wld_03.png) |     ![](img/wld_04.png)     |
+|    Original ADM0    | Coastline replaced w/ OSM |
+| :-----------------: | :-----------------------: |
+| ![](img/wld_03.png) |    ![](img/wld_04.png)    |
 
 ## Potential Issues
 
