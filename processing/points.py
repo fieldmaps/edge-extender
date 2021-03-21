@@ -16,7 +16,7 @@ def main(name, *args):
     query_1 = """
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
-        SELECT 
+        SELECT
             ST_Multi(ST_Union(
                 ST_Buffer(ST_Boundary(geom), 0.000000001)
             ))::GEOMETRY(MultiPolygon, 4326) as geom
@@ -26,14 +26,22 @@ def main(name, *args):
     query_2 = """
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
-        SELECT 
-            a.id, 
-            (ST_Dump(ST_Union(ST_Points(
-                ST_Segmentize(ST_Difference(a.geom, b.geom), {precision})
-            )))).geom::GEOMETRY(Point, 4326) as geom
+        SELECT
+            a.id,
+            (ST_Dump(ST_Union(ST_SnapToGrid(ST_Difference(
+                ST_Points(ST_Segmentize(a.geom, {segment})), b.geom
+            ), {snap})))).geom::GEOMETRY(Point, 4326) as geom
         FROM {table_in1} as a
         CROSS JOIN {table_in2} as b
-        GROUP BY a.id;
+        GROUP BY a.id
+        UNION ALL
+        SELECT
+            a.id,
+            (ST_Dump(ST_Boundary(
+                ST_Difference(a.geom, b.geom)
+            ))).geom::GEOMETRY(Point, 4326) as geom
+        FROM {table_in1} as a
+        CROSS JOIN {table_in2} as b;
         CREATE INDEX ON {table_out} USING GIST(geom);
     """
     drop_tmp = """
@@ -46,7 +54,8 @@ def main(name, *args):
     cur.execute(SQL(query_2).format(
         table_in1=Identifier(f'{name}_01'),
         table_in2=Identifier(f'{name}_tmp1'),
-        precision=Literal(config['precision']),
+        segment=Literal(config['segment']),
+        snap=Literal(config['snap']),
         table_out=Identifier(f'{name}_02'),
     ))
     cur.execute(SQL(drop_tmp).format(

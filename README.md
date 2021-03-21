@@ -8,4 +8,27 @@ Currently, supported inputs are polygon layers in GeoPackage (.gpkg), Shapefile 
 
 ## Configuration
 
-There are two user configurable variables defined in `config.ini`. The first is a `dissolve` field. By default, this is set to `fid` which doesn't dissolve the output. This field is the default primary ID for GeoPackages, and is automatically added to Shapefiles and GeoJSON if missing. The second option is a `precision` value, set to `0.0003` by default. This decimal degree value is equivalent to roughly 30m, and is used as the interval points are set along the edges for the voronoi algorithm. This value is chosen to match the resolution of Landsat imagery sometimes used to digitize vector boundaries. For planet level geometry, a smaller precision (`0.01`) helps the algorithm run faster and use less memory. For smaller areas, a higher precision (`0.000001`) ensures the allocation is as accurate as possible, but takes longer and may fail if there is insufficient system memory.
+There are three user configurable variables defined in `config.ini`. The first is a `dissolve` field. By default, this is set to `fid` which doesn't dissolve the output. This field is the default primary ID for GeoPackages, and is automatically added to Shapefiles and GeoJSON if missing. The second option is a `precision` value, set to `0.0001` by default. This decimal degree value is equivalent to roughly ~10m, and is used as the interval points are set along the edges for the voronoi algorithm. This value is chosen to be similar to the resolution of satellite imagery, which is sometimes used to digitize vector boundaries along shorelines. For planet level geometry, a smaller precision (`0.01`) helps the algorithm run faster and use less memory. For smaller areas, a higher precision (`0.000001`) ensures the allocation is as accurate as possible, but takes longer and may fail if there is insufficient system memory. The final valiable is for `snap`, which fixes the precision of points generated along the edges to account for errors caused by spurious precision in geometries. This should rarely be changed, and is set to a default of `0.000001` (approx 0.1m) that works for most inputs tested. Reducing the precision of this value does not help the algorithm run faster, and should only be adjusted for debugging. Note that snapping only occurs for points to generate voronoi polygons. Internal polygon boundaries are unaffected by this and maintain original precision.
+
+## How it Works
+
+The overall processing can be broken down into 4 distinct types of geometries and overlays:
+
+- polygon to lines
+- lines to points
+- points to voronoi
+- merge polygon with voronoi
+
+## Known Errors
+
+Vector inputs created from raster sources are known to present issues in rare cases. In the PostGIS implementation of voronoi polygons, inputs in a perfect grid can result in polygon outputs with invalid geometry, giving one of the following errors:
+
+- lwgeom_unaryunion_prec: GEOS Error: TopologyException: unable to assign free hole to a shell
+- GEOSVoronoiDiagram: TopologyException: Input geom 1 is invalid: Self-intersection
+- processing.voronoi runs at 300% CPU for more than 15 min
+
+The default snapping threshold addresses this in most cases. However, if this occurs, first try reducing the segment distance to a value that generates valid outputs. If this still doesn't work after reducing precision to a value of 1, alternatively try reducing the snap precision as well.
+
+|   Always Succeeds   |   Possible Errors   |
+| :-----------------: | :-----------------: |
+| ![](img/err_01.png) | ![](img/err_02.png) |

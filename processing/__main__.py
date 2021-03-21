@@ -9,7 +9,8 @@ funcs = [inputs.main, lines.main, points.main, voronoi.main,
          merge.main, outputs.main, cleanup.main]
 
 if __name__ == '__main__':
-    print(f"dissolve={config['dissolve']}, precision={config['precision']}")
+    for key, value in config.items():
+        print(f'{key}={value}')
     results = []
     pool = Pool()
     for file in sorted(files.iterdir()):

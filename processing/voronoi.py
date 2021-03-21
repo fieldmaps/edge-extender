@@ -15,7 +15,7 @@ def main(name, *args):
     query_1 = """
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
-        SELECT 
+        SELECT
             (ST_Dump(
                 ST_VoronoiPolygons(ST_Collect(geom))
             )).geom::GEOMETRY(Polygon, 4326) as geom
@@ -26,7 +26,7 @@ def main(name, *args):
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
         SELECT
-            a.id, 
+            a.id,
             ST_Multi(
                 ST_Union(b.geom)
             )::GEOMETRY(MultiPolygon, 4326) as geom

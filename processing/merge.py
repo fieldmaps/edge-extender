@@ -31,7 +31,7 @@ def main(name, *args):
     query_2 = """
         DROP TABLE IF EXISTS {table_out};
         CREATE TABLE {table_out} AS
-        SELECT 
+        SELECT
             ST_Multi(
                 ST_Union(geom)
             )::GEOMETRY(MultiLineString, 4326) as geom

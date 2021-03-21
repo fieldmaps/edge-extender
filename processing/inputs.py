@@ -40,7 +40,7 @@ def main(name, file, layer):
         CREATE INDEX ON {table_out} USING GIST(geom);
     """
     drop_tmp = """
-        ALTER TABLE {table_attr} 
+        ALTER TABLE {table_attr}
         DROP COLUMN IF EXISTS geom;
     """
     cur.execute(SQL(query_1).format(
