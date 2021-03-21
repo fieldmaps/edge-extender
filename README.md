@@ -12,23 +12,55 @@ There are three user configurable variables defined in `config.ini`. The first i
 
 ## How it Works
 
-The overall processing can be broken down into 4 distinct types of geometries and overlays:
+The overall processing can be broken down into 4 distinct types of geometry transformations:
 
 - polygon to lines
 - lines to points
 - points to voronoi
 - merge polygon with voronoi
 
-## Known Errors
+### Polygon to Line
 
-Vector inputs created from raster sources are known to present issues in rare cases. In the PostGIS implementation of voronoi polygons, inputs in a perfect grid can result in polygon outputs with invalid geometry, giving one of the following errors:
+The first part extracts outlines from the polygon, first by dissolving all polygons together, then by taking the intersection between the line boundary in the oriignal and dissolved layers.
+
+|   Original Input    |      Outlines       |
+| :-----------------: | :-----------------: |
+| ![](img/tza_01.png) | ![](img/tza_02.png) |
+
+### Lines to Points
+
+| Points along River  |    Final result     |
+| :-----------------: | :-----------------: |
+| ![](img/tza_03.png) | ![](img/tza_04.png) |
+
+### Points to Voronoi
+
+| Points with Voronoi |    Voronoi Only     |
+| :-----------------: | :-----------------: |
+| ![](img/tza_05.png) | ![](img/tza_06.png) |
+
+### Merge Polygon with Voronoi
+
+| Original over Voronoi |   Dissolved Layer   |
+| :-------------------: | :-----------------: |
+|  ![](img/tza_07.png)  | ![](img/tza_08.png) |
+
+## Use Case 1: Matching sub-national boundary (ADM3) to national (ADM0)
+
+|  ADM0 over Voronoi  | Original vs ADM0 edges |
+| :-----------------: | :--------------------: |
+| ![](img/tza_09.png) |  ![](img/tza_10.png)   |
+
+## Known Issues
+
+Vector inputs created from raster sources are known to present issues in rare cases. In the PostGIS implementation of voronoi polygons, inputs in a regular grid can sometimes result in polygon outputs with invalid geometry, giving one of the following errors:
 
 - lwgeom_unaryunion_prec: GEOS Error: TopologyException: unable to assign free hole to a shell
 - GEOSVoronoiDiagram: TopologyException: Input geom 1 is invalid: Self-intersection
 - processing.voronoi runs at 300% CPU for more than 15 min
 
-The default snapping threshold addresses this in most cases. However, if this occurs, first try reducing the segment distance to a value that generates valid outputs. If this still doesn't work after reducing precision to a value of 1, alternatively try reducing the snap precision as well.
+The default snapping threshold in the config addresses this in most cases. However, if this occurs, first try reducing the segment precision to a value that generates valid outputs. If this still doesn't work after reducing precision to a value of 1, alternatively try reducing the snap precision as well.
 
-|   Always Succeeds   |   Possible Errors   |
-| :-----------------: | :-----------------: |
-| ![](img/err_01.png) | ![](img/err_02.png) |
+| Possible Error (segment=0.0001) | Succeeds (segment=0.0003) |
+| :-----------------------------: | :-----------------------: |
+|       ![](img/err_01.png)       |    ![](img/err_02.png)    |
