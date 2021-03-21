@@ -14,10 +14,10 @@ There are three user configurable variables defined in `config.ini`. The first i
 
 The overall processing can be broken down into 4 distinct types of geometry transformations:
 
-- polygon to lines
-- lines to points
-- points to voronoi
-- merge polygon with voronoi
+- make lines from polygons
+- make points from lines
+- make voronoi from points
+- merge polygons with voronoi
 
 ### Polygon to Line
 
@@ -27,19 +27,19 @@ The first part extracts outlines from the polygon, first by dissolving all polyg
 | :-----------------: | :-----------------: |
 | ![](img/tza_01.png) | ![](img/tza_02.png) |
 
-### Lines to Points
+Line to Point:
 
 | Points along River  |    Final result     |
 | :-----------------: | :-----------------: |
 | ![](img/tza_03.png) | ![](img/tza_04.png) |
 
-### Points to Voronoi
+Point to Voronoi:
 
 | Points with Voronoi |    Voronoi Only     |
 | :-----------------: | :-----------------: |
 | ![](img/tza_05.png) | ![](img/tza_06.png) |
 
-### Merge Polygon with Voronoi
+Polygon-Voronoi Merge:
 
 | Original over Voronoi |   Dissolved Layer   |
 | :-------------------: | :-----------------: |
@@ -50,6 +50,20 @@ The first part extracts outlines from the polygon, first by dissolving all polyg
 |  ADM0 over Voronoi  | Original vs ADM0 edges |
 | :-----------------: | :--------------------: |
 | ![](img/tza_09.png) |  ![](img/tza_10.png)   |
+
+## Use Case 2: Topologically clean international boundaries
+
+| Topologically clean ADM0 layer |
+| :----------------------------: |
+|      ![](img/tri_00.png)       |
+
+| Original boundaries | Clipped voronoi boundaries |
+| :-----------------: | :------------------------: |
+| ![](img/tri_01.png) |    ![](img/tri_02.png)     |
+
+| Original boundaries | Clipped voronoi boundaries |
+| :-----------------: | :------------------------: |
+| ![](img/tri_03.png) |    ![](img/tri_04.png)     |
 
 ## Known Issues
 
