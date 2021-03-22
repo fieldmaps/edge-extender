@@ -2,7 +2,7 @@
 
 ![](img/wld_01.png)
 
-This tool takes polygons as inputs and applies a voronoi algorithm along the edges, giving results similar to a euclidean allocation distance raster. Unlike euclidean allocation, the source is never transformed from vector to raster. All internal polygon topology remains unchanged, with the exception of internal holes which are filled in the same way the exterior is filled out.
+This tool takes polygons as an input and applies the voronoi algorithm along edges, giving results similar to a euclidean allocation raster. Unlike euclidean allocation, the source is never transformed from vector to raster. All internal polygon topology remains unchanged, with the exception of internal holes which are filled in the same way the exterior is filled out.
 
 ## Supported Formats
 
