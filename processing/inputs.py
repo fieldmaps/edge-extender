@@ -1,12 +1,8 @@
-import logging
 import subprocess
 from psycopg2 import connect
 from psycopg2.sql import SQL, Identifier
-from .utils import config
+from .utils import config, logging
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(name)s %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
 
@@ -31,9 +27,9 @@ def main(name, file, layer):
         SELECT
             {id} AS id,
             ST_Transform(ST_Multi(ST_Union(
-                ST_Force2D(ST_MakeValid(
-                    ST_SnapToGrid(geom, 0.000000001)
-                ))
+                ST_CollectionExtract(ST_MakeValid(
+                    ST_Force2D(ST_SnapToGrid(geom, 0.000000001))
+                ), 3)
             )), 4326)::GEOMETRY(MultiPolygon, 4326) as geom
         FROM {table_in}
         GROUP BY id;
