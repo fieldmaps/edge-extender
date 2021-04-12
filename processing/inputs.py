@@ -11,6 +11,7 @@ def main(name, file, layer):
     subprocess.run([
         'ogr2ogr',
         '-overwrite',
+        '--config', 'OGR_GEOJSON_MAX_OBJ_SIZE', '2048MB',
         '-lco', 'FID=fid',
         '-lco', 'GEOMETRY_NAME=geom',
         '-lco', 'LAUNDER=NO',
