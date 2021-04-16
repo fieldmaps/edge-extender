@@ -7,7 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 def main(name, file, layer):
-    logger.info(f'Starting {name}')
     subprocess.run([
         'ogr2ogr',
         '-overwrite',
@@ -51,4 +50,4 @@ def main(name, file, layer):
     con.commit()
     cur.close()
     con.close()
-    logger.info(f'Finished {name}')
+    logger.info(name)

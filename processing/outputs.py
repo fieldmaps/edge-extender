@@ -12,7 +12,6 @@ outputs.mkdir(exist_ok=True, parents=True)
 
 
 def main(name, file, layer):
-    logger.info(f'Starting {name}')
     con = connect(database='polygon_voronoi')
     cur = con.cursor()
     query_1 = """
@@ -42,4 +41,4 @@ def main(name, file, layer):
         (outputs / file.name).resolve(),
         'PG:dbname=polygon_voronoi', f'{name}_05',
     ] + shp)
-    logger.info(f'Finished {name}')
+    logger.info(name)

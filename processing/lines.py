@@ -6,7 +6,6 @@ logger = logging.getLogger(__name__)
 
 
 def main(name, *args):
-    logger.info(f'Starting {name}')
     con = connect(database='polygon_voronoi')
     cur = con.cursor()
     query_1 = """
@@ -67,4 +66,4 @@ def main(name, *args):
     con.commit()
     cur.close()
     con.close()
-    logger.info(f'Finished {name}')
+    logger.info(name)
