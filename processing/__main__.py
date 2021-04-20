@@ -1,7 +1,9 @@
 from pathlib import Path
 from multiprocessing import Pool
 from . import inputs, lines, points, voronoi, merge, outputs, cleanup
-from .utils import apply_funcs, get_gpkg_layers, is_polygon, config
+from .utils import logging, apply_funcs, get_gpkg_layers, is_polygon, config
+
+logger = logging.getLogger(__name__)
 
 cwd = Path(__file__).parent
 files = (cwd / '../inputs').resolve()
@@ -10,7 +12,7 @@ funcs = [inputs.main, lines.main, points.main, voronoi.main,
 
 if __name__ == '__main__':
     for key, value in config.items():
-        print(f'{key}={value}')
+        logger.info(f'{key}={value}')
     results = []
     pool = Pool()
     for file in sorted(files.iterdir()):
