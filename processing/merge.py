@@ -1,92 +1,93 @@
 from psycopg2 import connect
 from psycopg2.sql import SQL, Identifier
-from .utils import logging
+from .utils import logging, DATABASE
 
 logger = logging.getLogger(__name__)
 
+query_1 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        ST_Multi(
+            ST_Boundary(geom)
+        )::GEOMETRY(MultiLineString, 4326) as geom
+    FROM {table_in1}
+    UNION ALL
+    SELECT
+        ST_Multi(
+            ST_Boundary(geom)
+        )::GEOMETRY(MultiLineString, 4326) as geom
+    FROM {table_in2};
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_2 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        ST_Multi(
+            ST_Union(geom)
+        )::GEOMETRY(MultiLineString, 4326) as geom
+    FROM {table_in};
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_3 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        NULL as id,
+        (ST_Dump(
+            ST_Polygonize(geom))
+        ).geom::GEOMETRY(Polygon, 4326) as geom
+    FROM {table_in};
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_4 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        b.id,
+        a.geom
+    FROM {table_in1} as a
+    LEFT JOIN {table_in2} as b
+    ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_5 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        COALESCE(a.id, b.id) as id,
+        a.geom
+    FROM {table_in1} as a
+    LEFT JOIN {table_in2} as b
+    ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_6 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        id,
+        ST_Multi(
+            ST_Union(geom)
+        )::GEOMETRY(MultiPolygon, 4326) as geom
+    FROM {table_in}
+    WHERE id IS NOT NULL
+    GROUP BY id;
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+drop_tmp = """
+    DROP TABLE IF EXISTS {table_tmp1};
+    DROP TABLE IF EXISTS {table_tmp2};
+    DROP TABLE IF EXISTS {table_tmp3};
+    DROP TABLE IF EXISTS {table_tmp4};
+    DROP TABLE IF EXISTS {table_tmp5};
+"""
+
 
 def main(name, *args):
-    con = connect(database='polygon_voronoi')
+    con = connect(database=DATABASE)
     cur = con.cursor()
-    query_1 = """
-        DROP TABLE IF EXISTS {table_out};
-        CREATE TABLE {table_out} AS
-        SELECT
-            ST_Multi(
-                ST_Boundary(geom)
-            )::GEOMETRY(MultiLineString, 4326) as geom
-        FROM {table_in1}
-        UNION ALL
-        SELECT
-            ST_Multi(
-                ST_Boundary(geom)
-            )::GEOMETRY(MultiLineString, 4326) as geom
-        FROM {table_in2};
-        CREATE INDEX ON {table_out} USING GIST(geom);
-    """
-    query_2 = """
-        DROP TABLE IF EXISTS {table_out};
-        CREATE TABLE {table_out} AS
-        SELECT
-            ST_Multi(
-                ST_Union(geom)
-            )::GEOMETRY(MultiLineString, 4326) as geom
-        FROM {table_in};
-        CREATE INDEX ON {table_out} USING GIST(geom);
-    """
-    query_3 = """
-        DROP TABLE IF EXISTS {table_out};
-        CREATE TABLE {table_out} AS
-        SELECT
-            NULL as id,
-            (ST_Dump(
-                ST_Polygonize(geom))
-            ).geom::GEOMETRY(Polygon, 4326) as geom
-        FROM {table_in};
-        CREATE INDEX ON {table_out} USING GIST(geom);
-    """
-    query_4 = """
-        DROP TABLE IF EXISTS {table_out};
-        CREATE TABLE {table_out} AS
-        SELECT
-            b.id,
-            a.geom
-        FROM {table_in1} as a
-        LEFT JOIN {table_in2} as b
-        ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
-        CREATE INDEX ON {table_out} USING GIST(geom);
-    """
-    query_5 = """
-        DROP TABLE IF EXISTS {table_out};
-        CREATE TABLE {table_out} AS
-        SELECT
-            COALESCE(a.id, b.id) as id,
-            a.geom
-        FROM {table_in1} as a
-        LEFT JOIN {table_in2} as b
-        ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
-        CREATE INDEX ON {table_out} USING GIST(geom);
-    """
-    query_6 = """
-        DROP TABLE IF EXISTS {table_out};
-        CREATE TABLE {table_out} AS
-        SELECT
-            id,
-            ST_Multi(
-                ST_Union(geom)
-            )::GEOMETRY(MultiPolygon, 4326) as geom
-        FROM {table_in}
-        WHERE id IS NOT NULL
-        GROUP BY id;
-        CREATE INDEX ON {table_out} USING GIST(geom);
-    """
-    drop_tmp = """
-        DROP TABLE IF EXISTS {table_tmp1};
-        DROP TABLE IF EXISTS {table_tmp2};
-        DROP TABLE IF EXISTS {table_tmp3};
-        DROP TABLE IF EXISTS {table_tmp4};
-        DROP TABLE IF EXISTS {table_tmp5};
-    """
     cur.execute(SQL(query_1).format(
         table_in1=Identifier(f'{name}_00'),
         table_in2=Identifier(f'{name}_03'),

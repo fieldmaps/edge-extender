@@ -5,6 +5,8 @@ from subprocess import run
 from configparser import ConfigParser
 from pathlib import Path
 
+DATABASE = 'polygon_voronoi'
+
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
