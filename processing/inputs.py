@@ -11,9 +11,7 @@ query_1 = """
     SELECT
         {id} AS id,
         ST_Transform(ST_Multi(ST_Union(
-            ST_CollectionExtract(ST_MakeValid(
-                ST_Force2D(ST_SnapToGrid(geom, 0.000000001))
-            ), 3)
+            ST_Force2D(ST_SnapToGrid(geom, 0.000000001))
         )), 4326)::GEOMETRY(MultiPolygon, 4326) as geom
     FROM {table_in}
     GROUP BY id;
@@ -28,6 +26,7 @@ drop_tmp = """
 def main(name, file, layer):
     subprocess.run([
         'ogr2ogr',
+        '-makevalid',
         '-overwrite',
         '--config', 'OGR_GEOJSON_MAX_OBJ_SIZE', '2048MB',
         '-lco', 'FID=fid',
