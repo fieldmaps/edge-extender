@@ -12,9 +12,18 @@ query_1 = """
             ST_VoronoiPolygons(ST_Collect(geom))
         )).geom::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in};
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_2 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        (ST_Dump(
+            ST_CollectionExtract(ST_MakeValid(geom), 3)
+        )).geom::GEOMETRY(Polygon, 4326) AS geom
+    FROM {table_in};
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_3 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -42,8 +51,12 @@ def main(name, *args):
         table_out=Identifier(f'{name}_tmp1'),
     ))
     cur.execute(SQL(query_2).format(
+        table_in=Identifier(f'{name}_tmp1'),
+        table_out=Identifier(f'{name}_tmp2'),
+    ))
+    cur.execute(SQL(query_3).format(
         table_in1=Identifier(f'{name}_02'),
-        table_in2=Identifier(f'{name}_tmp1'),
+        table_in2=Identifier(f'{name}_tmp2'),
         table_out=Identifier(f'{name}_03'),
     ))
     cur.execute(SQL(drop_tmp).format(

@@ -32,6 +32,7 @@ def main(name, file, layer):
         '-lco', 'FID=fid',
         '-lco', 'GEOMETRY_NAME=geom',
         '-lco', 'LAUNDER=NO',
+        '-lco', 'SPATIAL_INDEX=NONE',
         '-nlt', 'PROMOTE_TO_MULTI',
         '-nln', f'{name}_attr',
         '-f', 'PostgreSQL', f'PG:dbname={DATABASE}',
