@@ -18,7 +18,6 @@ query_1 = """
             ST_Boundary(geom)
         )::GEOMETRY(MultiLineString, 4326) as geom
     FROM {table_in2};
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_2 = """
     DROP TABLE IF EXISTS {table_out};
@@ -28,7 +27,6 @@ query_2 = """
             ST_Union(geom)
         )::GEOMETRY(MultiLineString, 4326) as geom
     FROM {table_in};
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_3 = """
     DROP TABLE IF EXISTS {table_out};
@@ -61,7 +59,6 @@ query_5 = """
     FROM {table_in1} as a
     LEFT JOIN {table_in2} as b
     ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_6 = """
     DROP TABLE IF EXISTS {table_out};
@@ -74,7 +71,6 @@ query_6 = """
     FROM {table_in}
     WHERE id IS NOT NULL
     GROUP BY id;
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};

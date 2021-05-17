@@ -12,7 +12,6 @@ query_1 = """
             ST_Buffer(ST_Boundary(geom), 0.000000001)
         ))::GEOMETRY(MultiPolygon, 4326) as geom
     FROM {table_in};
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_2 = """
     DROP TABLE IF EXISTS {table_out};
@@ -33,7 +32,6 @@ query_2 = """
         ))).geom::GEOMETRY(Point, 4326) as geom
     FROM {table_in1} as a
     CROSS JOIN {table_in2} as b;
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};
