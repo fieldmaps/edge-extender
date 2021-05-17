@@ -10,7 +10,7 @@ query_1 = """
     SELECT
         ST_Multi(ST_Union(
             ST_Buffer(ST_Boundary(geom), 0.000000001)
-        ))::GEOMETRY(MultiPolygon, 4326) as geom
+        ))::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
 """
 query_2 = """
@@ -20,18 +20,19 @@ query_2 = """
         a.id,
         (ST_Dump(ST_Union(ST_SnapToGrid(ST_Difference(
             ST_Points(ST_Segmentize(a.geom, {segment})), b.geom
-        ), {snap})))).geom::GEOMETRY(Point, 4326) as geom
-    FROM {table_in1} as a
-    CROSS JOIN {table_in2} as b
+        ), {snap})))).geom::GEOMETRY(Point, 4326) AS geom
+    FROM {table_in1} AS a
+    CROSS JOIN {table_in2} AS b
     GROUP BY a.id
     UNION ALL
     SELECT
         a.id,
         (ST_Dump(ST_Boundary(
             ST_Difference(a.geom, b.geom)
-        ))).geom::GEOMETRY(Point, 4326) as geom
-    FROM {table_in1} as a
-    CROSS JOIN {table_in2} as b;
+        ))).geom::GEOMETRY(Point, 4326) AS geom
+    FROM {table_in1} AS a
+    CROSS JOIN {table_in2} AS b;
+    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};

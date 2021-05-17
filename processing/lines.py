@@ -11,7 +11,7 @@ query_1 = """
         id,
         ST_Multi(
             ST_Boundary(geom)
-        )::GEOMETRY(MultiLineString, 4326) as geom
+        )::GEOMETRY(MultiLineString, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
@@ -21,7 +21,7 @@ query_2 = """
     SELECT
         ST_Multi(
             ST_Boundary(ST_Union(geom))
-        )::GEOMETRY(MultiLineString, 4326) as geom
+        )::GEOMETRY(MultiLineString, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
@@ -32,9 +32,9 @@ query_3 = """
         a.id,
         ST_Multi(
             ST_CollectionExtract(ST_Intersection(a.geom, b.geom), 2)
-        )::GEOMETRY(MultiLineString, 4326) as geom
-    FROM {table_in1} as a
-    JOIN {table_in2} as b
+        )::GEOMETRY(MultiLineString, 4326) AS geom
+    FROM {table_in1} AS a
+    JOIN {table_in2} AS b
     ON ST_Intersects(a.geom, b.geom);
     CREATE INDEX ON {table_out} USING GIST(geom);
 """

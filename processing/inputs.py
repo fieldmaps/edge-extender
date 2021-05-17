@@ -12,7 +12,7 @@ query_1 = """
         {id} AS id,
         ST_Transform(ST_Multi(ST_Union(
             ST_Force2D(ST_SnapToGrid(geom, 0.000000001))
-        )), 4326)::GEOMETRY(MultiPolygon, 4326) as geom
+        )), 4326)::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in}
     GROUP BY id;
     CREATE INDEX ON {table_out} USING GIST(geom);

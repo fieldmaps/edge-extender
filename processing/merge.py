@@ -10,13 +10,13 @@ query_1 = """
     SELECT
         ST_Multi(
             ST_Boundary(geom)
-        )::GEOMETRY(MultiLineString, 4326) as geom
+        )::GEOMETRY(MultiLineString, 4326) AS geom
     FROM {table_in1}
     UNION ALL
     SELECT
         ST_Multi(
             ST_Boundary(geom)
-        )::GEOMETRY(MultiLineString, 4326) as geom
+        )::GEOMETRY(MultiLineString, 4326) AS geom
     FROM {table_in2};
 """
 query_2 = """
@@ -25,17 +25,17 @@ query_2 = """
     SELECT
         ST_Multi(
             ST_Union(geom)
-        )::GEOMETRY(MultiLineString, 4326) as geom
+        )::GEOMETRY(MultiLineString, 4326) AS geom
     FROM {table_in};
 """
 query_3 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        NULL as id,
+        NULL AS id,
         (ST_Dump(
             ST_Polygonize(geom))
-        ).geom::GEOMETRY(Polygon, 4326) as geom
+        ).geom::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
@@ -45,8 +45,8 @@ query_4 = """
     SELECT
         b.id,
         a.geom
-    FROM {table_in1} as a
-    LEFT JOIN {table_in2} as b
+    FROM {table_in1} AS a
+    LEFT JOIN {table_in2} AS b
     ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
@@ -54,10 +54,10 @@ query_5 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        COALESCE(a.id, b.id) as id,
+        COALESCE(a.id, b.id) AS id,
         a.geom
-    FROM {table_in1} as a
-    LEFT JOIN {table_in2} as b
+    FROM {table_in1} AS a
+    LEFT JOIN {table_in2} AS b
     ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
 """
 query_6 = """
@@ -67,7 +67,7 @@ query_6 = """
         id,
         ST_Multi(
             ST_Union(geom)
-        )::GEOMETRY(MultiPolygon, 4326) as geom
+        )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in}
     WHERE id IS NOT NULL
     GROUP BY id;

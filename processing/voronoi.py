@@ -10,8 +10,9 @@ query_1 = """
     SELECT
         (ST_Dump(
             ST_VoronoiPolygons(ST_Collect(geom))
-        )).geom::GEOMETRY(Polygon, 4326) as geom
+        )).geom::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in};
+    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_2 = """
     DROP TABLE IF EXISTS {table_out};

@@ -15,8 +15,8 @@ query_1 = """
     SELECT DISTINCT ON (b.{id})
         a.geom,
         b.*
-    FROM {table_in1} as a
-    LEFT JOIN {table_in2} as b
+    FROM {table_in1} AS a
+    LEFT JOIN {table_in2} AS b
     ON a.id = b.{id};
 """
 
