@@ -8,7 +8,7 @@ query_1 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        id,
+        fid,
         ST_Multi(
             ST_Boundary(geom)
         )::GEOMETRY(MultiLineString, 4326) AS geom
@@ -29,7 +29,7 @@ query_3 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        a.id,
+        a.fid,
         ST_Multi(
             ST_CollectionExtract(ST_Intersection(a.geom, b.geom), 2)
         )::GEOMETRY(MultiLineString, 4326) AS geom

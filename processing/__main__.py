@@ -11,8 +11,7 @@ funcs = [inputs.main, lines.main, points.main, voronoi.main,
          merge.main, outputs.main, cleanup.main]
 
 if __name__ == '__main__':
-    for key, value in config.items():
-        logger.info(f'{key}={value}')
+    logger.info(f"segment={config['segment']}, snap={config['snap']}")
     results = []
     pool = Pool()
     for file in sorted(files.iterdir()):

@@ -27,14 +27,14 @@ query_3 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        a.id,
+        a.fid,
         ST_Multi(
             ST_Union(b.geom)
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in1} AS a
     JOIN {table_in2} AS b
     ON ST_Intersects(a.geom, b.geom)
-    GROUP BY a.id;
+    GROUP BY a.fid;
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
 drop_tmp = """

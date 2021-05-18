@@ -32,7 +32,7 @@ query_3 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        NULL AS id,
+        NULL AS fid,
         (ST_Dump(
             ST_Polygonize(geom))
         ).geom::GEOMETRY(Polygon, 4326) AS geom
@@ -43,7 +43,7 @@ query_4 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        b.id,
+        b.fid,
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
@@ -54,7 +54,7 @@ query_5 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        COALESCE(a.id, b.id) AS id,
+        COALESCE(a.fid, b.fid) AS fid,
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
@@ -64,13 +64,13 @@ query_6 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        id,
+        fid,
         ST_Multi(
             ST_Union(geom)
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in}
-    WHERE id IS NOT NULL
-    GROUP BY id;
+    WHERE fid IS NOT NULL
+    GROUP BY fid;
 """
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};
