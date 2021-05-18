@@ -61,7 +61,7 @@ query_5 = """
     ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
 """
 query_6 = """
-    DROP TABLE IF EXISTS {table_out};
+    DROP TABLE IF EXISTS {table_out} CASCADE;
     CREATE TABLE {table_out} AS
     SELECT
         fid,

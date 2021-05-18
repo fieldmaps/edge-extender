@@ -11,7 +11,9 @@ query_1 = """
     SELECT
         fid,
         ST_Transform(ST_Multi(
-            ST_Force2D(ST_SnapToGrid(geom, 0.000000001))
+            ST_CollectionExtract(ST_MakeValid(
+                ST_Force2D(ST_SnapToGrid(geom, 0.000000001))
+            ), 3)
         ), 4326)::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
