@@ -34,8 +34,8 @@ query_3 = """
     SELECT
         NULL AS fid,
         (ST_Dump(
-            ST_Polygonize(geom))
-        ).geom::GEOMETRY(Polygon, 4326) AS geom
+            ST_Polygonize(geom)
+        )).geom::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
