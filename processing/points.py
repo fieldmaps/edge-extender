@@ -18,18 +18,22 @@ query_2 = """
     CREATE TABLE {table_out} AS
     SELECT
         a.fid,
-        (ST_Dump(ST_Union(ST_SnapToGrid(ST_Difference(
-            ST_Points(ST_Segmentize(a.geom, {segment})), b.geom
-        ), {snap})))).geom::GEOMETRY(Point, 4326) AS geom
+        (ST_Dump(
+            ST_Union(ST_SnapToGrid(
+                ST_Difference(ST_Points(
+                    ST_Segmentize(a.geom, {segment})
+                ), b.geom)
+            , {snap}))
+        )).geom::GEOMETRY(Point, 4326) AS geom
     FROM {table_in1} AS a
     CROSS JOIN {table_in2} AS b
     GROUP BY a.fid
     UNION ALL
     SELECT
         a.fid,
-        (ST_Dump(ST_Boundary(
-            ST_Difference(a.geom, b.geom)
-        ))).geom::GEOMETRY(Point, 4326) AS geom
+        (ST_Dump(
+            ST_Boundary(ST_Difference(a.geom, b.geom))
+        )).geom::GEOMETRY(Point, 4326) AS geom
     FROM {table_in1} AS a
     CROSS JOIN {table_in2} AS b;
     CREATE INDEX ON {table_out} USING GIST(geom);
