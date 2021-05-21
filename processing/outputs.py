@@ -36,6 +36,7 @@ def main(name, file, layer):
     shp = ['-lco', 'ENCODING=UTF-8'] if file.suffix == '.shp' else []
     subprocess.run([
         'ogr2ogr',
+        '-makevalid',
         '-overwrite',
         '-nln', layer,
         (outputs / file.name).resolve(),
