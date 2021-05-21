@@ -10,11 +10,9 @@ query_1 = """
     CREATE TABLE {table_out} AS
     SELECT
         fid,
-        ST_Transform(ST_Multi(
-            ST_CollectionExtract(ST_MakeValid(
-                ST_Force2D(ST_SnapToGrid(geom, 0.000000001))
-            ), 3)
-        ), 4326)::GEOMETRY(MultiPolygon, 4326) AS geom
+        ST_SnapToGrid(
+            geom, 0.000000001
+        )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
@@ -30,6 +28,8 @@ def main(name, file, layer):
         '-makevalid',
         '-overwrite',
         '--config', 'OGR_GEOJSON_MAX_OBJ_SIZE', '2048MB',
+        '-dim', 'XY',
+        '-t_srs', 'EPSG:4326',
         '-lco', 'FID=fid',
         '-lco', 'GEOMETRY_NAME=geom',
         '-lco', 'LAUNDER=NO',
