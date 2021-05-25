@@ -10,7 +10,7 @@ query_1 = """
     CREATE TABLE {table_out} AS
     SELECT
         fid,
-        ST_SnapToGrid(
+        ST_ReducePrecision(
             geom, 0.000000001
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};

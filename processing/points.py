@@ -19,7 +19,7 @@ query_2 = """
     SELECT
         a.fid,
         (ST_Dump(
-            ST_Union(ST_SnapToGrid(
+            ST_Union(ST_ReducePrecision(
                 ST_Difference(ST_Points(
                     ST_Segmentize(a.geom, {segment})
                 ), b.geom)
