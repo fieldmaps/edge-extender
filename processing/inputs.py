@@ -10,8 +10,8 @@ query_1 = """
     CREATE TABLE {table_out} AS
     SELECT
         fid,
-        ST_ReducePrecision(
-            geom, 0.000000001
+        ST_Multi(
+            ST_ReducePrecision(geom, 0.000000001)
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
