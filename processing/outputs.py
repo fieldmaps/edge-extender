@@ -1,6 +1,5 @@
 import subprocess
 from pathlib import Path
-from psycopg2 import connect
 from psycopg2.sql import SQL, Identifier
 from .utils import logging, DATABASE
 
@@ -21,18 +20,13 @@ query_1 = """
 """
 
 
-def main(name, file, layer):
+def main(cur, name, file, layer):
     outputs.mkdir(exist_ok=True, parents=True)
-    con = connect(database=DATABASE)
-    cur = con.cursor()
     cur.execute(SQL(query_1).format(
         table_in1=Identifier(f'{name}_04'),
         table_in2=Identifier(f'{name}_attr'),
         table_out=Identifier(f'{name}_05'),
     ))
-    con.commit()
-    cur.close()
-    con.close()
     shp = ['-lco', 'ENCODING=UTF-8'] if file.suffix == '.shp' else []
     subprocess.run([
         'ogr2ogr',

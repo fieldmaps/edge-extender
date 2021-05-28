@@ -1,6 +1,5 @@
-from psycopg2 import connect
 from psycopg2.sql import SQL, Identifier
-from .utils import logging, DATABASE
+from .utils import logging
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +80,7 @@ drop_tmp = """
 """
 
 
-def main(name, *args):
-    con = connect(database=DATABASE)
-    cur = con.cursor()
+def main(cur, name, *_):
     cur.execute(SQL(query_1).format(
         table_in1=Identifier(f'{name}_00'),
         table_in2=Identifier(f'{name}_03'),
@@ -118,7 +115,4 @@ def main(name, *args):
         table_tmp4=Identifier(f'{name}_tmp4'),
         table_tmp5=Identifier(f'{name}_tmp5'),
     ))
-    con.commit()
-    cur.close()
-    con.close()
     logger.info(name)

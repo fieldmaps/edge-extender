@@ -4,6 +4,7 @@ import sqlite3
 from subprocess import run
 from configparser import ConfigParser
 from pathlib import Path
+from psycopg2 import connect
 
 DATABASE = 'polygon_voronoi'
 
@@ -38,5 +39,10 @@ def is_polygon(file):
 
 
 def apply_funcs(name, file, layer, *args):
+    con = connect(database=DATABASE)
+    con.set_session(autocommit=True)
+    cur = con.cursor()
     for func in args:
-        func(name, file, layer)
+        func(cur, name, file, layer)
+    cur.close()
+    con.close()
