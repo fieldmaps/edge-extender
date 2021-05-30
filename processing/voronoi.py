@@ -20,17 +20,26 @@ query_2 = """
     CREATE TABLE {table_out} AS
     SELECT
         a.fid,
-        ST_MakePolygon(ST_ExteriorRing(
-            (ST_Dump(ST_Union(b.geom))).geom
-        ))::GEOMETRY(Polygon, 4326) AS geom
+        b.geom
     FROM {table_in1} AS a
     JOIN {table_in2} AS b
-    ON ST_Within(a.geom, b.geom)
-    GROUP BY a.fid;
+    ON ST_Within(a.geom, b.geom);
+"""
+query_3 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        fid,
+        ST_MakePolygon(ST_ExteriorRing(
+            (ST_Dump(ST_Union(geom))).geom
+        ))::GEOMETRY(Polygon, 4326) AS geom
+    FROM {table_in}
+    GROUP BY fid;
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};
+    DROP TABLE IF EXISTS {table_tmp2};
 """
 
 
@@ -42,9 +51,14 @@ def main(cur, name, *_):
     cur.execute(SQL(query_2).format(
         table_in1=Identifier(f'{name}_02'),
         table_in2=Identifier(f'{name}_03_tmp1'),
+        table_out=Identifier(f'{name}_03_tmp2'),
+    ))
+    cur.execute(SQL(query_3).format(
+        table_in=Identifier(f'{name}_03_tmp2'),
         table_out=Identifier(f'{name}_03'),
     ))
     cur.execute(SQL(drop_tmp).format(
         table_tmp1=Identifier(f'{name}_03_tmp1'),
+        table_tmp2=Identifier(f'{name}_03_tmp2'),
     ))
     logger.info(name)
