@@ -20,9 +20,9 @@ query_2 = """
     CREATE TABLE {table_out} AS
     SELECT
         a.fid,
-        ST_Multi(
-            ST_Union(b.geom)
-        )::GEOMETRY(MultiPolygon, 4326) AS geom
+        ST_MakePolygon(ST_ExteriorRing(
+            (ST_Dump(ST_Union(b.geom))).geom
+        ))::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in1} AS a
     JOIN {table_in2} AS b
     ON ST_Within(a.geom, b.geom)
@@ -37,14 +37,14 @@ drop_tmp = """
 def main(cur, name, *_):
     cur.execute(SQL(query_1).format(
         table_in=Identifier(f'{name}_02'),
-        table_out=Identifier(f'{name}_tmp1'),
+        table_out=Identifier(f'{name}_03_tmp1'),
     ))
     cur.execute(SQL(query_2).format(
         table_in1=Identifier(f'{name}_02'),
-        table_in2=Identifier(f'{name}_tmp1'),
+        table_in2=Identifier(f'{name}_03_tmp1'),
         table_out=Identifier(f'{name}_03'),
     ))
     cur.execute(SQL(drop_tmp).format(
-        table_tmp1=Identifier(f'{name}_tmp1'),
+        table_tmp1=Identifier(f'{name}_03_tmp1'),
     ))
     logger.info(name)

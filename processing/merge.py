@@ -46,7 +46,7 @@ query_4 = """
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
-    ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
+    ON ST_Within((ST_MaximumInscribedCircle(a.geom)).center, b.geom);
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_5 = """
@@ -57,7 +57,7 @@ query_5 = """
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
-    ON ST_Within(ST_Buffer(a.geom, -0.000000001), b.geom);
+    ON ST_Within((ST_MaximumInscribedCircle(a.geom)).center, b.geom);
 """
 query_6 = """
     DROP TABLE IF EXISTS {table_out} CASCADE;
@@ -84,35 +84,35 @@ def main(cur, name, *_):
     cur.execute(SQL(query_1).format(
         table_in1=Identifier(f'{name}_00'),
         table_in2=Identifier(f'{name}_03'),
-        table_out=Identifier(f'{name}_tmp1'),
+        table_out=Identifier(f'{name}_04_tmp1'),
     ))
     cur.execute(SQL(query_2).format(
-        table_in=Identifier(f'{name}_tmp1'),
-        table_out=Identifier(f'{name}_tmp2'),
+        table_in=Identifier(f'{name}_04_tmp1'),
+        table_out=Identifier(f'{name}_04_tmp2'),
     ))
     cur.execute(SQL(query_3).format(
-        table_in=Identifier(f'{name}_tmp2'),
-        table_out=Identifier(f'{name}_tmp3'),
+        table_in=Identifier(f'{name}_04_tmp2'),
+        table_out=Identifier(f'{name}_04_tmp3'),
     ))
     cur.execute(SQL(query_4).format(
-        table_in1=Identifier(f'{name}_tmp3'),
+        table_in1=Identifier(f'{name}_04_tmp3'),
         table_in2=Identifier(f'{name}_00'),
-        table_out=Identifier(f'{name}_tmp4'),
+        table_out=Identifier(f'{name}_04_tmp4'),
     ))
     cur.execute(SQL(query_5).format(
-        table_in1=Identifier(f'{name}_tmp4'),
+        table_in1=Identifier(f'{name}_04_tmp4'),
         table_in2=Identifier(f'{name}_03'),
-        table_out=Identifier(f'{name}_tmp5'),
+        table_out=Identifier(f'{name}_04_tmp5'),
     ))
     cur.execute(SQL(query_6).format(
-        table_in=Identifier(f'{name}_tmp5'),
+        table_in=Identifier(f'{name}_04_tmp5'),
         table_out=Identifier(f'{name}_04'),
     ))
     cur.execute(SQL(drop_tmp).format(
-        table_tmp1=Identifier(f'{name}_tmp1'),
-        table_tmp2=Identifier(f'{name}_tmp2'),
-        table_tmp3=Identifier(f'{name}_tmp3'),
-        table_tmp4=Identifier(f'{name}_tmp4'),
-        table_tmp5=Identifier(f'{name}_tmp5'),
+        table_tmp1=Identifier(f'{name}_04_tmp1'),
+        table_tmp2=Identifier(f'{name}_04_tmp2'),
+        table_tmp3=Identifier(f'{name}_04_tmp3'),
+        table_tmp4=Identifier(f'{name}_04_tmp4'),
+        table_tmp5=Identifier(f'{name}_04_tmp5'),
     ))
     logger.info(name)
