@@ -46,7 +46,7 @@ query_4 = """
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
-    ON ST_Within((ST_MaximumInscribedCircle(a.geom)).center, b.geom);
+    ON ST_Within(ST_PointOnSurface(a.geom), b.geom);
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_5 = """
@@ -57,7 +57,7 @@ query_5 = """
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
-    ON ST_Within((ST_MaximumInscribedCircle(a.geom)).center, b.geom);
+    ON ST_Within(ST_PointOnSurface(a.geom), b.geom);
 """
 query_6 = """
     DROP TABLE IF EXISTS {table_out} CASCADE;
