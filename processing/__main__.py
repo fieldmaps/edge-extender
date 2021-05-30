@@ -15,7 +15,7 @@ if __name__ == '__main__':
     logger.info(
         f"segment={config['segment']}, snap={config['snap']}, throttle={config['throttle']}")
     results = []
-    pool = Pool(ceil(cpu_count() / int(config['throttle'])))
+    pool = Pool(ceil(cpu_count() / float(config['throttle'])))
     for file in sorted(files.iterdir()):
         if file.is_file() and file.suffix in ['.shp', '.geojson'] and is_polygon(file):
             args = [file.name.replace('.', '_'), file, file.stem, *funcs]
