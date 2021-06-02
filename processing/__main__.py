@@ -1,6 +1,5 @@
 from pathlib import Path
-from math import ceil
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 from . import inputs, lines, points, voronoi, merge, outputs, cleanup
 from .utils import logging, apply_funcs, get_gpkg_layers, is_polygon, config
 
@@ -13,9 +12,9 @@ funcs = [inputs.main, lines.main, points.main, voronoi.main,
 
 if __name__ == '__main__':
     logger.info(
-        f"segment={config['segment']}, snap={config['snap']}, throttle={config['throttle']}")
+        f"segment={config['segment']}, snap={config['snap']}")
     results = []
-    pool = Pool(ceil(cpu_count() / float(config['throttle'])))
+    pool = Pool()
     for file in sorted(files.iterdir(), key=lambda x: x.stat().st_size, reverse=True):
         if file.is_file() and file.suffix in ['.shp', '.geojson'] and is_polygon(file):
             args = [file.name.replace('.', '_'), file, file.stem, *funcs]
