@@ -1,7 +1,4 @@
 from psycopg2.sql import SQL, Identifier
-from .utils import logging
-
-logger = logging.getLogger(__name__)
 
 drop_tmp = """
     DROP VIEW IF EXISTS {view_05};
@@ -24,4 +21,3 @@ def main(cur, name, *_):
         table_04=Identifier(f'{name}_04'),
         view_05=Identifier(f'{name}_05'),
     ))
-    logger.info(name)
