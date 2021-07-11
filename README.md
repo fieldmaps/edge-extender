@@ -1,4 +1,4 @@
-# Polygon to Voronoi
+# Edge Extender
 
 ![](https://img.fieldmaps.io/polygon-voronoi/wld_01.png)
 
