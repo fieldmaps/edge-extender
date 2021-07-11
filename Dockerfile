@@ -15,8 +15,8 @@ RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6B827C12C2D425E227E
   && rm -rf /var/lib/apt/lists/*
 
 RUN /etc/init.d/postgresql start \
-  && su postgres -c 'createdb polygon_voronoi' \
-  && su postgres -c 'psql -d polygon_voronoi -c "CREATE EXTENSION postgis;"'
+  && su postgres -c 'createdb edge_extender' \
+  && su postgres -c 'psql -d edge_extender -c "CREATE EXTENSION postgis;"'
 
 WORKDIR /usr/src/app
 
