@@ -6,7 +6,7 @@ from configparser import ConfigParser
 from pathlib import Path
 from psycopg2 import connect
 
-DATABASE = 'polygon_voronoi'
+DATABASE = 'edge_extender'
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(message)s',
