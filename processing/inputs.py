@@ -13,6 +13,7 @@ query_1 = """
             ST_ReducePrecision(geom, 0.000000001)
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
+    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 drop_col = """
     ALTER TABLE {table_attr}
