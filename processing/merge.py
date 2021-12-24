@@ -36,7 +36,6 @@ query_3 = """
             ST_Polygonize(geom)
         )).geom::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in};
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_4 = """
     DROP TABLE IF EXISTS {table_out};
@@ -47,7 +46,6 @@ query_4 = """
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
     ON ST_Within(ST_PointOnSurface(a.geom), b.geom);
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_5 = """
     DROP TABLE IF EXISTS {table_out};
