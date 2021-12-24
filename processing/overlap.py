@@ -21,7 +21,6 @@ query_2 = """
             ST_Polygonize(geom)
         )).geom::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in};
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_3 = """
     DROP TABLE IF EXISTS {table_out};
