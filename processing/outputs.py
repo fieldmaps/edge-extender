@@ -23,9 +23,9 @@ query_1 = """
 def main(cur, name, file, layer):
     outputs.mkdir(exist_ok=True, parents=True)
     cur.execute(SQL(query_1).format(
-        table_in1=Identifier(f'{name}_04'),
+        table_in1=Identifier(f'{name}_05'),
         table_in2=Identifier(f'{name}_attr'),
-        table_out=Identifier(f'{name}_05'),
+        table_out=Identifier(f'{name}_06'),
     ))
     shp = ['-lco', 'ENCODING=UTF-8'] if file.suffix == '.shp' else []
     subprocess.run([
@@ -34,6 +34,6 @@ def main(cur, name, file, layer):
         '-overwrite',
         '-nln', layer,
         (outputs / file.name).resolve(),
-        f'PG:dbname={DATABASE}', f'{name}_05',
+        f'PG:dbname={DATABASE}', f'{name}_06',
     ] + shp)
     logger.info(name)

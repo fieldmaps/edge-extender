@@ -13,9 +13,8 @@ query_1 = """
             ST_ReducePrecision(geom, 0.000000001)
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
-drop_tmp = """
+drop_col = """
     ALTER TABLE {table_attr}
     DROP COLUMN IF EXISTS geom;
 """
@@ -42,7 +41,7 @@ def main(cur, name, file, layer):
         table_in=Identifier(f'{name}_attr'),
         table_out=Identifier(f'{name}_00'),
     ))
-    cur.execute(SQL(drop_tmp).format(
+    cur.execute(SQL(drop_col).format(
         table_attr=Identifier(f'{name}_attr'),
     ))
     logger.info(name)

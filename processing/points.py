@@ -44,17 +44,17 @@ drop_tmp = """
 
 def main(cur, name, *_):
     cur.execute(SQL(query_1).format(
-        table_in=Identifier(f'{name}_01'),
-        table_out=Identifier(f'{name}_02_tmp1'),
+        table_in=Identifier(f'{name}_02'),
+        table_out=Identifier(f'{name}_03_tmp1'),
     ))
     cur.execute(SQL(query_2).format(
-        table_in1=Identifier(f'{name}_01'),
-        table_in2=Identifier(f'{name}_02_tmp1'),
+        table_in1=Identifier(f'{name}_02'),
+        table_in2=Identifier(f'{name}_03_tmp1'),
         segment=Literal(config['segment']),
         snap=Literal(config['snap']),
-        table_out=Identifier(f'{name}_02'),
+        table_out=Identifier(f'{name}_03'),
     ))
     cur.execute(SQL(drop_tmp).format(
-        table_tmp1=Identifier(f'{name}_02_tmp1'),
+        table_tmp1=Identifier(f'{name}_03_tmp1'),
     ))
     logger.info(name)
