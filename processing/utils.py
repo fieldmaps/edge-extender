@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO,
 
 cwd = Path(__file__).parent
 cfg = ConfigParser()
-cfg.read((cwd / '../config.ini').resolve())
+cfg.read(cwd / '../config.ini')
 config = cfg['default']
 
 

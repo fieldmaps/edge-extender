@@ -6,7 +6,7 @@ from .utils import logging, DATABASE
 logger = logging.getLogger(__name__)
 
 cwd = Path(__file__).parent
-outputs = (cwd / '../outputs').resolve()
+outputs = cwd / '../outputs'
 
 query_1 = """
     DROP VIEW IF EXISTS {table_out};
@@ -33,7 +33,7 @@ def main(cur, name, file, layer):
         '-makevalid',
         '-overwrite',
         '-nln', layer,
-        (outputs / file.name).resolve(),
+        outputs / file.name,
         f'PG:dbname={DATABASE}', f'{name}_06',
     ] + shp)
     logger.info(name)

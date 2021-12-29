@@ -6,7 +6,7 @@ from .utils import logging, apply_funcs, get_gpkg_layers, is_polygon, config
 logger = logging.getLogger(__name__)
 
 cwd = Path(__file__).parent
-files = (cwd / '../inputs').resolve()
+files = cwd / '../inputs'
 funcs = [inputs.main, overlap.main, lines.main, points.main, voronoi.main,
          merge.main, outputs.main, cleanup.main]
 
