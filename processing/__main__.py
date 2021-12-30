@@ -15,7 +15,7 @@ if __name__ == '__main__':
         f"segment={config['segment']}, snap={config['snap']}")
     results = []
     pool = Pool()
-    for file in sorted(files.iterdir(), key=lambda x: x.stat().st_size, reverse=True):
+    for file in sorted(files.iterdir(), key=lambda x: x.stat().st_size):
         if file.is_file() and file.suffix in ['.shp', '.geojson'] and is_polygon(file):
             args = [file.name.replace('.', '_'), file, file.stem, *funcs]
             result = pool.apply_async(apply_funcs, args=args)
