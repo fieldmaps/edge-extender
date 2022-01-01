@@ -24,8 +24,17 @@ query_2 = """
     FROM {table_in1} AS a
     JOIN {table_in2} AS b
     ON ST_Within(a.geom, b.geom);
+    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_3 = """
+    SELECT *
+    FROM {table_in} a
+    JOIN {table_in} b
+    ON ST_Overlaps(a.geom, b.geom)
+    WHERE a.fid != b.fid
+    LIMIT 1;
+"""
+query_4 = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -54,6 +63,12 @@ def main(cur, name, *_):
         table_out=Identifier(f'{name}_04_tmp2'),
     ))
     cur.execute(SQL(query_3).format(
+        table_in=Identifier(f'{name}_04_tmp2'),
+    ))
+    if len(cur.fetchall()) > 0:
+        raise RuntimeError(
+            'Overlaping voronoi polygons, try adjusting segment and/or snap values.')
+    cur.execute(SQL(query_4).format(
         table_in=Identifier(f'{name}_04_tmp2'),
         table_out=Identifier(f'{name}_04'),
     ))
