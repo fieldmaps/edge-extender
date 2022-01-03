@@ -16,6 +16,7 @@ cwd = Path(__file__).parent
 cfg = ConfigParser()
 cfg.read(cwd / '../config.ini')
 config = cfg['default']
+user = cfg['user'] if cfg.has_section('user') else {}
 
 
 def get_gpkg_layers(file):
@@ -46,3 +47,13 @@ def apply_funcs(name, file, layer, *args):
         func(cur, name, file, layer)
     cur.close()
     con.close()
+
+
+def get_config(name):
+    if name in user:
+        segment, snap = user[name].split(',')
+        segment = segment or config['segment']
+        snap = snap or config['snap']
+        return {'segment': segment, 'snap': snap}
+    else:
+        return config

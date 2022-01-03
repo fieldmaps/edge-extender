@@ -63,7 +63,9 @@ query_6 = """
     SELECT
         fid,
         ST_Multi(
-            ST_Union(geom)
+            ST_ReducePrecision(
+                ST_Union(geom)
+            , 0.000000001)
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in}
     WHERE fid IS NOT NULL

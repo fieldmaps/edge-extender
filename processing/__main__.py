@@ -1,7 +1,8 @@
 from pathlib import Path
 from multiprocessing import Pool
 from . import inputs, overlap, lines, points, voronoi, merge, outputs, cleanup
-from .utils import logging, apply_funcs, get_gpkg_layers, is_polygon, config
+from .utils import (logging, apply_funcs, get_gpkg_layers,
+                    is_polygon, config, user, get_config)
 
 logger = logging.getLogger(__name__)
 
@@ -11,8 +12,11 @@ funcs = [inputs.main, overlap.main, lines.main, points.main, voronoi.main,
          merge.main, outputs.main, cleanup.main]
 
 if __name__ == '__main__':
-    logger.info(
-        f"segment={config['segment']}, snap={config['snap']}")
+    logger.info(f"segment={config['segment']}, snap={config['snap']}")
+    for file_name in user:
+        config = get_config(file_name)
+        logger.info(
+            f"name={file_name}, segment={config['segment']}, snap={config['snap']}")
     results = []
     pool = Pool()
     for file in sorted(files.iterdir(), key=lambda x: x.stat().st_size):
