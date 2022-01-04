@@ -40,10 +40,6 @@ query_3 = """
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_4 = """
-    SELECT ST_NumInteriorRings(ST_Union(geom))
-    FROM {table_in};
-"""
-query_5 = """
     SELECT EXISTS(
         SELECT 1
         FROM {table_in} a
@@ -51,6 +47,10 @@ query_5 = """
         ON ST_Overlaps(a.geom, b.geom)
         WHERE a.fid != b.fid
     );
+"""
+query_5 = """
+    SELECT ST_NumInteriorRings(ST_Union(geom))
+    FROM {table_in};
 """
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};
@@ -62,18 +62,18 @@ def check_topology(cur, name):
     cur.execute(SQL(query_4).format(
         table_in=Identifier(f'{name}_04'),
     ))
-    has_gaps = cur.fetchone()[0] > 0
+    has_overlaps = cur.fetchone()[0]
     cur.execute(SQL(query_5).format(
         table_in=Identifier(f'{name}_04'),
     ))
-    has_overlaps = cur.fetchone()[0]
-    if has_gaps or has_overlaps:
-        gaps_txt = f'GAPS' if has_gaps else ''
-        and_txt = f' & ' if has_gaps and has_overlaps else ''
+    has_gaps = cur.fetchone()[0] > 0
+    if has_overlaps or has_gaps:
         overlaps_txt = f'OVERLAPS' if has_overlaps else ''
-        logger.info(f'{gaps_txt}{and_txt}{overlaps_txt}: {name}')
+        and_txt = f' & ' if has_gaps and has_overlaps else ''
+        gaps_txt = f'GAPS' if has_gaps else ''
+        logger.info(f'{overlaps_txt}{and_txt}{gaps_txt}: {name}')
         raise RuntimeError(
-            f'{gaps_txt}{and_txt}{overlaps_txt} in voronoi polygons, ' +
+            f'{overlaps_txt}{and_txt}{gaps_txt} in voronoi polygons, ' +
             'try adjusting segment and/or snap values.')
 
 
