@@ -45,7 +45,7 @@ query_4 = """
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
-    ON ST_Within(ST_PointOnSurface(a.geom), b.geom);
+    ON ST_DWithin(ST_PointOnSurface(a.geom), b.geom, 0);
 """
 query_5 = """
     DROP TABLE IF EXISTS {table_out};
@@ -55,7 +55,7 @@ query_5 = """
         a.geom
     FROM {table_in1} AS a
     LEFT JOIN {table_in2} AS b
-    ON ST_Within(ST_PointOnSurface(a.geom), b.geom);
+    ON ST_DWithin(ST_PointOnSurface(a.geom), b.geom, 0);
 """
 query_6 = """
     DROP TABLE IF EXISTS {table_out} CASCADE;
