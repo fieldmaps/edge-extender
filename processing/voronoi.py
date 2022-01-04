@@ -30,11 +30,11 @@ query_3 = """
     CREATE TABLE {table_out} AS
     SELECT
         fid,
-        ST_Multi(
-            ST_Union(
+        ST_MakePolygon(ST_ExteriorRing(
+            (ST_Dump(ST_Union(
                 ST_ReducePrecision(geom, 0.000000001)
-            )
-        )::GEOMETRY(MultiPolygon, 4326) AS geom
+            ))).geom
+        ))::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in}
     GROUP BY fid;
     CREATE INDEX ON {table_out} USING GIST(geom);
