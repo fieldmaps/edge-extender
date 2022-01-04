@@ -12,8 +12,8 @@ funcs = [inputs.main, overlap.main, lines.main, points.main, voronoi.main,
          merge.main, outputs.main, cleanup.main]
 
 if __name__ == '__main__':
-    logger.info(
-        f"default: segment={config['segment']}, snap={config['snap']}, validate={config['validate']}")
+    logger.info(f"default: segment={config['segment']}, " +
+                f"snap={config['snap']}, validate={config['validate']}")
     for file_name in user:
         segment, snap, validate = user[file_name].split(',')
         segment_txt = f', segment={segment}' if segment != '' else ''
