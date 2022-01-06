@@ -21,7 +21,7 @@ drop_col = """
 """
 
 
-def main(cur, name, file, layer):
+def main(cur, name, file, layer, *_):
     subprocess.run([
         'ogr2ogr',
         '-makevalid',

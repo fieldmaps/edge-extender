@@ -39,12 +39,12 @@ def is_polygon(file):
     return regex.search(str(result.stdout))
 
 
-def apply_funcs(name, file, layer, *args):
+def apply_funcs(name, file, layer, segment, snap, *args):
     con = connect(database=DATABASE)
     con.set_session(autocommit=True)
     cur = con.cursor()
     for func in args:
-        func(cur, name, file, layer)
+        func(cur, name, file, layer, segment, snap)
     cur.close()
     con.close()
 

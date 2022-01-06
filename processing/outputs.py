@@ -20,7 +20,7 @@ query_1 = """
 """
 
 
-def main(cur, name, file, layer):
+def main(cur, name, file, layer, *_):
     outputs.mkdir(exist_ok=True, parents=True)
     cur.execute(SQL(query_1).format(
         table_in1=Identifier(f'{name}_05'),

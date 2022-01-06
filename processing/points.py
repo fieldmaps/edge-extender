@@ -66,17 +66,20 @@ drop_tmp = """
 """
 
 
-def main(cur, name, *_):
-    config = get_config(name)
+def main(cur, name_0, __, ___, segment, snap, *_):
+    config = get_config(name_0)
+    name = name_0
+    if segment is not None and snap is not None:
+        name = f'{name_0}_{segment}_{snap}'.replace('.', '_')
     cur.execute(SQL(query_1).format(
-        table_in=Identifier(f'{name}_02'),
+        table_in=Identifier(f'{name_0}_02'),
         table_out=Identifier(f'{name}_03_tmp1'),
     ))
     cur.execute(SQL(query_2).format(
-        table_in1=Identifier(f'{name}_02'),
+        table_in1=Identifier(f'{name_0}_02'),
         table_in2=Identifier(f'{name}_03_tmp1'),
-        segment=Literal(config['segment']),
-        snap=Literal(config['snap']),
+        segment=Literal(segment or config['segment']),
+        snap=Literal(snap or config['snap']),
         table_out=Identifier(f'{name}_03_tmp2'),
     ))
     cur.execute(SQL(query_3).format(

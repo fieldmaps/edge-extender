@@ -77,8 +77,10 @@ def check_topology(cur, name):
             'try adjusting segment and/or snap values.')
 
 
-def main(cur, name, *_):
+def main(cur, name, __, ___, segment, snap, *_):
     config = get_config(name)
+    if segment is not None and snap is not None:
+        name = f'{name}_{segment}_{snap}'.replace('.', '_')
     cur.execute(SQL(query_1).format(
         table_in=Identifier(f'{name}_03'),
         table_out=Identifier(f'{name}_04_tmp1'),
