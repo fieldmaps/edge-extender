@@ -105,9 +105,8 @@ The use case above demonstrates how useful it is to have a topologically clean g
 
 In earlier versions of this tool, vector inputs created from raster sources were known to present issues in rare cases. In the PostGIS implementation of voronoi polygons, inputs in a regular grid can sometimes result in polygon outputs with invalid geometry, giving one of the following errors:
 
-- lwgeom_unaryunion_prec: GEOS Error: TopologyException: unable to assign free hole to a shell
 - GEOSVoronoiDiagram: TopologyException: Input geom 1 is invalid: Self-intersection
-- processing.voronoi runs at 300% CPU for more than 30 min
+- lwgeom_unaryunion_prec: GEOS Error: TopologyException: unable to assign free hole to a shell
 
 Significant effort has been taken to prevent this from occurring in current versions of this tool. However, if this does occur, first try reducing the segment precision to a value that generates valid outputs, a value of 0.0003 usually works. If this still doesn't work after reducing precision even further, trying to reduce the snap precision should help too. If still failing, the issue may be related to topological errors in the original input. It may need to be cleaned before processing, as only basic validity checks are done on import.
 
