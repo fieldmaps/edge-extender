@@ -23,7 +23,7 @@ def get_gpkg_layers(file):
     query = """
         SELECT table_name, geometry_type_name
         FROM gpkg_geometry_columns
-        WHERE geometry_type_name IN ('POLYGON', 'MULTIPOLYGON');
+        WHERE geometry_type_name IN ('POLYGON', 'MULTIPOLYGON', 'GEOMETRY');
     """
     con = sqlite3.connect(file)
     cur = con.cursor()
