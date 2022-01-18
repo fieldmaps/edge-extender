@@ -1,5 +1,5 @@
 services:
-  polygon-voronoi:
+  edge-extender:
     build: .
     volumes:
       - ./inputs:/usr/src/app/inputs
