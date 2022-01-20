@@ -108,7 +108,7 @@ In the PostGIS implementation of voronoi polygons, inputs with sliver gaps betwe
 - GEOSVoronoiDiagram: TopologyException: Input geom 1 is invalid: Self-intersection at
 - GEOSVoronoiDiagram: IllegalArgumentException: Invalid number of points in LinearRing found 2 - must be 0 or >= 4
 
-If this does occur, try increasing the default snap value from `0.000001` to `0.000002` or `0.000003`, which solves the issue in most cases. If this still does not resolve the issue, try increasing the segment value instead from `0.0001` to `0.0002` or `0.0003`. Keep increasing either value until the process succeeds.
+If this does occur, try increasing the default snap value from `0.000001` to `0.000002` or `0.000003`, which solves the issue in most situations. If this still does not resolve the issue, try increasing the segment value instead from `0.0001` to `0.0002` or `0.0003`. Keep increasing either value until the process succeeds.
 
 |            Possible Error (segment=0.0001)             |               Succeeds (segment=0.0003)                |
 | :----------------------------------------------------: | :----------------------------------------------------: |
