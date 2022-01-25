@@ -17,7 +17,8 @@ cwd = Path(__file__).parent
 cfg = ConfigParser()
 cfg.read(cwd / '../config.ini')
 config = cfg['default']
-config['processes'] = str(min(os.cpu_count(), int(config['processes'])))
+config['processes'] = str(min(os.cpu_count(), int(
+    config['processes'] if config['processes'] else os.cpu_count())))
 user = cfg['user'] if cfg.has_section('user') else {}
 
 
