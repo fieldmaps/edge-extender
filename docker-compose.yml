@@ -2,5 +2,6 @@ services:
   edge-extender:
     build: .
     volumes:
+      - ./config.ini:/usr/src/app/config.ini
       - ./inputs:/usr/src/app/inputs
       - ./outputs:/usr/src/app/outputs
