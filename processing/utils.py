@@ -1,5 +1,6 @@
 import logging
 import re
+import os
 import sqlite3
 from subprocess import run
 from configparser import ConfigParser
@@ -16,6 +17,7 @@ cwd = Path(__file__).parent
 cfg = ConfigParser()
 cfg.read(cwd / '../config.ini')
 config = cfg['default']
+config['processes'] = str(min(os.cpu_count(), int(config['processes'])))
 user = cfg['user'] if cfg.has_section('user') else {}
 
 

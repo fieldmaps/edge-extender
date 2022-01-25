@@ -13,9 +13,9 @@ funcs_1 = [inputs.main, overlap.main, lines.main, points.main, voronoi.main,
 funcs_2 = [points.main, voronoi.main]
 
 
-def run(segments, snaps, funcs):
+def run(processes, segments, snaps, funcs):
     results = []
-    pool = Pool()
+    pool = Pool(processes)
     for segment in segments:
         for snap in snaps:
             for file in sorted(files.iterdir(), key=lambda x: x.stat().st_size):
@@ -38,7 +38,8 @@ def run(segments, snaps, funcs):
 
 if __name__ == '__main__':
     logger.info(f"default: segment={config['segment']}, " +
-                f"snap={config['snap']}, validate={config['validate']}")
+                f"snap={config['snap']}, validate={config['validate']}, " +
+                f"processes={config['processes']}")
     for file_name in user:
         segment, snap, validate = user[file_name].split(',')
         segment_txt = f', segment={segment}' if segment != '' else ''
@@ -48,6 +49,6 @@ if __name__ == '__main__':
     segments = config['segment'].split(',')
     snaps = config['snap'].split(',')
     if len(segments) > 1 or len(snaps) > 1:
-        run(segments, snaps, funcs_2)
+        run(int(config['processes']), segments, snaps, funcs_2)
     else:
-        run([None], [None], funcs_1)
+        run(int(config['processes']), [None], [None], funcs_1)
