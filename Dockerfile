@@ -1,10 +1,10 @@
-FROM ubuntu:21.10
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-  gdal-bin postgresql-13-postgis-3 python3-pip \
+  gdal-bin postgresql-14-postgis-3 python3-pip \
   && rm -rf /var/lib/apt/lists/*
 
 RUN /etc/init.d/postgresql start \
