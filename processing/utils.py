@@ -5,7 +5,7 @@ import sqlite3
 from subprocess import run
 from configparser import ConfigParser
 from pathlib import Path
-from psycopg2 import connect
+from psycopg import connect
 
 DATABASE = 'edge_extender'
 
@@ -43,13 +43,10 @@ def is_polygon(file):
 
 
 def apply_funcs(name, file, layer, segment, snap, *args):
-    con = connect(database=DATABASE)
-    con.set_session(autocommit=True)
-    cur = con.cursor()
+    conn = connect(f'dbname={DATABASE}', autocommit=True)
     for func in args:
-        func(cur, name, file, layer, segment, snap)
-    cur.close()
-    con.close()
+        func(conn, name, file, layer, segment, snap)
+    conn.close()
 
 
 def get_config(name):

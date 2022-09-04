@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
-from psycopg2.sql import SQL, Identifier
-from .utils import logging, DATABASE
+from psycopg.sql import SQL, Identifier
+from processing.utils import logging, DATABASE
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,9 @@ query_1 = """
 """
 
 
-def main(cur, name, file, layer, *_):
+def main(conn, name, file, layer, *_):
     outputs.mkdir(exist_ok=True, parents=True)
-    cur.execute(SQL(query_1).format(
+    conn.execute(SQL(query_1).format(
         table_in1=Identifier(f'{name}_05'),
         table_in2=Identifier(f'{name}_attr'),
         table_out=Identifier(f'{name}_06'),

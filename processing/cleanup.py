@@ -1,4 +1,4 @@
-from psycopg2.sql import SQL, Identifier
+from psycopg.sql import SQL, Identifier
 
 drop_tmp = """
     DROP VIEW IF EXISTS {view_06};
@@ -12,8 +12,8 @@ drop_tmp = """
 """
 
 
-def main(cur, name, *_):
-    cur.execute(SQL(drop_tmp).format(
+def main(conn, name, *_):
+    conn.execute(SQL(drop_tmp).format(
         table_attr=Identifier(f'{name}_attr'),
         table_00=Identifier(f'{name}_00'),
         table_01=Identifier(f'{name}_01'),

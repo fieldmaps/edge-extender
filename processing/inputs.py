@@ -1,6 +1,6 @@
 import subprocess
-from psycopg2.sql import SQL, Identifier
-from .utils import logging, DATABASE
+from psycopg.sql import SQL, Identifier
+from processing.utils import logging, DATABASE
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ drop_col = """
 """
 
 
-def main(cur, name, file, layer, *_):
+def main(conn, name, file, layer, *_):
     subprocess.run([
         'ogr2ogr',
         '-makevalid',
@@ -38,11 +38,11 @@ def main(cur, name, file, layer, *_):
         '-f', 'PostgreSQL', f'PG:dbname={DATABASE}',
         file, layer,
     ])
-    cur.execute(SQL(query_1).format(
+    conn.execute(SQL(query_1).format(
         table_in=Identifier(f'{name}_attr'),
         table_out=Identifier(f'{name}_00'),
     ))
-    cur.execute(SQL(drop_col).format(
+    conn.execute(SQL(drop_col).format(
         table_attr=Identifier(f'{name}_attr'),
     ))
     logger.info(name)
