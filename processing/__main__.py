@@ -1,8 +1,8 @@
 from pathlib import Path
 from multiprocessing import Pool
-from . import inputs, overlap, lines, points, voronoi, merge, outputs, cleanup
-from .utils import (logging, apply_funcs, get_gpkg_layers,
-                    is_polygon, config, user)
+from processing import inputs, overlap, lines, points, voronoi, merge, outputs, cleanup
+from processing.utils import (logging, apply_funcs, get_gpkg_layers,
+                              is_polygon, config, user)
 
 logger = logging.getLogger(__name__)
 
