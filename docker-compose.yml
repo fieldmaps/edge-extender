@@ -1,5 +1,6 @@
 services:
   edge-extender:
+    image: fieldmaps/edge-extender
     build: .
     volumes:
       - ./config.ini:/usr/src/app/config.ini
