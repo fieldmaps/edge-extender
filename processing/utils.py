@@ -1,8 +1,8 @@
 import logging
 import re
-import os
 import sqlite3
 from subprocess import run
+from multiprocessing import cpu_count
 from configparser import ConfigParser
 from pathlib import Path
 from psycopg import connect
@@ -17,8 +17,8 @@ cwd = Path(__file__).parent
 cfg = ConfigParser()
 cfg.read(cwd / '../config.ini')
 config = cfg['default']
-config['processes'] = str(min(os.cpu_count(), int(
-    config['processes'] if config['processes'] else os.cpu_count())))
+config['processes'] = str(min(cpu_count(), int(
+    config['processes'] if config['processes'] else cpu_count())))
 user = cfg['user'] if cfg.has_section('user') else {}
 
 
