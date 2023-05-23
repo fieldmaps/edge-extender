@@ -10,23 +10,14 @@ Currently, supported inputs are polygons in GeoPackage (.gpkg), Shapefile (.shp)
 
 ## Usage
 
-The only requirements are to download [this repository](https://github.com/fieldmaps/polygon-voronoi/archive/refs/heads/main.zip) and install [Docker Desktop](https://www.docker.com/products/docker-desktop). Add files to the included `inputs` directory, where they'll be processed to the `outputs` directory. Make sure Docker Desktop is running, and from the command line of the repository's root directory, run the following:
+The only requirements are to download [this repository](https://github.com/fieldmaps/polygon-voronoi/archive/refs/heads/main.zip) and install [Docker Desktop](https://www.docker.com/products/docker-desktop). Add files to the included `inputs` directory, where they'll be processed to the `outputs` directory. Make sure Docker Desktop is running, and from the command line of the repository's root directory, run the following. Note that `docker compose up` is only required for the first run, or if upgrading from a previous version.
 
 ```sh
+docker compose build
 docker compose up
 ```
 
 Polygons the size of small countries typically take a few minutes, with larger ones taking upwards of 30 min using default settings. Processing time is proportional to total perimeter length rather than area.
-
-## Upgrading
-
-If a previous version of this tool has been used, old docker containers and images need to be removed so they can be re-built with a new version from the git repository. The following commands will clean up a local docker environment before running:
-
-```sh
-docker container prune -f
-docker image prune -af
-docker compose up
-```
 
 ## Configuration
 

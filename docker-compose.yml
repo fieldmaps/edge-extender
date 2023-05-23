@@ -1,7 +1,8 @@
 services:
-  edge-extender:
-    image: fieldmaps/edge-extender
+  app:
     build: .
+    sysctls:
+      - net.ipv4.tcp_keepalive_time=200
     volumes:
       - ./config.ini:/usr/src/app/config.ini
       - ./inputs:/usr/src/app/inputs
