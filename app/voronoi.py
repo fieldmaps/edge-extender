@@ -74,9 +74,9 @@ def check_topology(conn, name):
         > 0
     )
     if has_overlaps or has_gaps:
-        overlaps_txt = f"OVERLAPS" if has_overlaps else ""
-        and_txt = f" & " if has_gaps and has_overlaps else ""
-        gaps_txt = f"GAPS" if has_gaps else ""
+        overlaps_txt = "OVERLAPS" if has_overlaps else ""
+        and_txt = " & " if has_gaps and has_overlaps else ""
+        gaps_txt = "GAPS" if has_gaps else ""
         logger.info(f"{overlaps_txt}{and_txt}{gaps_txt}: {name}")
         raise RuntimeError(
             f"{overlaps_txt}{and_txt}{gaps_txt} in voronoi polygons, "

@@ -67,8 +67,8 @@ drop_tmp = """
 """
 
 
-def main(conn, name_0, __, ___, segment, snap, *_):
-    config = get_config(name_0)
+def main(conn, name_0, file, ___, segment, snap, *_):
+    config = get_config(file.stem)
     name = name_0
     if segment is not None and snap is not None:
         name = f"{name_0}_{segment}_{snap}".replace(".", "_")

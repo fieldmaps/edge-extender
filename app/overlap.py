@@ -1,6 +1,6 @@
 from psycopg.sql import SQL, Identifier
 
-from .utils import logging
+from .utils import get_config, logging
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,10 @@ query_5 = """
     GROUP BY fid;
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
+query_6 = """
+    SELECT count(*)
+    FROM {table_in};
+"""
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
@@ -61,7 +65,23 @@ drop_tmp = """
 """
 
 
+def check_topology(conn, name):
+    rows_org = conn.execute(
+        SQL(query_6).format(table_in=Identifier(f"{name}_00"))
+    ).fetchone()[0]
+    rows_new = conn.execute(
+        SQL(query_6).format(table_in=Identifier(f"{name}_01"))
+    ).fetchone()[0]
+    if rows_org != rows_new:
+        logger.info(f"{rows_new} of {rows_org}: {name}")
+        raise RuntimeError(
+            f"{rows_new} of {rows_org} input polygons, "
+            + "remove overlapping polygons."
+        )
+
+
 def main(conn, name, *_):
+    config = get_config(name)
     conn.execute(
         SQL(query_1).format(
             table_in=Identifier(f"{name}_00"),
@@ -101,4 +121,6 @@ def main(conn, name, *_):
             table_tmp4=Identifier(f"{name}_01_tmp4"),
         )
     )
+    if config["validate"].lower() in ("yes", "on", "true", "1"):
+        check_topology(conn, name)
     logger.info(name)

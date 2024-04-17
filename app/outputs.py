@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+from time import sleep
 
 from psycopg.sql import SQL, Identifier
 
@@ -32,15 +33,22 @@ def main(conn, name, file, layer, *_):
         )
     )
     shp = ["-lco", "ENCODING=UTF-8"] if file.suffix == ".shp" else []
-    subprocess.run(
-        [
-            "ogr2ogr",
-            "-makevalid",
-            "-overwrite",
-            *["-nln", layer],
-            outputs / file.name,
-            *[f"PG:dbname={DATABASE}", f"{name}_06"],
-        ]
-        + shp
-    )
+    args = [
+        "ogr2ogr",
+        "-makevalid",
+        "-overwrite",
+        *["-nln", layer],
+        outputs / file.name,
+        *[f"PG:dbname={DATABASE}", f"{name}_06"],
+    ] + shp
+    success = False
+    for retry in range(5):
+        result = subprocess.run(args, stderr=subprocess.DEVNULL)
+        if result.returncode == 0:
+            success = True
+            break
+        sleep(retry**2)
+    if not success:
+        logger.info(f"output: {name}")
+        raise RuntimeError(f"could not write to output {name}")
     logger.info(name)
