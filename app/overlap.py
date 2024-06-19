@@ -1,6 +1,8 @@
+import logging
+
 from psycopg.sql import SQL, Identifier
 
-from .utils import get_config, logging
+from .utils import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -123,4 +125,5 @@ def main(conn, name, *_):
     )
     if config["validate"].lower() in ("yes", "on", "true", "1"):
         check_topology(conn, name)
-    logger.info(name)
+    if config["verbose"].lower() in ("yes", "on", "true", "1"):
+        logger.info(name)

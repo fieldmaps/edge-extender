@@ -1,8 +1,9 @@
+import logging
 import subprocess
 
 from psycopg.sql import SQL, Identifier
 
-from .utils import DATABASE, logging
+from .utils import DATABASE, config
 
 logger = logging.getLogger(__name__)
 
@@ -53,4 +54,5 @@ def main(conn, name, file, layer, *_):
             table_attr=Identifier(f"{name}_attr"),
         )
     )
-    logger.info(name)
+    if config["verbose"].lower() in ("yes", "on", "true", "1"):
+        logger.info(name)

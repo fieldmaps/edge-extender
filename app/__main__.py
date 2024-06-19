@@ -1,8 +1,9 @@
+import logging
 from multiprocessing import Pool
 from pathlib import Path
 
-from . import cleanup, inputs, lines, merge, outputs, overlap, points, voronoi
-from .utils import apply_funcs, config, get_gpkg_layers, is_polygon, logging, user
+from . import attempt, cleanup, inputs, lines, merge, outputs, overlap, points, voronoi
+from .utils import apply_funcs, config, get_gpkg_layers, is_polygon, user
 
 logger = logging.getLogger(__name__)
 
@@ -12,8 +13,7 @@ funcs_1 = [
     inputs.main,
     overlap.main,
     lines.main,
-    points.main,
-    voronoi.main,
+    attempt.main,
     merge.main,
     outputs.main,
     cleanup.main,
@@ -32,26 +32,14 @@ def run(processes, segments, snaps, funcs):
                     and file.suffix in [".shp", ".geojson"]
                     and is_polygon(file)
                 ):
-                    args = [
-                        file.name.replace(".", "_"),
-                        file,
-                        file.stem,
-                        segment,
-                        snap,
-                        *funcs,
-                    ]
+                    name = file.name.replace(".", "_")
+                    args = [name, file, file.stem, segment, snap, *funcs]
                     result = pool.apply_async(apply_funcs, args=args)
                     results.append(result)
                 if file.is_file() and file.suffix == ".gpkg":
                     for layer in get_gpkg_layers(file):
-                        args = [
-                            f"{file.name.replace('.', '_')}_{layer}",
-                            file,
-                            layer,
-                            segment,
-                            snap,
-                            *funcs,
-                        ]
+                        name = f"{file.name.replace('.', '_')}_{layer}"
+                        args = [name, file, layer, segment, snap, *funcs]
                         result = pool.apply_async(apply_funcs, args=args)
                         results.append(result)
     pool.close()
@@ -62,8 +50,11 @@ def run(processes, segments, snaps, funcs):
 
 if __name__ == "__main__":
     logger.info(
-        f"default: segment={config['segment']}, "
-        + f"snap={config['snap']}, validate={config['validate']}, "
+        f"segment={config['segment']}, "
+        + f"snap={config['snap']}, "
+        + f"validate={config['validate']}, "
+        + f"retry={config['retry']}, "
+        + f"verbose={config['verbose']}, "
         + f"processes={config['processes']}"
     )
     for file_name in user:

@@ -1,6 +1,8 @@
+import logging
+
 from psycopg.sql import SQL, Identifier
 
-from .utils import logging
+from .utils import config
 
 logger = logging.getLogger(__name__)
 
@@ -70,4 +72,5 @@ def main(conn, name, *_):
             table_tmp2=Identifier(f"{name}_02_tmp2"),
         )
     )
-    logger.info(name)
+    if config["verbose"].lower() in ("yes", "on", "true", "1"):
+        logger.info(name)

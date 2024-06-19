@@ -1,6 +1,8 @@
+import logging
+
 from psycopg.sql import SQL, Identifier, Literal
 
-from .utils import get_config, logging
+from .utils import config, get_config
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +70,13 @@ drop_tmp = """
 
 
 def main(conn, name_0, file, ___, segment, snap, *_):
-    config = get_config(file.stem)
+    custom = get_config(file.stem)
     name = name_0
-    if segment is not None and snap is not None:
+    if (
+        segment is not None
+        and snap is not None
+        and config["retry"].lower() not in ("yes", "on", "true", "1")
+    ):
         name = f"{name_0}_{segment}_{snap}".replace(".", "_")
     conn.execute(
         SQL(query_1).format(
@@ -82,8 +88,8 @@ def main(conn, name_0, file, ___, segment, snap, *_):
         SQL(query_2).format(
             table_in1=Identifier(f"{name_0}_02"),
             table_in2=Identifier(f"{name}_03_tmp1"),
-            segment=Literal(segment or config["segment"]),
-            snap=Literal(snap or config["snap"]),
+            segment=Literal(segment or custom["segment"]),
+            snap=Literal(snap or custom["snap"]),
             table_out=Identifier(f"{name}_03_tmp2"),
         )
     )
@@ -107,4 +113,5 @@ def main(conn, name_0, file, ___, segment, snap, *_):
             table_tmp3=Identifier(f"{name}_03_tmp3"),
         )
     )
-    logger.info(name)
+    if config["verbose"].lower() in ("yes", "on", "true", "1"):
+        logger.info(name)

@@ -1,6 +1,8 @@
+import logging
+
 from psycopg.sql import SQL, Identifier
 
-from .utils import get_config, logging
+from .utils import config, get_config
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +87,12 @@ def check_topology(conn, name):
 
 
 def main(conn, name, __, ___, segment, snap, *_):
-    config = get_config(name)
-    if segment is not None and snap is not None:
+    custom = get_config(name)
+    if (
+        segment is not None
+        and snap is not None
+        and config["retry"].lower() not in ("yes", "on", "true", "1")
+    ):
         name = f"{name}_{segment}_{snap}".replace(".", "_")
     conn.execute(
         SQL(query_1).format(
@@ -113,6 +119,7 @@ def main(conn, name, __, ___, segment, snap, *_):
             table_tmp2=Identifier(f"{name}_04_tmp2"),
         )
     )
-    if config["validate"].lower() in ("yes", "on", "true", "1"):
+    if custom["validate"].lower() in ("yes", "on", "true", "1"):
         check_topology(conn, name)
-    logger.info(name)
+    if config["verbose"].lower() in ("yes", "on", "true", "1"):
+        logger.info(name)

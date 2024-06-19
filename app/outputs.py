@@ -1,10 +1,11 @@
+import logging
 import subprocess
 from pathlib import Path
 from time import sleep
 
 from psycopg.sql import SQL, Identifier
 
-from .utils import DATABASE, logging
+from .utils import DATABASE, config
 
 logger = logging.getLogger(__name__)
 
@@ -51,4 +52,5 @@ def main(conn, name, file, layer, *_):
     if not success:
         logger.info(f"output: {name}")
         raise RuntimeError(f"could not write to output {name}")
-    logger.info(name)
+    if config["verbose"].lower() in ("yes", "on", "true", "1"):
+        logger.info(name)
