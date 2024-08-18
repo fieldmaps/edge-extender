@@ -30,7 +30,7 @@ def main(conn, name, file, layer, *_):
             "ogr2ogr",
             "-makevalid",
             "-overwrite",
-            *["--config", "OGR_GEOJSON_MAX_OBJ_SIZE", "2048MB"],
+            *["--config", "OGR_GEOJSON_MAX_OBJ_SIZE", "0"],
             *["-dim", "XY"],
             *["-t_srs", "EPSG:4326"],
             *["-lco", "FID=fid"],
