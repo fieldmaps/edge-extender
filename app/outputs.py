@@ -43,18 +43,21 @@ def main(conn, name, file, layer, *_):
         if file.suffix == ".parquet"
         else []
     )
+    output_path = outputs / file.name
     args = (
         [
             "ogr2ogr",
             "-makevalid",
             "-overwrite",
             *["-nln", layer],
-            outputs / file.name,
+            output_path,
             *[f"PG:dbname={DATABASE}", f"{name}_06"],
         ]
         + shp
         + parquet
     )
+    if file.suffix == ".parquet":
+        output_path.unlink(missing_ok=True)
     success = False
     for retry in range(5):
         result = subprocess.run(args, stderr=subprocess.DEVNULL)
@@ -63,7 +66,7 @@ def main(conn, name, file, layer, *_):
             break
         sleep(retry**2)
     if not success:
-        logger.info(f"output: {name}")
+        logger.info(f"output fail: {name}")
         raise RuntimeError(f"could not write to output {name}")
     if config["verbose"].lower() in ("yes", "on", "true", "1"):
         logger.info(name)

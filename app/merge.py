@@ -74,12 +74,26 @@ query_6 = """
     WHERE fid IS NOT NULL
     GROUP BY fid;
 """
+query_7 = """
+    DROP TABLE IF EXISTS {table_out} CASCADE;
+    CREATE TABLE {table_out} AS
+    SELECT
+        fid,
+        ST_Multi(
+            ST_CollectionExtract(ST_Intersection(
+                a.geom,
+                ST_MakeEnvelope(-180, -90, 180, 90, 4326)
+            ), 3)
+        )::GEOMETRY(MultiPolygon, 4326) AS geom
+    FROM {table_in} AS a;
+"""
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
     DROP TABLE IF EXISTS {table_tmp3};
     DROP TABLE IF EXISTS {table_tmp4};
     DROP TABLE IF EXISTS {table_tmp5};
+    DROP TABLE IF EXISTS {table_tmp6};
 """
 
 
@@ -120,6 +134,12 @@ def main(conn, name, *_):
     conn.execute(
         SQL(query_6).format(
             table_in=Identifier(f"{name}_05_tmp5"),
+            table_out=Identifier(f"{name}_05_tmp6"),
+        )
+    )
+    conn.execute(
+        SQL(query_7).format(
+            table_in=Identifier(f"{name}_05_tmp6"),
             table_out=Identifier(f"{name}_05"),
         )
     )
@@ -130,6 +150,7 @@ def main(conn, name, *_):
             table_tmp3=Identifier(f"{name}_05_tmp3"),
             table_tmp4=Identifier(f"{name}_05_tmp4"),
             table_tmp5=Identifier(f"{name}_05_tmp5"),
+            table_tmp6=Identifier(f"{name}_05_tmp6"),
         )
     )
     if config["verbose"].lower() in ("yes", "on", "true", "1"):
