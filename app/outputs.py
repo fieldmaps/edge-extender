@@ -34,14 +34,27 @@ def main(conn, name, file, layer, *_):
         )
     )
     shp = ["-lco", "ENCODING=UTF-8"] if file.suffix == ".shp" else []
-    args = [
-        "ogr2ogr",
-        "-makevalid",
-        "-overwrite",
-        *["-nln", layer],
-        outputs / file.name,
-        *[f"PG:dbname={DATABASE}", f"{name}_06"],
-    ] + shp
+    parquet = (
+        [
+            *["-lco", "COMPRESSION=ZSTD"],
+            *["-lco", "GEOMETRY_ENCODING=GEOARROW"],
+            *["-lco", "GEOMETRY_NAME=geometry"],
+        ]
+        if file.suffix == ".parquet"
+        else []
+    )
+    args = (
+        [
+            "ogr2ogr",
+            "-makevalid",
+            "-overwrite",
+            *["-nln", layer],
+            outputs / file.name,
+            *[f"PG:dbname={DATABASE}", f"{name}_06"],
+        ]
+        + shp
+        + parquet
+    )
     success = False
     for retry in range(5):
         result = subprocess.run(args, stderr=subprocess.DEVNULL)

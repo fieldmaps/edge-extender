@@ -54,11 +54,17 @@ def apply_funcs(name, file, layer, segment, snap, *args):
 
 
 def get_config(name):
+    name = name.split("_")[0]
     if name in user:
         segment, snap, validate = user[name].split(",")
         segment = segment or config["segment"]
         snap = snap or config["snap"]
         validate = validate or config["validate"]
-        return {"segment": segment, "snap": snap, "validate": validate}
+        return {
+            "segment": segment,
+            "snap": snap,
+            "validate": validate,
+            "verbose": config["verbose"],
+        }
     else:
         return config

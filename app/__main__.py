@@ -26,10 +26,10 @@ def run(processes, segments, snaps, funcs):
     pool = Pool(processes)
     for segment in segments:
         for snap in snaps:
-            for file in sorted(files.iterdir(), key=lambda x: x.stat().st_size):
+            for file in sorted(files.iterdir()):
                 if (
                     file.is_file()
-                    and file.suffix in [".shp", ".geojson"]
+                    and file.suffix in [".shp", ".geojson", ".parquet"]
                     and is_polygon(file)
                 ):
                     name = file.name.replace(".", "_")

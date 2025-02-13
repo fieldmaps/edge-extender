@@ -1,10 +1,10 @@
-FROM ubuntu:24.04
+FROM ubuntu:24.10
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-  gdal-bin postgresql-16-postgis-3 \
+  gdal-bin postgresql-postgis \
   python3-pip python3-venv \
   && rm -rf /var/lib/apt/lists/*
 
