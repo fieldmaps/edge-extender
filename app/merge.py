@@ -103,45 +103,45 @@ def main(conn, name, *_):
             table_in1=Identifier(f"{name}_01"),
             table_in2=Identifier(f"{name}_04"),
             table_out=Identifier(f"{name}_05_tmp1"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_2).format(
             table_in=Identifier(f"{name}_05_tmp1"),
             table_out=Identifier(f"{name}_05_tmp2"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_3).format(
             table_in=Identifier(f"{name}_05_tmp2"),
             table_out=Identifier(f"{name}_05_tmp3"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_4).format(
             table_in1=Identifier(f"{name}_05_tmp3"),
             table_in2=Identifier(f"{name}_01"),
             table_out=Identifier(f"{name}_05_tmp4"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_5).format(
             table_in1=Identifier(f"{name}_05_tmp4"),
             table_in2=Identifier(f"{name}_04"),
             table_out=Identifier(f"{name}_05_tmp5"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_6).format(
             table_in=Identifier(f"{name}_05_tmp5"),
             table_out=Identifier(f"{name}_05_tmp6"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_7).format(
             table_in=Identifier(f"{name}_05_tmp6"),
             table_out=Identifier(f"{name}_05"),
-        )
+        ),
     )
     conn.execute(
         SQL(drop_tmp).format(
@@ -151,7 +151,7 @@ def main(conn, name, *_):
             table_tmp4=Identifier(f"{name}_05_tmp4"),
             table_tmp5=Identifier(f"{name}_05_tmp5"),
             table_tmp6=Identifier(f"{name}_05_tmp6"),
-        )
+        ),
     )
     if config["verbose"].lower() in ("yes", "on", "true", "1"):
         logger.info(name)

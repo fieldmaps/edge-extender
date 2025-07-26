@@ -21,7 +21,7 @@ cfg = ConfigParser()
 cfg.read(cwd / "../config.ini")
 config = cfg["default"]
 config["processes"] = str(
-    min(cpu_count(), int(config["processes"] if config["processes"] else cpu_count()))
+    min(cpu_count(), int(config["processes"] if config["processes"] else cpu_count())),
 )
 user = cfg["user"] if cfg.has_section("user") else {}
 
@@ -42,7 +42,7 @@ def get_gpkg_layers(file):
 
 def is_polygon(file):
     regex = re.compile(r"\((Multi Polygon|Polygon)\)")
-    result = run(["ogrinfo", file], capture_output=True)
+    result = run(["ogrinfo", file], check=False, capture_output=True)
     return regex.search(str(result.stdout))
 
 
@@ -66,5 +66,4 @@ def get_config(name):
             "validate": validate,
             "verbose": config["verbose"],
         }
-    else:
-        return config
+    return config

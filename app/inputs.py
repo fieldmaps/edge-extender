@@ -41,18 +41,19 @@ def main(conn, name, file, layer, *_):
             *["-nln", f"{name}_attr"],
             *["-f", "PostgreSQL", f"PG:dbname={DATABASE}"],
             *[file, layer],
-        ]
+        ],
+        check=False,
     )
     conn.execute(
         SQL(query_1).format(
             table_in=Identifier(f"{name}_attr"),
             table_out=Identifier(f"{name}_00"),
-        )
+        ),
     )
     conn.execute(
         SQL(drop_col).format(
             table_attr=Identifier(f"{name}_attr"),
-        )
+        ),
     )
     if config["verbose"].lower() in ("yes", "on", "true", "1"):
         logger.info(name)

@@ -1,0 +1,15 @@
+[project]
+name = "edge-extender"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["psycopg[binary,pool]"]
+
+[dependency-groups]
+dev = ["ruff", "taskipy"]
+
+[tool.taskipy.tasks]
+app = "python -m app"
+export = "uv sync -q && uv export -q -o requirements.txt --no-dev --no-hashes"
+ruff = "ruff format && ruff check && ruff format"

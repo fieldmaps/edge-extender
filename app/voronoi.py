@@ -65,13 +65,13 @@ def check_topology(conn, name):
     has_overlaps = conn.execute(
         SQL(query_4).format(
             table_in=Identifier(f"{name}_04"),
-        )
+        ),
     ).fetchone()[0]
     has_gaps = (
         conn.execute(
             SQL(query_5).format(
                 table_in=Identifier(f"{name}_04"),
-            )
+            ),
         ).fetchone()[0]
         > 0
     )
@@ -82,7 +82,7 @@ def check_topology(conn, name):
         logger.info(f"{overlaps_txt}{and_txt}{gaps_txt}: {name}")
         raise RuntimeError(
             f"{overlaps_txt}{and_txt}{gaps_txt} in voronoi polygons, "
-            + "try adjusting segment and/or snap values."
+            "try adjusting segment and/or snap values.",
         )
 
 
@@ -98,26 +98,26 @@ def main(conn, name, __, ___, segment, snap, *_):
         SQL(query_1).format(
             table_in=Identifier(f"{name}_03"),
             table_out=Identifier(f"{name}_04_tmp1"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_2).format(
             table_in1=Identifier(f"{name}_03"),
             table_in2=Identifier(f"{name}_04_tmp1"),
             table_out=Identifier(f"{name}_04_tmp2"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_3).format(
             table_in=Identifier(f"{name}_04_tmp2"),
             table_out=Identifier(f"{name}_04"),
-        )
+        ),
     )
     conn.execute(
         SQL(drop_tmp).format(
             table_tmp1=Identifier(f"{name}_04_tmp1"),
             table_tmp2=Identifier(f"{name}_04_tmp2"),
-        )
+        ),
     )
     if custom["validate"].lower() in ("yes", "on", "true", "1"):
         check_topology(conn, name)

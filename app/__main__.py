@@ -51,11 +51,11 @@ def run(processes, segments, snaps, funcs):
 if __name__ == "__main__":
     logger.info(
         f"segment={config['segment']}, "
-        + f"snap={config['snap']}, "
-        + f"validate={config['validate']}, "
-        + f"retry={config['retry']}, "
-        + f"verbose={config['verbose']}, "
-        + f"processes={config['processes']}"
+        f"snap={config['snap']}, "
+        f"validate={config['validate']}, "
+        f"retry={config['retry']}, "
+        f"verbose={config['verbose']}, "
+        f"processes={config['processes']}",
     )
     for file_name in user:
         segment, snap, validate = user[file_name].split(",")

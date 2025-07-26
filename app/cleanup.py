@@ -23,5 +23,5 @@ def main(conn, name, *_):
             table_04=Identifier(f"{name}_04"),
             table_05=Identifier(f"{name}_05"),
             view_06=Identifier(f"{name}_06"),
-        )
+        ),
     )

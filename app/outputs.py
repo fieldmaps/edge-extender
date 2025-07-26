@@ -31,7 +31,7 @@ def main(conn, name, file, layer, *_):
             table_in1=Identifier(f"{name}_05"),
             table_in2=Identifier(f"{name}_attr"),
             table_out=Identifier(f"{name}_06"),
-        )
+        ),
     )
     shp = ["-lco", "ENCODING=UTF-8"] if file.suffix == ".shp" else []
     parquet = (
@@ -60,7 +60,7 @@ def main(conn, name, file, layer, *_):
         output_path.unlink(missing_ok=True)
     success = False
     for retry in range(5):
-        result = subprocess.run(args, stderr=subprocess.DEVNULL)
+        result = subprocess.run(args, check=False, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
             success = True
             break

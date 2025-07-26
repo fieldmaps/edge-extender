@@ -82,7 +82,7 @@ def main(conn, name_0, file, ___, segment, snap, *_):
         SQL(query_1).format(
             table_in=Identifier(f"{name_0}_02"),
             table_out=Identifier(f"{name}_03_tmp1"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_2).format(
@@ -91,27 +91,27 @@ def main(conn, name_0, file, ___, segment, snap, *_):
             segment=Literal(segment or custom["segment"]),
             snap=Literal(snap or custom["snap"]),
             table_out=Identifier(f"{name}_03_tmp2"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_3).format(
             table_in=Identifier(f"{name}_03_tmp2"),
             table_out=Identifier(f"{name}_03_tmp3"),
-        )
+        ),
     )
     conn.execute(
         SQL(query_4).format(
             table_in1=Identifier(f"{name}_03_tmp3"),
             table_in2=Identifier(f"{name}_03_tmp2"),
             table_out=Identifier(f"{name}_03"),
-        )
+        ),
     )
     conn.execute(
         SQL(drop_tmp).format(
             table_tmp1=Identifier(f"{name}_03_tmp1"),
             table_tmp2=Identifier(f"{name}_03_tmp2"),
             table_tmp3=Identifier(f"{name}_03_tmp3"),
-        )
+        ),
     )
     if config["verbose"].lower() in ("yes", "on", "true", "1"):
         logger.info(name)
