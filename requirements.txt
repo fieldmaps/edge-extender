@@ -7,8 +7,6 @@ psycopg-binary==3.2.9 ; implementation_name != 'pypy'
 psycopg-pool==3.2.6
     # via psycopg
 typing-extensions==4.14.1
-    # via
-    #   psycopg
-    #   psycopg-pool
+    # via psycopg-pool
 tzdata==2025.2 ; sys_platform == 'win32'
     # via psycopg
