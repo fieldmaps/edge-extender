@@ -1,10 +1,8 @@
-import logging
+from venv import logger
 
 from psycopg.sql import SQL, Identifier
 
-from .utils import config, get_config
-
-logger = logging.getLogger(__name__)
+from .utils import config
 
 query_1 = """
     DROP TABLE IF EXISTS {table_out};
@@ -34,15 +32,21 @@ query_3 = """
     SELECT
         fid,
         ST_MakePolygon(ST_ExteriorRing(
-            (ST_Dump(ST_Union(
-                ST_ReducePrecision(geom, 0.000000001)
-            ))).geom
+            (ST_Dump(ST_Union(geom))).geom
         ))::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in}
     GROUP BY fid;
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_4 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        fid,
+        ST_CoverageClean(geom) OVER ()::GEOMETRY(Polygon, 4326) AS geom
+    FROM {table_in};
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_5 = """
     SELECT EXISTS(
         SELECT 1
         FROM {table_in} a
@@ -51,25 +55,26 @@ query_4 = """
         WHERE a.fid != b.fid
     );
 """
-query_5 = """
+query_6 = """
     SELECT ST_NumInteriorRings(ST_Union(geom))
     FROM {table_in};
 """
 drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
+    DROP TABLE IF EXISTS {table_tmp3};
 """
 
 
 def check_topology(conn, name):
     has_overlaps = conn.execute(
-        SQL(query_4).format(
+        SQL(query_5).format(
             table_in=Identifier(f"{name}_04"),
         ),
     ).fetchone()[0]
     has_gaps = (
         conn.execute(
-            SQL(query_5).format(
+            SQL(query_6).format(
                 table_in=Identifier(f"{name}_04"),
             ),
         ).fetchone()[0]
@@ -79,21 +84,15 @@ def check_topology(conn, name):
         overlaps_txt = "OVERLAPS" if has_overlaps else ""
         and_txt = " & " if has_gaps and has_overlaps else ""
         gaps_txt = "GAPS" if has_gaps else ""
-        logger.info(f"{overlaps_txt}{and_txt}{gaps_txt}: {name}")
+        if config["retry"].lower() not in ("yes", "on", "true", "1"):
+            logger.error(f"{overlaps_txt}{and_txt}{gaps_txt}: {name}")
         raise RuntimeError(
             f"{overlaps_txt}{and_txt}{gaps_txt} in voronoi polygons, "
             "try adjusting segment and/or snap values.",
         )
 
 
-def main(conn, name, __, ___, segment, snap, *_):
-    custom = get_config(name)
-    if (
-        segment is not None
-        and snap is not None
-        and config["retry"].lower() not in ("yes", "on", "true", "1")
-    ):
-        name = f"{name}_{segment}_{snap}".replace(".", "_")
+def main(conn, name, *_):
     conn.execute(
         SQL(query_1).format(
             table_in=Identifier(f"{name}_03"),
@@ -110,6 +109,12 @@ def main(conn, name, __, ___, segment, snap, *_):
     conn.execute(
         SQL(query_3).format(
             table_in=Identifier(f"{name}_04_tmp2"),
+            table_out=Identifier(f"{name}_04_tmp3"),
+        ),
+    )
+    conn.execute(
+        SQL(query_3).format(
+            table_in=Identifier(f"{name}_04_tmp3"),
             table_out=Identifier(f"{name}_04"),
         ),
     )
@@ -117,9 +122,7 @@ def main(conn, name, __, ___, segment, snap, *_):
         SQL(drop_tmp).format(
             table_tmp1=Identifier(f"{name}_04_tmp1"),
             table_tmp2=Identifier(f"{name}_04_tmp2"),
+            table_tmp3=Identifier(f"{name}_04_tmp3"),
         ),
     )
-    if custom["validate"].lower() in ("yes", "on", "true", "1"):
-        check_topology(conn, name)
-    if config["verbose"].lower() in ("yes", "on", "true", "1"):
-        logger.info(name)
+    check_topology(conn, name)

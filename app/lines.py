@@ -1,10 +1,4 @@
-import logging
-
 from psycopg.sql import SQL, Identifier
-
-from .utils import config
-
-logger = logging.getLogger(__name__)
 
 query_1 = """
     DROP TABLE IF EXISTS {table_out};
@@ -72,5 +66,3 @@ def main(conn, name, *_):
             table_tmp2=Identifier(f"{name}_02_tmp2"),
         ),
     )
-    if config["verbose"].lower() in ("yes", "on", "true", "1"):
-        logger.info(name)

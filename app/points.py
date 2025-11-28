@@ -1,10 +1,4 @@
-import logging
-
 from psycopg.sql import SQL, Identifier, Literal
-
-from .utils import config, get_config
-
-logger = logging.getLogger(__name__)
 
 query_1 = """
     DROP TABLE IF EXISTS {table_out};
@@ -69,27 +63,19 @@ drop_tmp = """
 """
 
 
-def main(conn, name_0, file, ___, segment, snap, *_):
-    custom = get_config(file.stem)
-    name = name_0
-    if (
-        segment is not None
-        and snap is not None
-        and config["retry"].lower() not in ("yes", "on", "true", "1")
-    ):
-        name = f"{name_0}_{segment}_{snap}".replace(".", "_")
+def main(conn, name, __, ___, segment, snap, *_):
     conn.execute(
         SQL(query_1).format(
-            table_in=Identifier(f"{name_0}_02"),
+            table_in=Identifier(f"{name}_02"),
             table_out=Identifier(f"{name}_03_tmp1"),
         ),
     )
     conn.execute(
         SQL(query_2).format(
-            table_in1=Identifier(f"{name_0}_02"),
+            table_in1=Identifier(f"{name}_02"),
             table_in2=Identifier(f"{name}_03_tmp1"),
-            segment=Literal(segment or custom["segment"]),
-            snap=Literal(snap or custom["snap"]),
+            segment=Literal(segment),
+            snap=Literal(snap),
             table_out=Identifier(f"{name}_03_tmp2"),
         ),
     )
@@ -113,5 +99,3 @@ def main(conn, name_0, file, ___, segment, snap, *_):
             table_tmp3=Identifier(f"{name}_03_tmp3"),
         ),
     )
-    if config["verbose"].lower() in ("yes", "on", "true", "1"):
-        logger.info(name)

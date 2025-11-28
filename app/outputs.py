@@ -1,13 +1,11 @@
-import logging
 import subprocess
 from pathlib import Path
 from time import sleep
+from venv import logger
 
 from psycopg.sql import SQL, Identifier
 
-from .utils import DATABASE, config
-
-logger = logging.getLogger(__name__)
+from .utils import DATABASE
 
 cwd = Path(__file__).parent
 outputs = cwd / "../outputs"
@@ -33,12 +31,12 @@ def main(conn, name, file, layer, *_):
             table_out=Identifier(f"{name}_06"),
         ),
     )
-    shp = ["-lco", "ENCODING=UTF-8"] if file.suffix == ".shp" else []
+    shp = ["--layer-creation-option=ENCODING=UTF-8"] if file.suffix == ".shp" else []
     parquet = (
         [
-            *["-lco", "COMPRESSION=ZSTD"],
-            *["-lco", "GEOMETRY_ENCODING=GEOARROW"],
-            *["-lco", "GEOMETRY_NAME=geometry"],
+            "--layer-creation-option=COMPRESSION_LEVEL=15",
+            "--layer-creation-option=COMPRESSION=ZSTD",
+            "--layer-creation-option=GEOMETRY_NAME=geometry",
         ]
         if file.suffix == ".parquet"
         else []
@@ -46,12 +44,12 @@ def main(conn, name, file, layer, *_):
     output_path = outputs / file.name
     args = (
         [
-            "ogr2ogr",
-            "-makevalid",
-            "-overwrite",
-            *["-nln", layer],
-            output_path,
-            *[f"PG:dbname={DATABASE}", f"{name}_06"],
+            *["gdal", "vector", "make-valid"],
+            *[f"PG:dbname={DATABASE}", output_path],
+            "--overwrite",
+            "--quiet",
+            f"--input-layer={name}_06",
+            f"--output-layer={layer}",
         ]
         + shp
         + parquet
@@ -66,7 +64,5 @@ def main(conn, name, file, layer, *_):
             break
         sleep(retry**2)
     if not success:
-        logger.info(f"output fail: {name}")
+        logger.error(f"output fail: {name}")
         raise RuntimeError(f"could not write to output {name}")
-    if config["verbose"].lower() in ("yes", "on", "true", "1"):
-        logger.info(name)

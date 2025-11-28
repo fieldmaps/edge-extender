@@ -42,28 +42,22 @@ def get_gpkg_layers(file):
 
 def is_polygon(file):
     regex = re.compile(r"\((Multi Polygon|Polygon)\)")
-    result = run(["ogrinfo", file], check=False, capture_output=True)
+    result = run(["gdal", "info", "--summary", file], check=False, capture_output=True)
     return regex.search(str(result.stdout))
 
 
-def apply_funcs(name, file, layer, segment, snap, *args):
+def apply_funcs(name, file, layer, *args):
     conn = connect(f"dbname={DATABASE}", autocommit=True)
     for func in args:
-        func(conn, name, file, layer, segment, snap)
+        func(conn, name, file, layer)
     conn.close()
 
 
 def get_config(name):
     name = name.split("_")[0]
     if name in user:
-        segment, snap, validate = user[name].split(",")
+        segment, snap = user[name].split(",")
         segment = segment or config["segment"]
         snap = snap or config["snap"]
-        validate = validate or config["validate"]
-        return {
-            "segment": segment,
-            "snap": snap,
-            "validate": validate,
-            "verbose": config["verbose"],
-        }
+        return {"segment": segment, "snap": snap}
     return config

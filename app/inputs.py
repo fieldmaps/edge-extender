@@ -1,11 +1,9 @@
-import logging
 import subprocess
+from venv import logger
 
 from psycopg.sql import SQL, Identifier
 
-from .utils import DATABASE, config
-
-logger = logging.getLogger(__name__)
+from .utils import DATABASE
 
 query_1 = """
     DROP TABLE IF EXISTS {table_out};
@@ -13,15 +11,33 @@ query_1 = """
     SELECT
         fid,
         ST_Multi(
-            ST_ReducePrecision(geom, 0.000000001)
+            ST_CoverageClean(geom) OVER ()
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+query_2 = """
+    SELECT count(*)
+    FROM {table_in};
 """
 drop_col = """
     ALTER TABLE {table_attr}
     DROP COLUMN IF EXISTS geom;
 """
+
+
+def check_dropped_polygons(conn, name):
+    rows_org = conn.execute(
+        SQL(query_2).format(table_in=Identifier(f"{name}_attr")),
+    ).fetchone()[0]
+    rows_new = conn.execute(
+        SQL(query_2).format(table_in=Identifier(f"{name}_01")),
+    ).fetchone()[0]
+    if rows_org != rows_new:
+        logger.error(f"{rows_new} of {rows_org}: {name}")
+        raise RuntimeError(
+            f"{rows_new} of {rows_org} input polygons, remove overlapping polygons.",
+        )
 
 
 def main(conn, name, file, layer, *_):
@@ -47,7 +63,7 @@ def main(conn, name, file, layer, *_):
     conn.execute(
         SQL(query_1).format(
             table_in=Identifier(f"{name}_attr"),
-            table_out=Identifier(f"{name}_00"),
+            table_out=Identifier(f"{name}_01"),
         ),
     )
     conn.execute(
@@ -55,5 +71,4 @@ def main(conn, name, file, layer, *_):
             table_attr=Identifier(f"{name}_attr"),
         ),
     )
-    if config["verbose"].lower() in ("yes", "on", "true", "1"):
-        logger.info(name)
+    check_dropped_polygons(conn, name)

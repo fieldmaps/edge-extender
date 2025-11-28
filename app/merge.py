@@ -1,10 +1,4 @@
-import logging
-
 from psycopg.sql import SQL, Identifier
-
-from .utils import config
-
-logger = logging.getLogger(__name__)
 
 query_1 = """
     DROP TABLE IF EXISTS {table_out};
@@ -66,15 +60,23 @@ query_6 = """
     SELECT
         fid,
         ST_Multi(
-            ST_ReducePrecision(
-                ST_Union(geom)
-            , 0.000000001)
+            ST_Union(geom)
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in}
     WHERE fid IS NOT NULL
     GROUP BY fid;
 """
 query_7 = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        fid,
+        ST_Multi(
+            ST_CoverageClean(geom) OVER ()
+        )::GEOMETRY(MultiPolygon, 4326) AS geom
+    FROM {table_in};
+"""
+query_8 = """
     DROP TABLE IF EXISTS {table_out} CASCADE;
     CREATE TABLE {table_out} AS
     SELECT
@@ -94,6 +96,7 @@ drop_tmp = """
     DROP TABLE IF EXISTS {table_tmp4};
     DROP TABLE IF EXISTS {table_tmp5};
     DROP TABLE IF EXISTS {table_tmp6};
+    DROP TABLE IF EXISTS {table_tmp7};
 """
 
 
@@ -140,6 +143,12 @@ def main(conn, name, *_):
     conn.execute(
         SQL(query_7).format(
             table_in=Identifier(f"{name}_05_tmp6"),
+            table_out=Identifier(f"{name}_05_tmp7"),
+        ),
+    )
+    conn.execute(
+        SQL(query_8).format(
+            table_in=Identifier(f"{name}_05_tmp7"),
             table_out=Identifier(f"{name}_05"),
         ),
     )
@@ -151,7 +160,6 @@ def main(conn, name, *_):
             table_tmp4=Identifier(f"{name}_05_tmp4"),
             table_tmp5=Identifier(f"{name}_05_tmp5"),
             table_tmp6=Identifier(f"{name}_05_tmp6"),
+            table_tmp7=Identifier(f"{name}_05_tmp7"),
         ),
     )
-    if config["verbose"].lower() in ("yes", "on", "true", "1"):
-        logger.info(name)
