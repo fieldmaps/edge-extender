@@ -4,7 +4,7 @@ from typing import LiteralString
 from psycopg import Connection
 from psycopg.sql import SQL, Identifier, Literal
 
-query_1: LiteralString = """
+query_1: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -13,7 +13,7 @@ query_1: LiteralString = """
         ))::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
 """
-query_2a: LiteralString = """
+query_2a: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -38,7 +38,7 @@ query_2a: LiteralString = """
     CROSS JOIN {table_in2} AS b;
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_2b: LiteralString = """
+query_2b: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -63,7 +63,7 @@ query_2b: LiteralString = """
     CROSS JOIN {table_in2} AS b;
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_3: LiteralString = """
+query_3: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -73,7 +73,7 @@ query_3: LiteralString = """
     GROUP BY geom;
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_4: LiteralString = """
+query_4: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT DISTINCT ON (a.geom)
@@ -85,7 +85,7 @@ query_4: LiteralString = """
     WHERE a.count = 1;
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-drop_tmp: LiteralString = """
+drop_tmp: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
     DROP TABLE IF EXISTS {table_tmp3};

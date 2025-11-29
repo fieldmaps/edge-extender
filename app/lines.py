@@ -3,7 +3,7 @@ from typing import LiteralString
 from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-query_1: LiteralString = """
+query_1: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -14,7 +14,7 @@ query_1: LiteralString = """
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_2: LiteralString = """
+query_2: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -24,7 +24,7 @@ query_2: LiteralString = """
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_3: LiteralString = """
+query_3: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -37,7 +37,7 @@ query_3: LiteralString = """
     ON ST_Intersects(a.geom, b.geom);
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-drop_tmp: LiteralString = """
+drop_tmp: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
 """

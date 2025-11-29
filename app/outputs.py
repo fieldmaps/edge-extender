@@ -13,7 +13,7 @@ from .utils import DATABASE
 cwd = Path(__file__).parent
 outputs = cwd / "../outputs"
 
-query_1: LiteralString = """
+query_1: LiteralString = """--sql
     DROP VIEW IF EXISTS {table_out};
     CREATE VIEW {table_out} AS
     SELECT

@@ -3,7 +3,7 @@ from typing import LiteralString
 from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-drop_tmp: LiteralString = """
+drop_tmp: LiteralString = """--sql
     DROP VIEW IF EXISTS {view_06};
     DROP TABLE IF EXISTS {table_attr};
     DROP TABLE IF EXISTS {table_01};

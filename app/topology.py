@@ -6,7 +6,7 @@ from psycopg.sql import SQL, Identifier
 
 def check_overlaps(conn: Connection, name: str, table: str) -> None:
     """Check for overlaps in polygons."""
-    query = """
+    query = """--sql
         SELECT EXISTS(
             SELECT 1
             FROM {table_in} a
@@ -26,7 +26,7 @@ def check_overlaps(conn: Connection, name: str, table: str) -> None:
 
 def check_gaps(conn: Connection, name: str, table: str) -> None:
     """Check for gaps in polygons."""
-    query = """
+    query = """--sql
         SELECT ST_NumInteriorRings(ST_Union(geom))
         FROM {table_in};
     """
@@ -35,5 +35,23 @@ def check_gaps(conn: Connection, name: str, table: str) -> None:
     )[0] > 0
     if gaps:
         error = f"GAPS: {name}"
+        logger.error(error)
+        raise RuntimeError(error)
+
+
+def check_missing_rows(conn: Connection, name: str, table_1: str, table_2: str) -> None:
+    """Check for missing rows in tables."""
+    query = """--sql
+        SELECT count(*)
+        FROM {table_in};
+    """
+    rows_1 = (
+        conn.execute(SQL(query).format(table_in=Identifier(table_1))).fetchone() or [0]
+    )[0]
+    rows_2 = (
+        conn.execute(SQL(query).format(table_in=Identifier(table_2))).fetchone() or [0]
+    )[0]
+    if rows_1 != rows_2:
+        error = f"MISSING ROWS: {name}"
         logger.error(error)
         raise RuntimeError(error)

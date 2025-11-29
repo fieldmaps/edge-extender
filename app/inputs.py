@@ -7,7 +7,7 @@ from psycopg.sql import SQL, Identifier
 
 from .utils import DATABASE
 
-query_1: LiteralString = """
+query_1: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -21,7 +21,7 @@ query_1: LiteralString = """
         ))::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
 """
-query_2: LiteralString = """
+query_2: LiteralString = """--sql
     ALTER TABLE {table_attr}
     DROP COLUMN IF EXISTS geom;
 """
