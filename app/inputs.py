@@ -1,5 +1,5 @@
-import subprocess
 from pathlib import Path
+from subprocess import CalledProcessError, run
 from typing import LiteralString
 
 from psycopg import Connection
@@ -10,7 +10,15 @@ from .utils import DATABASE
 query_1: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
-    SELECT *
+    SELECT
+        fid,
+        ST_Multi(ST_MakeValid(
+            ST_CoverageClean(
+                ST_Transform(
+                    ST_Force2D(geom), 4326
+                )
+            ) OVER ()
+        ))::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
 """
 query_2: LiteralString = """
@@ -19,31 +27,37 @@ query_2: LiteralString = """
 """
 
 
-def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
-    """Import geodata into PostGIS with topology cleaning."""
-    subprocess.run(
+def gdal_import(name: str, file: Path, layer: str, args: list[str]) -> None:
+    """Import geodata into PostGIS."""
+    run(
         [
-            *["gdal", "vector", "pipeline"],
-            *["read", file, f"--input-layer={layer}", "!"],
-            *["reproject", "--dst-crs=EPSG:4326", "!"],
-            *["clean-coverage", "!"],
-            *["make-valid", "!"],
-            *["set-geom-type", "--multi", "--dim=XY", "!"],
-            *["write", f"PG:dbname={DATABASE}"],
-            "--quiet",
+            *["gdal", "vector", *args],
+            *[file, f"PG:dbname={DATABASE}"],
+            "--multi",
             "--overwrite-layer",
             "--output-format=PostgreSQL",
-            f"--output-layer={name}_01",
+            f"--input-layer={layer}",
+            f"--output-layer={name}_attr",
             "--layer-creation-option=FID=fid",
             "--layer-creation-option=GEOMETRY_NAME=geom",
+            "--layer-creation-option=GEOM_TYPE=geometry",
             "--layer-creation-option=LAUNDER=NO",
         ],
-        check=False,
+        check=True,
+        capture_output=True,
     )
+
+
+def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
+    """Import geodata into PostGIS with topology cleaning."""
+    try:
+        gdal_import(name, file, layer, ["set-geom-type", "--quiet"])
+    except CalledProcessError:
+        gdal_import(name, file, layer, ["geom", "set-type"])
     conn.execute(
         SQL(query_1).format(
-            table_in=Identifier(f"{name}_01"),
-            table_out=Identifier(f"{name}_attr"),
+            table_in=Identifier(f"{name}_attr"),
+            table_out=Identifier(f"{name}_01"),
         ),
     )
     conn.execute(

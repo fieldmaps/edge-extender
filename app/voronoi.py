@@ -20,12 +20,12 @@ query_1: LiteralString = """
 query_2: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
-    SELECT DISTINCT ON (geom)
+    SELECT DISTINCT ON (a.geom)
         a.fid,
         b.geom
     FROM {table_in1} AS a
     JOIN {table_in2} AS b
-    ON ST_DWithin(a.geom, b.geom, 0);
+    ON ST_Within(a.geom, b.geom);
 """
 query_3: LiteralString = """
     DROP TABLE IF EXISTS {table_out};

@@ -1,5 +1,5 @@
 from pathlib import Path
-from subprocess import DEVNULL, run
+from subprocess import run
 from time import sleep
 from typing import LiteralString
 from venv import logger
@@ -52,7 +52,6 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
         *["gdal", "vector", "convert"],
         *[f"PG:dbname={DATABASE}", output_path],
         "--overwrite",
-        "--quiet",
         f"--input-layer={name}_06",
         f"--output-layer={layer}",
         *shp,
@@ -60,7 +59,7 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
     ]
     success = False
     for retry in range(5):
-        result = run(args, check=False, stderr=DEVNULL)
+        result = run(args, check=False, capture_output=True)
         if result.returncode == 0:
             success = True
             break

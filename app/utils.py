@@ -16,6 +16,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logging.getLogger("postgres").setLevel(logging.WARNING)
 
 environ["OGR_GEOJSON_MAX_OBJ_SIZE"] = "0"
 
@@ -49,7 +50,7 @@ def get_gpkg_layers(file: Path) -> list[str]:
 def is_polygon(file: Path) -> bool:
     """Check if file is a polygon."""
     regex = re.compile(r"\((Multi Polygon|Polygon)\)")
-    result = run(["gdal", "info", "--summary", file], check=False, capture_output=True)
+    result = run(["ogrinfo", file], check=False, capture_output=True)
     return bool(regex.search(str(result.stdout)))
 
 

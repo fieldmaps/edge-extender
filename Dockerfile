@@ -1,26 +1,31 @@
-FROM ubuntu:26.04
+FROM alpine:edge
 
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /srv
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-  gdal-bin postgresql-postgis \
-  python3-pip python3-venv \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-RUN service postgresql start \
-  && runuser -l postgres -c 'createuser -s root' \
-  && createdb app \
-  && psql -d app -c "CREATE EXTENSION postgis;"
+RUN --mount=type=bind,source=requirements.txt,target=requirements.txt \
+    apk add --no-cache \
+        gdal-driver-parquet \
+        gdal-driver-pg \
+        gdal-tools \
+        postgis \
+        postgresql18-client \
+        python3 && \
+    python -m venv /opt/venv && \
+    pip install --no-cache-dir -r requirements.txt && \
+    mkdir -p /run/postgresql && \
+    chown -R postgres:postgres /run/postgresql
 
-WORKDIR /usr/src/app
+USER postgres
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN initdb -D /var/lib/postgresql/data && \
+    pg_ctl start -D /var/lib/postgresql/data && \
+    createdb app && \
+    psql -d app -c "CREATE EXTENSION postgis;"
 
 COPY app ./app
 
-CMD service postgresql start && python -m app
+CMD pg_ctl start -D /var/lib/postgresql/data > /dev/null 2>&1 && python -m app

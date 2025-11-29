@@ -10,7 +10,7 @@ from .utils import config, get_config, truthy
 
 
 def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:  # noqa: C901
-    """Try out multiple parameters.
+    """Try to generate voronoi polygons with multiple parameters.
 
     First try running with default settings, segmentation and no snapping.
     If that fails, then try doubling the segmentation distance to avoid memory errors.
@@ -21,22 +21,23 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
     If all those snap values fail, releat for segment values like so:
     ...1, ...2, ...3, 4, 5, 6, 7, 8, 9
     """
+    base = 1
     segment = get_config(name)["segment"]
-    snap = get_config(name)["snap"]
-    double = 2
-    for n in [1, double]:
+    for n in [base, base * 2]:
         segment_0 = str(Decimal(segment) * n)
         try:
             points.main(conn, name, file, layer, segment_0, "")
             voronoi.main(conn, name)
-            if n == double:
+            if n != base:
                 logger.info(f"success: {name} segment={segment_0}")
         except (RuntimeError, InternalError_) as e:
             if config["verbose"].lower() in truthy:
                 logger.error(f"fail: {name} segment={segment_0}, {e}")
         else:
             return
+    error = f"{name} did not succeed generating voronoi polygons"
     if config["retry"].lower() in truthy:
+        snap = get_config(name)["snap"]
         for z in range(9):
             for y in [1, 10]:
                 for x in range(9):
@@ -55,9 +56,9 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
                             )
                     else:
                         return
-        error = (
-            f"{name} did not succeed from segment={segment}-{segment_1} with "
-            f"snap={snap}-{snap_1}"
-        )
-        logger.error(error)
-        raise RuntimeError(error)
+                    error = (
+                        f"{name} did not succeed generating voronoi polygons "
+                        f"with segment={segment}-{segment_1} and snap={snap}-{snap_1}"
+                    )
+    logger.error(error)
+    raise RuntimeError(error)
