@@ -36,6 +36,7 @@ query_3 = """
         ))::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in}
     GROUP BY fid;
+    CREATE INDEX ON {table_out} USING GIST(geom);
 """
 query_4 = """
     DROP TABLE IF EXISTS {table_out};
@@ -69,13 +70,13 @@ drop_tmp = """
 def check_topology(conn, name):
     has_overlaps = conn.execute(
         SQL(query_5).format(
-            table_in=Identifier(f"{name}_04"),
+            table_in=Identifier(f"{name}_04_tmp3"),
         ),
     ).fetchone()[0]
     has_gaps = (
         conn.execute(
             SQL(query_6).format(
-                table_in=Identifier(f"{name}_04"),
+                table_in=Identifier(f"{name}_04_tmp3"),
             ),
         ).fetchone()[0]
         > 0
@@ -112,8 +113,9 @@ def main(conn, name, *_):
             table_out=Identifier(f"{name}_04_tmp3"),
         ),
     )
+    check_topology(conn, name)
     conn.execute(
-        SQL(query_3).format(
+        SQL(query_4).format(
             table_in=Identifier(f"{name}_04_tmp3"),
             table_out=Identifier(f"{name}_04"),
         ),
@@ -125,4 +127,3 @@ def main(conn, name, *_):
             table_tmp3=Identifier(f"{name}_04_tmp3"),
         ),
     )
-    check_topology(conn, name)

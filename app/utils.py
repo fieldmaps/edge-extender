@@ -3,6 +3,7 @@ import re
 import sqlite3
 from configparser import ConfigParser
 from multiprocessing import cpu_count
+from os import environ
 from pathlib import Path
 from subprocess import run
 
@@ -15,6 +16,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+environ["OGR_GEOJSON_MAX_OBJ_SIZE"] = "0"
 
 cwd = Path(__file__).parent
 cfg = ConfigParser()
