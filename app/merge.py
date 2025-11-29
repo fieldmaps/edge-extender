@@ -7,9 +7,9 @@ query_1: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
-        (ST_Dump(
+        ST_Multi(
             ST_Union(geom)
-        )).geom::GEOMETRY(Polygon, 4326) AS geom
+        )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """

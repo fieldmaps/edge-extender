@@ -6,21 +6,17 @@ This tool takes polygons as an input and applies the voronoi algorithm along edg
 
 ## Supported Formats
 
-Currently, supported inputs are polygons in GeoPackage (.gpkg), Shapefile (.shp), or GeoJSON (.geojson) formats. For GeoPackages, all polygon layers inside are processed. Outputs retain their original format, projected to EPSG:4326 (WGS84).
+Currently, supported inputs are polygons in GeoParquet (.parquet). GeoPackage (.gpkg), Shapefile (.shp), GeoJSON (.geojson) formats. For GeoPackages, all polygon layers inside are processed. Outputs retain their original format, projected to EPSG:4326 (WGS84).
 
 ## Usage
 
-The only requirements are to download [this repository](https://github.com/fieldmaps/edge-extender/archive/refs/heads/main.zip) and install [Docker Desktop](https://www.docker.com/products/docker-desktop). Add files to the included `inputs` directory, where they'll be processed to the `outputs` directory. Make sure Docker Desktop is running, and from the command line of the repository's root directory, run the following. Note that `docker compose build` is only required for the first run, or if upgrading from a previous version.
+The only requirements are to download [this repository](https://github.com/fieldmaps/edge-extender/archive/refs/heads/main.zip) and install [Docker Desktop](https://www.docker.com/products/docker-desktop). Add files to the included `inputs` directory, where they'll be processed to the `outputs` directory. Make sure Docker Desktop is running, and from the command line of the repository's root directory, run the following:
 
 ```sh
 docker compose up --build
 ```
 
 Polygons the size of small countries typically take a few minutes, with larger ones taking upwards of 30 min using default settings. Processing time is proportional to total perimeter length rather than area.
-
-## Configuration
-
-There are three user configurable variables defined in `config.ini`. These don't need to be changed to get started, they're configured to be immediately usable. The first option is a `segment` value, set to `0.0001` (approx. 10m) by default. This is used as the distance points are set along lines for the voronoi algorithm. The value was chosen to be similar to satellite imagery resolution, which is sometimes used for automatically digitizing shorelines. For planet level geometry, a smaller precision (0.001) helps the algorithm run faster and use less memory. For smaller areas, a higher precision (0.00001) ensures the allocation is as accurate as possible, but takes longer and may fail if there is insufficient system memory. The second variable is for `snap`, which fixes the points generated along the edges to a grid to account for internal errors caused by spurious precision in geometries. This is set to a default of `0.000001` (approx. 0.1m), providing a good trade-off between speed and accuracy for most inputs. Increasing this value to something like `0.0001` will aggregate points used for voronoi generation together, and may be required for inputs with hundreds of megabytes of coastline data. Note that snapping only occurs for points along edges used to generate voronoi polygons. Internal polygon boundaries are unaffected by this and maintain original precision. For country sized boundaries containing verticies every few meters, reducing snap can simplify the point set used for voronoi generation to stay within the 1GB limit of PostGIS geometry operations.
 
 ## How it Works
 
@@ -90,16 +86,3 @@ The use case above demonstrates how useful it is to have a topologically clean g
 |                                   Original ADM0                                    |                            Coastline replaced with OSM                             |
 | :--------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
 | ![](https://raw.githubusercontent.com/fieldmaps/edge-extender/main/img/wld_03.png) | ![](https://raw.githubusercontent.com/fieldmaps/edge-extender/main/img/wld_04.png) |
-
-## Potential Issues
-
-In the PostGIS implementation of voronoi polygons, inputs with sliver gaps between polygons or a regular grid from rasters converted into vectors can sometimes result in outputs with invalid geometry, giving one of the following errors:
-
-- GEOSVoronoiDiagram: TopologyException: Input geom 1 is invalid: Self-intersection at
-- GEOSVoronoiDiagram: IllegalArgumentException: Invalid number of points in LinearRing found 2 - must be 0 or >= 4
-
-If this does occur, try increasing the default snap value from `0.000001` to `0.000002` or `0.000003`, which solves the issue in most situations. If this still does not resolve the issue, try increasing the segment value instead from `0.0001` to `0.0002` or `0.0003`. Keep increasing either value until the process succeeds.
-
-|                          Possible Error (segment=0.0001)                           |                             Succeeds (segment=0.0003)                              |
-| :--------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
-| ![](https://raw.githubusercontent.com/fieldmaps/edge-extender/main/img/err_01.png) | ![](https://raw.githubusercontent.com/fieldmaps/edge-extender/main/img/err_02.png) |
