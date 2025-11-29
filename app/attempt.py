@@ -9,30 +9,34 @@ from . import points, voronoi
 from .utils import config, get_config, truthy
 
 
-def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:  # noqa: C901
+def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:  # noqa: C901, PLR0912
     """Try to generate voronoi polygons with multiple parameters.
 
-    First try running with default settings, segmentation and no snapping.
-    If that fails, then try doubling the segmentation distance to avoid memory errors.
+    First try running with default segmentation distance and no snapping.
+    If a memory error occurs, repeat with incrementally larger segmentation values:
+    ...1, ...2, ...3, 4, 5, 6, 7, 8, 9
 
     Finally, loop through sequential segment and snap values to find the best threshold.
-    Starting with the default segment, start incrementing snap values like so:
+    Starting with the default segment, start incrementing snap values:
     ...01, ...02, ...03, 04, 05, 06, 07, 08, 09, 10, 20, 30, 40, 50, 60, 70, 80, 90
-    If all those snap values fail, releat for segment values like so:
+    If all those snap values fail, repeat for segment values:
     ...1, ...2, ...3, 4, 5, 6, 7, 8, 9
+    For every segment value, it tries all 18 snap values for a total of 162 attempts.
     """
-    base = 1
+    mem_err = "invalid memory alloc request size"
     segment = get_config(name)["segment"]
-    for n in [base, base * 2]:
-        segment_0 = str(Decimal(segment) * n)
+    for n in range(9):
+        segment_0 = str(Decimal(segment) * (n + 1))
         try:
             points.main(conn, name, file, layer, segment_0, "")
             voronoi.main(conn, name)
-            if n != base:
+            if n > 0:
                 logger.info(f"success: {name} segment={segment_0}")
         except (RuntimeError, InternalError_) as e:
             if config["verbose"].lower() in truthy:
                 logger.error(f"fail: {name} segment={segment_0}, {e}")
+            if mem_err not in str(e):
+                break
         else:
             return
     error = f"{name} did not succeed generating voronoi polygons"

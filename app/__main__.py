@@ -53,3 +53,4 @@ if __name__ == "__main__":
         snap_txt = f", snap={snap}" if snap != "" else ""
         logger.info(f"name={file_name}{segment_txt}{snap_txt}")
     main()
+    logger.info("done")

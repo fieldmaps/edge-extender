@@ -16,7 +16,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logging.getLogger("postgres").setLevel(logging.WARNING)
 
 environ["OGR_GEOJSON_MAX_OBJ_SIZE"] = "0"
 
