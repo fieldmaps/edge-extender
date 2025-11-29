@@ -28,8 +28,11 @@ config["processes"] = str(
 )
 user = cfg["user"] if cfg.has_section("user") else {}
 
+truthy = ("yes", "on", "true", "1")
 
-def get_gpkg_layers(file):
+
+def get_gpkg_layers(file: Path) -> list[str]:
+    """Get list of layers in GeoPackage."""
     query = """
         SELECT table_name, geometry_type_name
         FROM gpkg_geometry_columns
@@ -43,24 +46,27 @@ def get_gpkg_layers(file):
     return layers
 
 
-def is_polygon(file):
+def is_polygon(file: Path) -> bool:
+    """Check if file is a polygon."""
     regex = re.compile(r"\((Multi Polygon|Polygon)\)")
     result = run(["gdal", "info", "--summary", file], check=False, capture_output=True)
-    return regex.search(str(result.stdout))
+    return bool(regex.search(str(result.stdout)))
 
 
-def apply_funcs(name, file, layer, *args):
+def apply_funcs(name: str, file: Path, layer: str, *args: list) -> None:
+    """Apply functions to database."""
     conn = connect(f"dbname={DATABASE}", autocommit=True)
     for func in args:
         func(conn, name, file, layer)
     conn.close()
 
 
-def get_config(name):
+def get_config(name: str) -> dict[str, str]:
+    """Get configuration settings for a file."""
     name = name.split("_")[0]
     if name in user:
         segment, snap = user[name].split(",")
         segment = segment or config["segment"]
         snap = snap or config["snap"]
         return {"segment": segment, "snap": snap}
-    return config
+    return dict(config)

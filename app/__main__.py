@@ -11,7 +11,8 @@ output_dir = cwd / "../outputs"
 funcs = [inputs.main, lines.main, attempt.main, merge.main, outputs.main, cleanup.main]
 
 
-def main():
+def main() -> None:
+    """Run main function."""
     results = []
     pool = Pool(int(config["processes"]))
     for file in sorted(input_dir.iterdir()):

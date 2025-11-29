@@ -1,6 +1,9 @@
+from typing import LiteralString
+
+from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-query_1 = """
+query_1: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -11,7 +14,7 @@ query_1 = """
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_2 = """
+query_2: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -21,7 +24,7 @@ query_2 = """
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_3 = """
+query_3: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -34,13 +37,14 @@ query_3 = """
     ON ST_Intersects(a.geom, b.geom);
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-drop_tmp = """
+drop_tmp: LiteralString = """
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
 """
 
 
-def main(conn, name, *_):
+def main(conn: Connection, name: str, *_: list) -> None:
+    """Create boundary lines from polygons."""
     conn.execute(
         SQL(query_1).format(
             table_in=Identifier(f"{name}_01"),

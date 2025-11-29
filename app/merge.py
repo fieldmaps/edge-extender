@@ -1,6 +1,9 @@
+from typing import LiteralString
+
+from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-query_1 = """
+query_1: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -15,7 +18,7 @@ query_1 = """
         )::GEOMETRY(MultiLineString, 4326) AS geom
     FROM {table_in2};
 """
-query_2 = """
+query_2: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -24,7 +27,7 @@ query_2 = """
         )::GEOMETRY(MultiLineString, 4326) AS geom
     FROM {table_in};
 """
-query_3 = """
+query_3: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -34,7 +37,7 @@ query_3 = """
         )).geom::GEOMETRY(Polygon, 4326) AS geom
     FROM {table_in};
 """
-query_4 = """
+query_4: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT DISTINCT ON (a.geom)
@@ -44,7 +47,7 @@ query_4 = """
     LEFT JOIN {table_in2} AS b
     ON ST_DWithin(ST_PointOnSurface(a.geom), b.geom, 0);
 """
-query_5 = """
+query_5: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT DISTINCT ON (a.geom)
@@ -54,7 +57,7 @@ query_5 = """
     LEFT JOIN {table_in2} AS b
     ON ST_DWithin(ST_PointOnSurface(a.geom), b.geom, 0);
 """
-query_6 = """
+query_6: LiteralString = """
     DROP TABLE IF EXISTS {table_out} CASCADE;
     CREATE TABLE {table_out} AS
     SELECT
@@ -66,17 +69,7 @@ query_6 = """
     WHERE fid IS NOT NULL
     GROUP BY fid;
 """
-query_7 = """
-    DROP TABLE IF EXISTS {table_out};
-    CREATE TABLE {table_out} AS
-    SELECT
-        fid,
-        ST_Multi(
-            ST_CoverageClean(geom) OVER ()
-        )::GEOMETRY(MultiPolygon, 4326) AS geom
-    FROM {table_in};
-"""
-query_8 = """
+query_7: LiteralString = """
     DROP TABLE IF EXISTS {table_out} CASCADE;
     CREATE TABLE {table_out} AS
     SELECT
@@ -89,7 +82,18 @@ query_8 = """
         )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in} AS a;
 """
-drop_tmp = """
+query_8: LiteralString = """
+    DROP TABLE IF EXISTS {table_out};
+    CREATE TABLE {table_out} AS
+    SELECT
+        fid,
+        ST_Multi(ST_MakeValid(
+            ST_CoverageClean(geom) OVER ()
+        ))::GEOMETRY(MultiPolygon, 4326) AS geom
+    FROM {table_in};
+    CREATE INDEX ON {table_out} USING GIST(geom);
+"""
+drop_tmp: LiteralString = """
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
     DROP TABLE IF EXISTS {table_tmp3};
@@ -100,7 +104,8 @@ drop_tmp = """
 """
 
 
-def main(conn, name, *_):
+def main(conn: Connection, name: str, *_: list) -> None:
+    """Merge original geometry with extended polygons."""
     conn.execute(
         SQL(query_1).format(
             table_in1=Identifier(f"{name}_01"),

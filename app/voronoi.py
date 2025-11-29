@@ -1,10 +1,11 @@
-from venv import logger
+from typing import LiteralString
 
+from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-from .utils import config
+from .topology import check_gaps, check_overlaps
 
-query_1 = """
+query_1: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
@@ -16,7 +17,7 @@ query_1 = """
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_2 = """
+query_2: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT DISTINCT ON (geom)
@@ -26,28 +27,29 @@ query_2 = """
     JOIN {table_in2} AS b
     ON ST_DWithin(a.geom, b.geom, 0);
 """
-query_3 = """
+query_3: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
         fid,
-        ST_MakePolygon(ST_ExteriorRing(
-            (ST_Dump(ST_Union(geom))).geom
-        ))::GEOMETRY(Polygon, 4326) AS geom
+        ST_Multi(
+            ST_Union(geom)
+        )::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in}
     GROUP BY fid;
-    CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_4 = """
+query_4: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT
         fid,
-        ST_CoverageClean(geom) OVER ()::GEOMETRY(Polygon, 4326) AS geom
+        ST_Multi(ST_MakeValid(
+            ST_CoverageClean(geom) OVER ()
+        ))::GEOMETRY(MultiPolygon, 4326) AS geom
     FROM {table_in};
     CREATE INDEX ON {table_out} USING GIST(geom);
 """
-query_5 = """
+query_5: LiteralString = """
     SELECT EXISTS(
         SELECT 1
         FROM {table_in} a
@@ -56,44 +58,19 @@ query_5 = """
         WHERE a.fid != b.fid
     );
 """
-query_6 = """
+query_6: LiteralString = """
     SELECT ST_NumInteriorRings(ST_Union(geom))
     FROM {table_in};
 """
-drop_tmp = """
+drop_tmp: LiteralString = """
     DROP TABLE IF EXISTS {table_tmp1};
     DROP TABLE IF EXISTS {table_tmp2};
     DROP TABLE IF EXISTS {table_tmp3};
 """
 
 
-def check_topology(conn, name):
-    has_overlaps = conn.execute(
-        SQL(query_5).format(
-            table_in=Identifier(f"{name}_04_tmp3"),
-        ),
-    ).fetchone()[0]
-    has_gaps = (
-        conn.execute(
-            SQL(query_6).format(
-                table_in=Identifier(f"{name}_04_tmp3"),
-            ),
-        ).fetchone()[0]
-        > 0
-    )
-    if has_overlaps or has_gaps:
-        overlaps_txt = "OVERLAPS" if has_overlaps else ""
-        and_txt = " & " if has_gaps and has_overlaps else ""
-        gaps_txt = "GAPS" if has_gaps else ""
-        if config["retry"].lower() not in ("yes", "on", "true", "1"):
-            logger.error(f"{overlaps_txt}{and_txt}{gaps_txt}: {name}")
-        raise RuntimeError(
-            f"{overlaps_txt}{and_txt}{gaps_txt} in voronoi polygons, "
-            "try adjusting segment and/or snap values.",
-        )
-
-
-def main(conn, name, *_):
+def main(conn: Connection, name: str, *_: list) -> None:
+    """Create Voronoi polygons from points."""
     conn.execute(
         SQL(query_1).format(
             table_in=Identifier(f"{name}_03"),
@@ -113,13 +90,14 @@ def main(conn, name, *_):
             table_out=Identifier(f"{name}_04_tmp3"),
         ),
     )
-    check_topology(conn, name)
+    check_overlaps(conn, name, f"{name}_04_tmp3")
     conn.execute(
         SQL(query_4).format(
             table_in=Identifier(f"{name}_04_tmp3"),
             table_out=Identifier(f"{name}_04"),
         ),
     )
+    check_gaps(conn, name, f"{name}_04")
     conn.execute(
         SQL(drop_tmp).format(
             table_tmp1=Identifier(f"{name}_04_tmp1"),

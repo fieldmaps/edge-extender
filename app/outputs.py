@@ -1,16 +1,19 @@
-import subprocess
 from pathlib import Path
+from subprocess import DEVNULL, run
 from time import sleep
+from typing import LiteralString
 from venv import logger
 
+from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
+from .topology import check_gaps, check_overlaps
 from .utils import DATABASE
 
 cwd = Path(__file__).parent
 outputs = cwd / "../outputs"
 
-query_1 = """
+query_1: LiteralString = """
     DROP VIEW IF EXISTS {table_out};
     CREATE VIEW {table_out} AS
     SELECT
@@ -22,8 +25,10 @@ query_1 = """
 """
 
 
-def main(conn, name, file, layer, *_):
-    outputs.mkdir(exist_ok=True, parents=True)
+def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
+    """Output results to file."""
+    check_overlaps(conn, name, f"{name}_05")
+    check_gaps(conn, name, f"{name}_05")
     conn.execute(
         SQL(query_1).format(
             table_in1=Identifier(f"{name}_05"),
@@ -41,28 +46,26 @@ def main(conn, name, file, layer, *_):
         if file.suffix == ".parquet"
         else []
     )
+    outputs.mkdir(exist_ok=True, parents=True)
     output_path = outputs / file.name
-    args = (
-        [
-            *["gdal", "vector", "make-valid"],
-            *[f"PG:dbname={DATABASE}", output_path],
-            "--overwrite",
-            "--quiet",
-            f"--input-layer={name}_06",
-            f"--output-layer={layer}",
-        ]
-        + shp
-        + parquet
-    )
-    if file.suffix == ".parquet":
-        output_path.unlink(missing_ok=True)
+    args = [
+        *["gdal", "vector", "convert"],
+        *[f"PG:dbname={DATABASE}", output_path],
+        "--overwrite",
+        "--quiet",
+        f"--input-layer={name}_06",
+        f"--output-layer={layer}",
+        *shp,
+        *parquet,
+    ]
     success = False
     for retry in range(5):
-        result = subprocess.run(args, check=False, stderr=subprocess.DEVNULL)
+        result = run(args, check=False, stderr=DEVNULL)
         if result.returncode == 0:
             success = True
             break
         sleep(retry**2)
     if not success:
         logger.error(f"output fail: {name}")
-        raise RuntimeError(f"could not write to output {name}")
+        error = f"could not write to output {name}"
+        raise RuntimeError(error)

@@ -1,30 +1,34 @@
 import subprocess
+from pathlib import Path
+from typing import LiteralString
 
+from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
 from .utils import DATABASE
 
-query_1 = """
+query_1: LiteralString = """
     DROP TABLE IF EXISTS {table_out};
     CREATE TABLE {table_out} AS
     SELECT *
     FROM {table_in};
 """
-query_2 = """
+query_2: LiteralString = """
     ALTER TABLE {table_attr}
     DROP COLUMN IF EXISTS geom;
 """
 
 
-def main(conn, name, file, layer, *_):
+def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
+    """Import geodata into PostGIS with topology cleaning."""
     subprocess.run(
         [
             *["gdal", "vector", "pipeline"],
             *["read", file, f"--input-layer={layer}", "!"],
+            *["reproject", "--dst-crs=EPSG:4326", "!"],
             *["clean-coverage", "!"],
             *["make-valid", "!"],
             *["set-geom-type", "--multi", "--dim=XY", "!"],
-            *["reproject", "--dst-crs=EPSG:4326", "!"],
             *["write", f"PG:dbname={DATABASE}"],
             "--quiet",
             "--overwrite-layer",

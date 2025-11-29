@@ -1,6 +1,9 @@
+from typing import LiteralString
+
+from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-drop_tmp = """
+drop_tmp: LiteralString = """
     DROP VIEW IF EXISTS {view_06};
     DROP TABLE IF EXISTS {table_attr};
     DROP TABLE IF EXISTS {table_01};
@@ -11,7 +14,8 @@ drop_tmp = """
 """
 
 
-def main(conn, name, *_):
+def main(conn: Connection, name: str, *_: list) -> None:
+    """Drop temporary tables."""
     conn.execute(
         SQL(drop_tmp).format(
             table_attr=Identifier(f"{name}_attr"),
