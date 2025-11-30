@@ -10,11 +10,36 @@ Currently, supported inputs are polygons in GeoParquet (.parquet). GeoPackage (.
 
 ## Usage
 
-The only requirements are to download [this repository](https://github.com/fieldmaps/edge-extender/archive/refs/heads/main.zip) and install [Docker Desktop](https://www.docker.com/products/docker-desktop). Add files to the included `inputs` directory, where they'll be processed to the `outputs` directory. Make sure Docker Desktop is running, and from the command line of the repository's root directory, run the following:
+The only requirements are to install [Docker Desktop](https://www.docker.com/products/docker-desktop). Pull in the image with the following:
 
 ```sh
-docker compose up --build
+docker pull ghcr.io/fieldmaps/edge-extender
 ```
+
+To run against a single file:
+
+```sh
+docker run -v .:/srv ghcr.io/fieldmaps/edge-extender --input-file=example.geojson --output-file=example.geojson
+```
+
+To process an entire directory of files:
+
+```sh
+docker run -v .:/srv ghcr.io/fieldmaps/edge-extender --input-dir=inputs --output-dir=outputs
+```
+
+The following options are available:
+
+| Name            | Description                                                                 |
+| --------------- | --------------------------------------------------------------------------- |
+| `--input-dir`   | input directory (for multiple files)                                        |
+| `--input-file`  | input file (for single files)                                               |
+| `--output-dir`  | output directory (for multiple files)                                       |
+| `--output-file` | output file (for single files)                                              |
+| `--distance`    | decimal degrees between points on a line (default: `0.0001`)                |
+| `--processes`   | how many processes to run in parallel (default: `1` \* number of cpu cores) |
+| `--overwrite`   | whether to overwrite existing files (default: `no`)                         |
+| `--verbose`     | display all success and error messages (default: `no`)                      |
 
 Polygons the size of small countries typically take a few minutes, with larger ones taking upwards of 30 min using default settings. Processing time is proportional to total perimeter length rather than area.
 
@@ -86,3 +111,7 @@ The use case above demonstrates how useful it is to have a topologically clean g
 |                                   Original ADM0                                    |                            Coastline replaced with OSM                             |
 | :--------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
 | ![](https://raw.githubusercontent.com/fieldmaps/edge-extender/main/img/wld_03.png) | ![](https://raw.githubusercontent.com/fieldmaps/edge-extender/main/img/wld_04.png) |
+
+```
+
+```

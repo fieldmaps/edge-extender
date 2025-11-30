@@ -29,6 +29,4 @@ RUN initdb -D /var/lib/postgresql/data && \
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY app ./app
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-
-CMD ["python", "-m", "app"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh", "python", "-m", "app"]

@@ -29,14 +29,26 @@ VERBOSE = getenv("VERBOSE", "NO")
 
 parser = ArgumentParser(description="Extend geometry edges.")
 parser.add_argument("--dbname", help="run in a different local database")
-parser.add_argument("--distance", help="decimal degrees between points on a line")
-parser.add_argument("--input-dir", help="input directory for files")
-parser.add_argument("--input-file", help="input file")
-parser.add_argument("--output-dir", help="output directory for files")
-parser.add_argument("--output-file", help="output file")
-parser.add_argument("--overwrite", help="whether to overwrite existing files")
-parser.add_argument("--processes", help="how many processes to use in parallel")
-parser.add_argument("--verbose", help="display all success and error messages")
+parser.add_argument("--input-dir", help="input directory (for multiple files)")
+parser.add_argument("--input-file", help="input file (for single files)")
+parser.add_argument("--output-dir", help="output directory (for multiple files)")
+parser.add_argument("--output-file", help="output file (for single files)")
+parser.add_argument(
+    "--distance",
+    help="decimal degrees between points on a line (default: 0.0001)",
+)
+parser.add_argument(
+    "--processes",
+    help="how many processes to run in parallel (default: 1 * number of cpu cores)",
+)
+parser.add_argument(
+    "--overwrite",
+    help="whether to overwrite existing files (default: no)",
+)
+parser.add_argument(
+    "--verbose",
+    help="display all success and error messages (default: no)",
+)
 
 args = parser.parse_args()
 
