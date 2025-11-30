@@ -41,7 +41,7 @@ The following options are available:
 | `--overwrite`   | whether to overwrite existing files (default: `no`)                        |
 | `--quiet`       | Supress info and error messages (default: `no`)                            |
 
-Polygons the size of small countries typically take a few seconds, with larger ones at full detail finish in under 30 min. Processing time is proportional to total perimeter length rather than area. The default distance of `0.0002` is sufficient to process most country boundaires. Use a larger value for the entire world, or a smaller value for neighbourhood boundaries.
+Polygons the size of small countries typically take a few seconds, with larger ones at full detail finish in about 10 min. Processing time is proportional to total perimeter length rather than area. The default distance of `0.0002` is sufficient to process most country boundaires. Use a larger value for the entire world, or a smaller value for neighbourhood boundaries.
 
 ## How it Works
 
