@@ -36,12 +36,12 @@ The following options are available:
 | `--input-file`  | input file (for single files)                                              |
 | `--output-dir`  | output directory (for multiple files)                                      |
 | `--output-file` | output file (for single files)                                             |
-| `--distance`    | decimal degrees between points on a line (default: `0.0001`)               |
+| `--distance`    | decimal degrees between points on a line (default: `0.0002`)               |
 | `--num-threads` | number of layers to run at once. (default: `1` \* number of CPUs detected) |
 | `--overwrite`   | whether to overwrite existing files (default: `no`)                        |
 | `--quiet`       | Supress info and error messages (default: `no`)                            |
 
-Polygons the size of small countries typically take a few minutes, with larger ones taking upwards of 30 min using default settings. Processing time is proportional to total perimeter length rather than area.
+Polygons the size of small countries typically take a few minutes, with larger ones taking upwards of 30 min using default settings. Processing time is proportional to total perimeter length rather than area. The default distance of `0.0002` is sufficient to process most country boundaires. Use a larger value for the entire world, or a smaller value for neighbourhood boundaries.
 
 ## How it Works
 
