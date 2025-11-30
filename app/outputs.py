@@ -7,7 +7,7 @@ from venv import logger
 from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-from .config import dbname, output_dir, output_file, verbose
+from .config import dbname, output_dir, output_file, quiet
 from .topology import check_gaps, check_overlaps
 
 query_1: LiteralString = """--sql
@@ -62,7 +62,7 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
             break
         sleep(retry**2)
     if not success:
-        if verbose:
+        if not quiet:
             logger.error(f"output fail: {name}")
         error = f"could not write to output {name}"
         raise RuntimeError(error)

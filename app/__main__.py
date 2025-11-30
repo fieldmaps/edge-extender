@@ -6,10 +6,10 @@ from .config import (
     distance,
     input_dir,
     input_file,
+    num_threads,
     output_dir,
     overwrite,
-    processes,
-    verbose,
+    quiet,
 )
 from .utils import apply_funcs, get_gpkg_layers, is_polygon
 
@@ -18,10 +18,10 @@ funcs = [inputs.main, lines.main, attempt.main, merge.main, outputs.main, cleanu
 
 def main() -> None:
     """Run main function."""
-    if verbose:
-        logger.info(f"distance={distance} processes={processes}")
+    if not quiet:
+        logger.info(f"--distance={distance} --num-threads={num_threads}")
     results = []
-    pool = Pool(processes)
+    pool = Pool(num_threads)
     files = [input_file] if input_file else sorted(input_dir.iterdir())
     for file in files:
         if not overwrite and (output_dir / file.name).exists():
@@ -45,7 +45,7 @@ def main() -> None:
     pool.join()
     for result in results:
         result.get()
-    if verbose:
+    if not quiet:
         logger.info("done")
 
 

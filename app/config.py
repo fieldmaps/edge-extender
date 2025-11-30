@@ -20,34 +20,34 @@ environ["OGR_GEOJSON_MAX_OBJ_SIZE"] = "0"
 cwd = Path(__file__).parent
 
 DBNAME = getenv("DBNAME", "app")
-DISTANCE = getenv("DISTANCE", "0.0001")
+DISTANCE = getenv("DISTANCE", "0.0002")
 INPUT_DIR = getenv("INPUT_DIR", str(cwd / "../inputs"))
 OUTPUT_DIR = getenv("OUTPUT_DIR", str(cwd / "../outputs"))
 OVERWRITE = getenv("OVERWRITE", "NO")
-PROCESSES = getenv("PROCESSES", str(cpu_count()))
-VERBOSE = getenv("VERBOSE", "NO")
+NUM_THREADS = getenv("NUM_THREADS", str(cpu_count()))
+QUIET = getenv("QUIET", "NO")
 
 parser = ArgumentParser(description="Extend geometry edges.")
-parser.add_argument("--dbname", help="run in a different local database")
+parser.add_argument("--dbname", help="run in a different local database (default: app)")
 parser.add_argument("--input-dir", help="input directory (for multiple files)")
 parser.add_argument("--input-file", help="input file (for single files)")
 parser.add_argument("--output-dir", help="output directory (for multiple files)")
 parser.add_argument("--output-file", help="output file (for single files)")
 parser.add_argument(
     "--distance",
-    help="decimal degrees between points on a line (default: 0.0001)",
+    help="decimal degrees between points on a line (default: 0.0002)",
 )
 parser.add_argument(
-    "--processes",
-    help="how many processes to run in parallel (default: 1 * number of cpu cores)",
+    "--num-threads",
+    help="number of layers to run at once. (default: 1 * number of CPUs detected)",
 )
 parser.add_argument(
     "--overwrite",
     help="whether to overwrite existing files (default: no)",
 )
 parser.add_argument(
-    "--verbose",
-    help="display all success and error messages (default: no)",
+    "--quiet",
+    help="Suppress success and error messages (default: no)",
 )
 
 args = parser.parse_args()
@@ -56,8 +56,8 @@ dbname = args.dbname if args.dbname else DBNAME
 distance = Decimal(args.distance if args.distance else DISTANCE)
 input_dir = Path(args.input_dir if args.input_dir else INPUT_DIR)
 input_file = Path(args.input_file) if args.input_file else None
+num_threads = int(args.num_threads if args.num_threads else NUM_THREADS)
 output_dir = Path(args.output_dir if args.output_dir else OUTPUT_DIR)
 output_file = Path(args.output_file) if args.output_file else None
 overwrite = is_bool(args.overwrite if args.overwrite else OVERWRITE)
-processes = int(args.processes if args.processes else PROCESSES)
-verbose = is_bool(args.verbose if args.verbose else VERBOSE)
+quiet = is_bool(args.quiet if args.quiet else QUIET)

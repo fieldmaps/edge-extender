@@ -30,16 +30,16 @@ docker run -v .:/srv ghcr.io/fieldmaps/edge-extender --input-dir=inputs --output
 
 The following options are available:
 
-| Name            | Description                                                                 |
-| --------------- | --------------------------------------------------------------------------- |
-| `--input-dir`   | input directory (for multiple files)                                        |
-| `--input-file`  | input file (for single files)                                               |
-| `--output-dir`  | output directory (for multiple files)                                       |
-| `--output-file` | output file (for single files)                                              |
-| `--distance`    | decimal degrees between points on a line (default: `0.0001`)                |
-| `--processes`   | how many processes to run in parallel (default: `1` \* number of cpu cores) |
-| `--overwrite`   | whether to overwrite existing files (default: `no`)                         |
-| `--verbose`     | display all success and error messages (default: `no`)                      |
+| Name            | Description                                                                |
+| --------------- | -------------------------------------------------------------------------- |
+| `--input-dir`   | input directory (for multiple files)                                       |
+| `--input-file`  | input file (for single files)                                              |
+| `--output-dir`  | output directory (for multiple files)                                      |
+| `--output-file` | output file (for single files)                                             |
+| `--distance`    | decimal degrees between points on a line (default: `0.0001`)               |
+| `--num-threads` | number of layers to run at once. (default: `1` \* number of CPUs detected) |
+| `--overwrite`   | whether to overwrite existing files (default: `no`)                        |
+| `--quiet`       | Supress success and error messages (default: `no`)                         |
 
 Polygons the size of small countries typically take a few minutes, with larger ones taking upwards of 30 min using default settings. Processing time is proportional to total perimeter length rather than area.
 
