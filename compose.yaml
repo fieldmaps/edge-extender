@@ -4,6 +4,5 @@ services:
     sysctls:
       - net.ipv4.tcp_keepalive_time=200
     volumes:
-      - ./config.ini:/srv/config.ini
       - ./inputs:/srv/inputs
       - ./outputs:/srv/outputs

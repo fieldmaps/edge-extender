@@ -1,7 +1,7 @@
 import re
 import sqlite3
 from pathlib import Path
-from subprocess import run
+from subprocess import PIPE, run
 
 from psycopg import connect
 
@@ -25,11 +25,11 @@ def get_gpkg_layers(file: Path) -> list[str]:
 
 def is_polygon(file: Path) -> bool:
     """Check if file is a polygon."""
-    regex = re.compile(r"\((Multi Polygon|Polygon)\)")
+    regex = re.compile(r"Geometry: (Multi Polygon|Polygon)")
     result = run(
-        ["gdal", "vector", "info", "--summary", file],
-        check=True,
-        capture_output=True,
+        ["gdal", "vector", "info", "--output-format=text", file],
+        check=False,
+        stdout=PIPE,
     )
     return bool(regex.search(str(result.stdout)))
 

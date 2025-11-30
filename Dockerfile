@@ -26,6 +26,9 @@ RUN initdb -D /var/lib/postgresql/data && \
     createdb app && \
     psql -d app -c "CREATE EXTENSION postgis;"
 
+COPY docker-entrypoint.sh /usr/local/bin/
 COPY app ./app
 
-CMD pg_ctl start -D /var/lib/postgresql/data > /dev/null 2>&1 && python -m app
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+CMD ["python", "-m", "app"]

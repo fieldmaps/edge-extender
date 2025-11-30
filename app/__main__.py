@@ -24,7 +24,7 @@ def main() -> None:
     pool = Pool(processes)
     files = [input_file] if input_file else sorted(input_dir.iterdir())
     for file in files:
-        if overwrite and (output_dir / file.name).exists():
+        if not overwrite and (output_dir / file.name).exists():
             continue
         if (
             file.is_file()
