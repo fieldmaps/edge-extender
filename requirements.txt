@@ -6,6 +6,8 @@ psycopg-binary==3.2.13 ; implementation_name != 'pypy'
     # via psycopg
 psycopg-pool==3.2.8
     # via psycopg
+python-dotenv==1.2.1
+    # via edge-extender
 typing-extensions==4.15.0
     # via psycopg-pool
 tzdata==2025.2 ; sys_platform == 'win32'

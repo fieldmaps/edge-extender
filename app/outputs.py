@@ -7,11 +7,8 @@ from venv import logger
 from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
+from .config import dbname, output_dir, output_file, verbose
 from .topology import check_gaps, check_overlaps
-from .utils import DATABASE
-
-cwd = Path(__file__).parent
-outputs = cwd / "../outputs"
 
 query_1: LiteralString = """--sql
     DROP VIEW IF EXISTS {table_out};
@@ -46,11 +43,11 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
         if file.suffix == ".parquet"
         else []
     )
-    outputs.mkdir(exist_ok=True, parents=True)
-    output_path = outputs / file.name
+    output_path = output_file if output_file else output_dir / file.name
+    output_path.parent.mkdir(exist_ok=True, parents=True)
     args = [
         *["gdal", "vector", "convert"],
-        *[f"PG:dbname={DATABASE}", output_path],
+        *[f"PG:dbname={dbname}", output_path],
         "--overwrite",
         f"--input-layer={name}_06",
         f"--output-layer={layer}",
@@ -65,6 +62,7 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
             break
         sleep(retry**2)
     if not success:
-        logger.error(f"output fail: {name}")
+        if verbose:
+            logger.error(f"output fail: {name}")
         error = f"could not write to output {name}"
         raise RuntimeError(error)

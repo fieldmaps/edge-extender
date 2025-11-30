@@ -5,7 +5,7 @@ from typing import LiteralString
 from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
-from .utils import DATABASE
+from .config import dbname
 
 query_1: LiteralString = """--sql
     DROP TABLE IF EXISTS {table_out};
@@ -32,7 +32,7 @@ def gdal_import(name: str, file: Path, layer: str, args: list[str]) -> None:
     run(
         [
             *["gdal", "vector", *args],
-            *[file, f"PG:dbname={DATABASE}"],
+            *[file, f"PG:dbname={dbname}"],
             "--multi",
             "--overwrite-layer",
             "--output-format=PostgreSQL",

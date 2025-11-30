@@ -3,6 +3,8 @@ from venv import logger
 from psycopg import Connection
 from psycopg.sql import SQL, Identifier
 
+from .config import verbose
+
 
 def check_overlaps(conn: Connection, name: str, table: str) -> None:
     """Check for overlaps in polygons."""
@@ -20,7 +22,8 @@ def check_overlaps(conn: Connection, name: str, table: str) -> None:
     )[0]
     if overlaps:
         error = f"OVERLAPS: {name}"
-        logger.error(error)
+        if verbose:
+            logger.error(error)
         raise RuntimeError(error)
 
 
@@ -35,7 +38,8 @@ def check_gaps(conn: Connection, name: str, table: str) -> None:
     )[0] > 0
     if gaps:
         error = f"GAPS: {name}"
-        logger.error(error)
+        if verbose:
+            logger.error(error)
         raise RuntimeError(error)
 
 
@@ -53,5 +57,6 @@ def check_missing_rows(conn: Connection, name: str, table_1: str, table_2: str) 
     )[0]
     if rows_1 != rows_2:
         error = f"MISSING ROWS: {name}"
-        logger.error(error)
+        if verbose:
+            logger.error(error)
         raise RuntimeError(error)

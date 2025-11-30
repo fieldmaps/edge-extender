@@ -72,7 +72,7 @@ drop_tmp: LiteralString = """--sql
 """
 
 
-def main(conn: Connection, name: str, *_: list) -> None:
+def main(conn: Connection, name: str) -> None:
     """Create Voronoi polygons from points."""
     conn.execute(
         SQL(query_1).format(
