@@ -45,10 +45,7 @@ parser.add_argument(
     "--overwrite",
     help="whether to overwrite existing files (default: no)",
 )
-parser.add_argument(
-    "--quiet",
-    help="Suppress success and error messages (default: no)",
-)
+parser.add_argument("--quiet", help="Suppress info and error messages (default: no)")
 
 args = parser.parse_args()
 

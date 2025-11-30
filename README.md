@@ -39,7 +39,7 @@ The following options are available:
 | `--distance`    | decimal degrees between points on a line (default: `0.0001`)               |
 | `--num-threads` | number of layers to run at once. (default: `1` \* number of CPUs detected) |
 | `--overwrite`   | whether to overwrite existing files (default: `no`)                        |
-| `--quiet`       | Supress success and error messages (default: `no`)                         |
+| `--quiet`       | Supress info and error messages (default: `no`)                            |
 
 Polygons the size of small countries typically take a few minutes, with larger ones taking upwards of 30 min using default settings. Processing time is proportional to total perimeter length rather than area.
 
