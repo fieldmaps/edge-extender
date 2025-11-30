@@ -20,7 +20,7 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
         try:
             points.main(conn, name, file, layer, d)
             voronoi.main(conn, name)
-            if not quiet:
+            if not quiet and d > distance:
                 logger.info(f"done: {name}")
         except (RuntimeError, InternalError_) as e:
             if not quiet:

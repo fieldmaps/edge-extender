@@ -66,3 +66,5 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
             logger.error(f"output fail: {name}")
         error = f"could not write to output {name}"
         raise RuntimeError(error)
+    if not quiet:
+        logger.info(f"done: {name}")
