@@ -1,5 +1,5 @@
 from pathlib import Path
-from subprocess import CalledProcessError, run
+from subprocess import run
 from typing import LiteralString
 
 from psycopg import Connection
@@ -27,13 +27,14 @@ query_2: LiteralString = """--sql
 """
 
 
-def gdal_import(name: str, file: Path, layer: str, args: list[str]) -> None:
-    """Import geodata into PostGIS."""
+def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
+    """Import geodata into PostGIS with topology cleaning."""
     run(
         [
-            *["gdal", "vector", *args],
+            *["gdal", "vector", "set-geom-type"],
             *[file, f"PG:dbname={dbname}"],
             "--multi",
+            "--quiet",
             "--overwrite-layer",
             "--output-format=PostgreSQL",
             f"--input-layer={layer}",
@@ -44,16 +45,7 @@ def gdal_import(name: str, file: Path, layer: str, args: list[str]) -> None:
             "--layer-creation-option=LAUNDER=NO",
         ],
         check=True,
-        capture_output=True,
     )
-
-
-def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
-    """Import geodata into PostGIS with topology cleaning."""
-    try:
-        gdal_import(name, file, layer, ["set-geom-type", "--quiet"])
-    except CalledProcessError:
-        gdal_import(name, file, layer, ["geom", "set-type"])
     conn.execute(
         SQL(query_1).format(
             table_in=Identifier(f"{name}_attr"),

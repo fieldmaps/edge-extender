@@ -49,6 +49,7 @@ def main(conn: Connection, name: str, file: Path, layer: str, *_: list) -> None:
         *["gdal", "vector", "convert"],
         *[f"PG:dbname={dbname}", output_path],
         "--overwrite",
+        "--quiet",
         f"--input-layer={name}_06",
         f"--output-layer={layer}",
         *shp,
