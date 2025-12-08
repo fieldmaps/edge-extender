@@ -25,9 +25,9 @@ def get_gpkg_layers(file: Path) -> list[str]:
 
 def is_polygon(file: Path) -> bool:
     """Check if file is a polygon."""
-    regex = re.compile(r"Geometry: (Multi Polygon|Polygon)")
+    regex = re.compile(r"\((?:Multi )?Polygon\)")
     result = run(
-        ["gdal", "vector", "info", "--output-format=text", file],
+        ["gdal", "vector", "info", "--summary", file],
         check=False,
         stdout=PIPE,
     )
