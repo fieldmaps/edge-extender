@@ -12,12 +12,9 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
         FROM "{name}_01"
     """)
 
-    # Per-polygon neighbor union, materialized via self-join with scalar bbox
-    # predicates (no LATERAL, no ST_Intersects). Bbox-only is correct because a
-    # non-touching neighbor adds nothing to ST_Difference / ST_Intersection
-    # against a's boundary; the bbox prefilter is loose-but-safe. The join plans
-    # as PIECEWISE_MERGE_JOIN, avoiding the SPATIAL_JOIN operator and its
-    # ~1x RAM virtual reservation.
+    # Per-polygon neighbor union, self-join with scalar bbox predicates plus
+    # an exact ST_Intersects filter (no LATERAL); still plans as
+    # PIECEWISE_MERGE_JOIN, not SPATIAL_JOIN.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp2" AS
         SELECT a.fid AS afid, ST_Union_Agg(b.geom) AS neighbor_union
@@ -28,6 +25,7 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
          AND ST_XMin(b.geom) <= ST_XMax(a.geom)
          AND ST_YMax(b.geom) >= ST_YMin(a.geom)
          AND ST_YMin(b.geom) <= ST_YMax(a.geom)
+         AND ST_Intersects(a.geom, b.geom)
         GROUP BY a.fid
     """)
 

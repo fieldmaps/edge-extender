@@ -43,18 +43,28 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
             JOIN "{name}_05_tmp1" p
               ON p.xmax >= v.xmin AND p.xmin <= v.xmax
              AND p.ymax >= v.ymin AND p.ymin <= v.ymax
+             AND ST_Intersects(p.part_geom, v.geom)
             GROUP BY v.fid
         ),
-        remainder AS (
+        snapped AS (
             SELECT v.fid,
-                ST_MakeValid(ST_CollectionExtract(
-                    CASE WHEN n.geom IS NOT NULL
-                        THEN ST_Difference(v.geom, n.geom)
-                        ELSE v.geom
-                    END, 3
-                )) AS geom
+                CASE WHEN n.geom IS NOT NULL
+                    THEN ST_Snap(v.geom, n.geom, {SNAP_TOLERANCE})
+                    ELSE v.geom
+                END AS geom,
+                n.geom AS neighbor_geom
             FROM v
             LEFT JOIN neighbor_union n ON v.fid = n.vfid
+        ),
+        remainder AS (
+            SELECT fid,
+                ST_MakeValid(ST_CollectionExtract(
+                    CASE WHEN neighbor_geom IS NOT NULL
+                        THEN ST_Difference(geom, neighbor_geom)
+                        ELSE geom
+                    END, 3
+                )) AS geom
+            FROM snapped
         )
         SELECT fid, geom FROM "{name}_01"
         UNION ALL

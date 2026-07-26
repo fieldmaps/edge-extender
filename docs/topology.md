@@ -18,6 +18,21 @@ This replaced an earlier `ST_Node` + `ST_Polygonize` design (kept below for hist
 
 Using `ST_Union_Agg(_01)` — a single dissolved reference geometry — as the second argument to `ST_Difference` for every fid individually OOMs outright at Chile scale: the union can hold millions of vertices, and GEOS pays that cost on every row (`failed to allocate data of size 16.0 MiB (12.7 GiB/12.7 GiB used)`, observed during development). The fix is the same bbox-prefiltered neighbor-union self-join pattern `_02_lines.py` already uses for exterior-edge extraction — join `_04` against per-part (not per-fid) bboxes of `_01`, since a single Chile fid's multipolygon bbox can span mainland to a remote island and defeat the prefilter if not exploded into parts first.
 
+### Tightening the bbox prefilter with `ST_Intersects`
+
+`_05_merge.py`'s `neighbor_union` join (and `_02_lines.py`'s equivalent neighbor-union self-join) both add an exact `ST_Intersects` predicate on top of the existing bbox prefilter. It plans as a `FILTER` after a `PIECEWISE_MERGE_JOIN`, not as a `SPATIAL_JOIN`, so it doesn't trigger the reservation bug below -- confirmed via `EXPLAIN` before adopting it.
+
+This matters far more in `_05_merge.py` than in `_02_lines.py`, because Voronoi cells (unlike original polygons) can have a bounding box spanning nearly the whole file: a coastal cell's cell boundary can legitimately run the length of a country's coastline while the cell itself only truly overlaps a small fraction of the original polygons whose bbox falls inside that huge rectangle. Measured on `chl_admin3` (345 fids): specific cells' bbox-only candidate counts were up to 23x their true `ST_Intersects` count (one cell pulled in 9765 candidate parts, only 924 of which actually touched it). Adding the filter reduced `_05_merge.py`'s merge-stage peak RSS by 34% (2846MB -> 1882MB) and `_02_lines.py`'s lines-stage peak by 11% (2149MB -> 1920MB), both confirmed output-identical to the unfiltered version (exact geometry equality). Smaller countries (Burundi, Sri Lanka, Malawi, Senegal, Haiti, Guatemala) saw smaller but still nonzero reductions (1-13%) with zero downside.
+
+### Snapping the Voronoi cell before `ST_Difference`
+
+`merge.main`'s per-fid `ST_Difference(voronoi_cell, neighbor_union)` calls independently invent a new crossing-point vertex wherever a Voronoi cell boundary crosses an original polygon edge. Two adjacent fids computing "the same" crossing get slightly different floats, and that's most of what the final whole-table `ST_CoverageClean` pass exists to fix (see above). Snapping the Voronoi cell onto `neighbor_union`'s real vertices with `ST_Snap(v.geom, n.geom, SNAP_TOLERANCE)` *before* the difference, in its own CTE, measurably shrinks how much of that fixing is needed:
+
+- Tested on Burundi + 5 other countries + Chile: `coverage_clean` afterward touches far fewer fids that weren't actually extended -- from 0% reduction (Sri Lanka, where nearly every fid was extended, so there's no untouched territory to protect) up to 95% (Guatemala, mostly untouched interior polygons) and 92% (Burundi). Chile, the stress-test file, saw a more modest 14% reduction (277 -> 239 fids touched), likely because its one 3796-part fid means many more independently-computed crossings feed into any single cell's difference.
+- It does **not** eliminate the need for `coverage_clean`: on every file tested, invalid edges on the pre-clean table barely moved (e.g. Chile: 399 -> 395). The remaining mismatches come from crossings that land mid-segment on a straight original edge, not at an existing vertex -- confirmed with a synthetic repro (`ST_Snap` only pulls existing vertices together within tolerance; it doesn't insert a new vertex into a segment just because another geometry crosses it there).
+- Snapping was also tried the other way -- `ST_Snap(ST_Difference(v.geom, n.geom), n.geom, tol)`, i.e. snapping the already-differenced remainder onto the original -- and it's worse, not just ineffective: at tolerances above `SNAP_TOLERANCE` it started snapping unrelated nearby vertices onto the wrong target, distorting fids that the unsnapped baseline never touched at all (one fid's spurious movement grew from ~0.6 m² to 127 m² as tolerance loosened from 1e-8 to 1e-4). The invented crossing vertex from `ST_Difference` generally isn't within tolerance of any real vertex in `neighbor_union`, so post-hoc snapping has nothing correct to grab.
+- Memory cost: nesting the snap inside the same expression as `ST_Difference` roughly doubled `_05_merge.py`'s merge-stage overhead on Chile (+22%). Pulling the snap into its own CTE (`snapped`, evaluated before `remainder`) halved that penalty (+11%) with identical output -- and combined with the `ST_Intersects` tightening above, the net effect is a 34% *reduction* versus the original unmodified baseline, not a regression.
+
 ### Historical: why `ST_Node` + `ST_Polygonize` was used instead (now removed)
 
 ### What DuckDB spatial exposes
@@ -32,7 +47,7 @@ Using `ST_Union_Agg(_01)` — a single dissolved reference geometry — as the s
 | `ST_Polygonize`               | Builds polygons from a planar noded edge network                                               |
 | `ST_MemUnion_Agg`             | Memory-efficient union aggregate                                                               |
 
-`ST_CoverageClean` is available as of DuckDB spatial 1.5.3 (used by `inputs.main`'s coverage-clean pass and by `merge.main`). `ST_Snap` is still not exposed.
+`ST_CoverageClean` is available as of DuckDB spatial 1.5.3 (used by `inputs.main`'s coverage-clean pass and by `merge.main`). `ST_Snap(geom, snap_to, tolerance)` shipped in spatial 1.5.5 -- see "Snapping the Voronoi cell before `ST_Difference`" below for how `merge.main` uses it.
 
 ### Why the naive approach creates gaps
 

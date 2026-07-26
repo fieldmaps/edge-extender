@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 authors = [{ name = "fieldmaps.io" }]
 requires-python = ">=3.10"
-dependencies = ["click", "duckdb>=1.5.3", "psutil"]
+dependencies = ["click", "duckdb>=1.5.5", "psutil"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -41,7 +41,7 @@ fix = true
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["COM812", "D203", "D213", "S603", "S607", "S608"]
+ignore = ["COM812", "CPY001", "D203", "D213", "S603", "S607", "S608"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "D103", "INP001", "S101"]
