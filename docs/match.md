@@ -174,8 +174,56 @@ violator scoping was deliberately removed from `extend`'s own merge stage
 once already because it reintroduced seam-gap bugs (see `docs/topology.md`).
 By construction, every point of the reassembled extent belongs to exactly
 one surviving child fid, so anything `ST_CoverageClean` finds to close here
-is seam noise (float-precision mismatches at group-to-group boundaries and
-each group's own clip line), not a real feature to protect.
+is seam noise at group-to-group boundaries, not a real feature to protect
+-- but that noise is **not** float-precision scale (see below); it's a real
+geometric gap between two independently-computed Voronoi extensions.
+
+## Rejected: `ST_Snap` around `_clip.py`'s `ST_Intersection`
+
+`_05_merge.py` snapping the Voronoi cell onto its neighbor union before
+`ST_Difference` (see `docs/topology.md`) measurably reduces how many
+untouched fids the final whole-table `ST_CoverageClean` pass has to touch,
+because many *independent* per-fid `ST_Difference` calls against
+*independently computed* neighbor unions invent slightly different
+floating-point crossing points for what should be the same vertex. Two
+variants of the same idea were tried in `_clip.py`, on the theory that a
+shared, exact parent boundary (parent layer is itself coverage-cleaned in
+`_01_inputs.py`, so two adjacent parents' shared edge is vertex-identical)
+should let two independently-clipped groups tile seamlessly if their output
+vertices land on that same exact reference:
+
+1. Snap each group's pre-clip geometry onto the parent's vertices, *before*
+   `ST_Intersection(t.geom, p.geom)`.
+2. Snap the clipped *result* onto the parent's vertices, *after* the
+   intersection -- the mirror image, covering the case where `ST_Intersection`
+   itself perturbs the parent's inherited edge vertices during overlay
+   processing rather than `t.geom`'s own vertices being the problem.
+
+Tested both on Burundi, Sri Lanka, Malawi, Senegal, Haiti, Guatemala, and
+Chile (admin2-into-admin1 for the first six, admin3-into-admin2 for Chile):
+**zero measurable difference**, either direction, on every metric checked
+(pre-clean invalid-edge flag, count of fids the clean pass actually
+touches, `_04_merge` peak RSS, wall time) -- identical or noise-level
+(<10%, no consistent direction) on all seven files, including Chile's
+56-group stress test (213/213 fids touched both ways, ~2550 MB peak all
+three variants).
+
+Root cause, found by extracting the actual invalid-edge geometries on
+Burundi (`ST_CoverageInvalidEdges_Agg`, unnested, joined back to nearby
+fids): all 171 invalid edges border exactly the fid pairs `_02_assign`
+places in two *different* parent groups, confirming these are genuinely
+cross-group seams -- but their lengths run from slivers up to **0.0058°
+(~645 m)**, averaging **~12 m**. `SNAP_TOLERANCE` is `1e-8°` (~1.1 mm),
+five to six orders of magnitude smaller. This isn't the same failure mode
+as `_05_merge.py` at all: it's not two computations of the same crossing
+point disagreeing by float noise, it's two *different* groups' Voronoi
+extensions -- built independently, with no knowledge of each other --
+genuinely disagreeing about how far to reach near their shared parent
+border. No vertex-snapping tolerance in a sane range closes a
+meters-to-hundreds-of-meters gap; that's real gap-filling work, which is
+exactly what the whole-table `ST_CoverageClean` pass in `_04_merge.py`
+is for. Reverted both variants; `_clip.py` stays a plain
+`ST_Intersection`.
 
 ## `check_gaps` and parent-layer gaps
 

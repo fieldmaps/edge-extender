@@ -11,11 +11,11 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
 
     By construction every point of the reassembled extent belongs to exactly
     one surviving child fid, so anything ST_CoverageClean finds to close here
-    is seam noise (float-precision mismatches at group-to-group boundaries and
-    each group's own clip line), not a real feature to protect. fids stays
-    None (whole-table): per-fid violator scoping was deliberately removed once
+    is seam noise from independently-extended groups meeting at a shared
+    parent border, not a real feature to protect. fids stays None
+    (whole-table): per-fid violator scoping was deliberately removed once
     already from extend's own merge stage because it reintroduced seam-gap
-    bugs -- see docs/topology.md. Do not reintroduce it here.
+    bugs. Do not reintroduce it here.
     """
     coverage_clean(conn, f"{name}_03", f"{name}_04", None, SNAP_TOLERANCE)
     if not debug:
