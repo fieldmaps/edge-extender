@@ -9,11 +9,13 @@ topo-tools-js/src/lib/tools/topology-cleaner/pipeline/issues.ts:
   own CoverageCleaner doc: "gaps which are not fully enclosed are not
   removed").
 - Overlaps: bbox-prefiltered pairwise ST_Intersection, whole-fid bboxes (not
-  per-part -- see core/extend/_02_lines.py's neighbor self-join and
-  docs/voronoi-memory.md for why per-part explosion regresses
-  single-fid-many-parts datasets like Chile). The join predicate is
-  ST_Overlaps/ST_Contains, not ST_Intersects -- see the note on
-  `_build_overlaps` below.
+  per-part -- see core/extend/_02_lines.py's neighbor self-join for why
+  per-part explosion regresses single-fid-many-parts datasets like Chile).
+  The join predicate is ST_Overlaps/ST_Contains, not ST_Intersects -- see the
+  note on `_build_overlaps` below.
+
+Gap rows also carry a Polsby-Popper thinness ratio (4*pi*Area/Perimeter^2,
+NULL on overlap rows) used by the clean stage's auto gap-fill mode.
 
 Each of the two detection queries is retried once at reduced precision on
 failure, then falls back to an empty result (logged) rather than raising --
@@ -205,17 +207,21 @@ def main(
     # units.ts's degToM, exact for N-S widths, display-only approximation for E-W).
     m2_per_deg2 = METERS_PER_DEGREE**2 * cos_lat
     width_m = f"(ST_MaximumInscribedCircle(geom)).radius * 2 * {METERS_PER_DEGREE}"
+    # Polsby-Popper thinness ratio, computed directly in raw degree-space.
+    thinness_ratio = "4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2)"
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02" AS
         SELECT 'gap-' || n AS key, 'gap' AS kind,
                ST_Area(geom) * {m2_per_deg2} AS area_m2,
                {width_m} AS max_width_m,
+               {thinness_ratio} AS thinness_ratio,
                NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b, geom
         FROM "{gaps_tmp}"
         UNION ALL
         SELECT 'overlap-' || n AS key, 'overlap' AS kind,
                ST_Area(geom) * {m2_per_deg2} AS area_m2,
                {width_m} AS max_width_m,
+               NULL::DOUBLE AS thinness_ratio,
                unit_a, unit_b, geom
         FROM "{overlaps_tmp}"
     """)

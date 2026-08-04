@@ -25,8 +25,8 @@ clean("example.geojson")
 | Option | Description |
 | --- | --- |
 | `--issues-file` | Issues report path. Defaults to `OUTPUT_FILE` with an `_issues` suffix. |
-| `--gap-width` | `auto` (no fill), `all` (fill every detected gap, default), or a number in meters. |
-| `--snap-tolerance` | `auto` (GEOS's computed default, default) or a number in meters. Noding robustness knob only. |
+| `--maximum-gap-width` | `auto` (fill only thin/sliver-shaped gaps), `all` (fill every detected gap, default), or a number in meters. |
+| `--snapping-distance` | `auto` (GEOS's computed default, default) or a number in meters. Noding robustness knob only. |
 | `--overwrite` | Overwrite an existing output file. |
 | `--threads` | DuckDB thread count. |
 | `--debug` | Keep intermediate tables, export to Parquet, log timing/memory per query. |
@@ -34,11 +34,11 @@ clean("example.geojson")
 | `--step` | Run only one named stage: `inputs`, `issues`, `clean`, `outputs`. |
 
 ```sh
-# Don't fill any gaps, just detect and report every defect
-topo-tools clean example.gpkg --gap-width auto
+# Only auto-fill thin/sliver-shaped gaps, leave the rest for review
+topo-tools clean example.gpkg --maximum-gap-width auto
 
 # Cap gap-filling at 5m
-topo-tools clean example.parquet --gap-width 5
+topo-tools clean example.parquet --maximum-gap-width 5
 ```
 
 Run `topo-tools clean --help` for the full, always-current option list.
@@ -98,17 +98,30 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
 
 - **`snapping_distance`** has a real computed auto-default:
   `extent_diameter / 1e8` (`computeDefaultSnappingDistance`).
-  `setSnappingDistance(x)` is a no-op when `x < 0`, so passing `-1`
-  (DuckDB's own default for an omitted argument) keeps this auto-computed
-  value. `0` explicitly disables snapping; a positive value overrides it.
+  `setSnappingDistance(x)` is a no-op when `x < 0`, so omitting the argument
+  (DuckDB's `Bind()` defaults a missing arg to `-1.0`) keeps this
+  auto-computed value. `0` explicitly disables snapping; a positive value
+  overrides it.
 - **`gap_maximum_width` has NO computed auto-default** -- the C++ class
   member is hardcoded to `0.0` ("a width of zero prevents gaps from being
   merged"). `setGapMaximumWidth(x)` is also a no-op when `x < 0`, so an
-  omitted/`-1` value leaves it at `0.0`, i.e. **no gap-filling at all**. This
+  omitted argument leaves it at `0.0`, i.e. **no gap-filling at all**. This
   is why `extend`/`match`'s existing `coverage_clean()` calls (which never
-  pass a positive `gap_max_width`) never fill gaps -- and why JS's "fill up
-  to 2x the widest detected gap" was purely a client-side slider-seeding
-  heuristic, not anything GEOS computes on its own.
+  pass a positive `gap_maximum_width`) never fill gaps -- and why JS's "fill
+  up to 2x the widest detected gap" was purely a client-side slider-seeding
+  heuristic, not anything GEOS computes on its own. It's also why `clean`'s
+  own `--maximum-gap-width auto` has to compute a real width itself (see
+  below) rather than leaning on any GEOS-side default the way
+  `--snapping-distance auto` can.
+- **Naming**: `coverage_clean()` (`core/extend/_coverage.py`) calls
+  `ST_CoverageClean` with DuckDB's own named arguments,
+  `gap_maximum_width := ...` / `snapping_distance := ...` (verified live via
+  `duckdb_functions()`) -- a Python `None` omits the argument entirely
+  rather than passing a sentinel. The CLI/API layer (`--maximum-gap-width`,
+  `--snapping-distance`, and the matching `api.clean.clean()` kwargs)
+  instead follows GDAL's `gdal vector clean-coverage` word order for the gap
+  one, since that's what a human actually types; `api.clean.clean()` is the
+  one place the two namings meet.
 - `ST_CoverageClean`'s gap-merge only fills **fully-enclosed** holes -- a
   ring of polygons surrounding missing area (a lake, a missing admin unit).
   An open "inlet" gap between two side-by-side, non-enclosing polygons is
@@ -120,10 +133,31 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   rings of the whole-table union) misses open inlets -- they aren't
   fillable "gaps" by this tool's or GEOS's own definition.
 
-## `--gap-width auto|all|<meters>`
+## `--maximum-gap-width auto|all|<meters>`
 
-- `auto` -- passes `-1.0` through, i.e. GEOS's real native default: **no
-  gap-filling**. Matches `extend`/`match`'s existing unconfigured behavior.
+- `auto` -- fills only gaps whose *shape* looks like a digitization sliver,
+  regardless of their absolute width. `gap_maximum_width` is a pure width
+  cutoff with no shape concept of its own (verified live against GDAL's
+  `gdal vector clean-coverage` docs), so this computes the width to feed
+  into it: the widest gap's own width *among only the gaps classified as
+  thin* (`{name}_02.thinness_ratio <= DEFAULT_THINNESS_RATIO`), the same
+  epsilon-padded computation `all` does over the full set. "Thin" is a
+  Polsby-Popper compactness score (`4*pi*Area/Perimeter^2`, 1.0 = circle,
+  ->0 = elongated crack) at or below `DEFAULT_THINNESS_RATIO = 0.3`
+  (`core/clean/_constants.py`) -- the same formula and cutoff guidance
+  ArcGIS Pro's own "Polygon Sliver" data-quality check uses to flag slivers.
+  Not user-configurable: a gap's absolute width says nothing about whether
+  it's a digitization artifact or a real feature (a small real pond and a
+  narrow real strait both exist), but its shape, independent of scale, is
+  what the sliver-detection literature already uses to make this call -- if
+  a dataset needs different behavior than the fixed cutoff produces, tune
+  `--maximum-gap-width <meters>` directly instead of the thinness cutoff.
+  Known, accepted imprecision: since GEOS only ever compares by width, a
+  non-thin gap narrower than the widest thin gap would also get swept in --
+  acceptable given this codebase's existing "adequate, not precise"
+  tolerance philosophy (see Units section below). When no gap qualifies as
+  thin, the argument is omitted entirely (no gap-filling), same as `all`
+  when no gaps were detected at all.
 - `all` (default when the flag is omitted) -- fills every gap the detection
   stage found. Computed as the widest detected gap's own width (`max(
   {name}_02.max_width_m WHERE kind='gap')`, already GEOS's own width metric:
@@ -132,25 +166,28 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   gap itself clears the `<=` comparison, converted to degrees.
 - A bare number is an explicit cap in meters, converted to degrees.
 
-## `--snap-tolerance auto|<meters>`
+## `--snapping-distance auto|<meters>`
 
-`auto` passes `-1.0` through (GEOS's real computed default). An explicit
-value overrides it. This is a **noding-robustness knob only** -- per GEOS's
-own doc comment, "a large snapping distance may introduce undesirable data
-alteration."
+`auto` omits the argument from the `ST_CoverageClean` call, keeping GEOS's
+real computed default. An explicit value overrides it. This is a
+**noding-robustness knob only** -- per GEOS's own doc comment, "a large
+snapping distance may introduce undesirable data alteration."
 
 ## Issues file schema
 
-`key VARCHAR, kind VARCHAR, area_m2 DOUBLE, max_width_m DOUBLE, unit_a
-BIGINT, unit_b BIGINT, geom GEOMETRY`. `kind` is `'gap'` or `'overlap'`.
+`key VARCHAR, kind VARCHAR, area_m2 DOUBLE, max_width_m DOUBLE,
+thinness_ratio DOUBLE, unit_a BIGINT, unit_b BIGINT, geom GEOMETRY`. `kind`
+is `'gap'` or `'overlap'`. `thinness_ratio` (Polsby-Popper compactness,
+see `--maximum-gap-width auto` above) is populated only for gap rows;
 `unit_a`/`unit_b` (the two fids involved) are populated only for overlap
 rows. Geometry is always Polygon, so any of `extend`'s four export formats
 (including Shapefile) can hold the issues file.
 
 ## Units and meters-to-degrees conversion
 
-All CLI-facing distance/area thresholds (`--gap-width`, `--snap-tolerance`,
-and the internal `MIN_ISSUE_AREA_M2` noise floor) are meters, converted to
+All CLI-facing distance/area thresholds (`--maximum-gap-width`,
+`--snapping-distance`, and the internal `MIN_ISSUE_AREA_M2` noise floor) are
+meters, converted to
 the EPSG:4326 degrees `ST_CoverageClean` actually takes, using a
 latitude-aware factor (`core/clean/_units.py`, ported from `units.ts`): one
 degree of longitude shrinks by `cos(latitude)`, so conversions scale by the
@@ -162,8 +199,9 @@ adequate for a cleaning tolerance, not for precise measurement.
 
 Unlike `extend`/`match`, `_04_outputs.py` does **not** call `extend`'s
 `check_gaps()` on the final output -- `clean` can legitimately leave gaps
-unfilled by design (`--gap-width auto`, or a numeric cap narrower than some
-detected gap), so raising on any remaining gap would make the tool crash on
+unfilled by design (`--maximum-gap-width auto` on a compact/non-thin gap, or
+a numeric cap narrower than some detected gap), so raising on any remaining
+gap would make the tool crash on
 its own default-adjacent behavior. Instead it logs a warning with a count of
 how many detected gaps remain uncovered, tested via `ST_Contains` against a
 point on each gap's surface -- visibility for the issues file, not a failure

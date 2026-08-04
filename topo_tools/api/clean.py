@@ -31,23 +31,26 @@ _STEP_TABLES = {
 }
 
 
-def _parse_gap_width(value: str) -> tuple[str, float | None]:
+def _parse_maximum_gap_width(value: str) -> tuple[str, float | None]:
     if value in ("auto", "all"):
         return value, None
     try:
         return "value", float(value)
     except ValueError:
-        msg = f"--gap-width must be 'auto', 'all', or a number in meters, got {value!r}"
+        msg = (
+            f"--maximum-gap-width must be 'auto', 'all', or a number in "
+            f"meters, got {value!r}"
+        )
         raise ValueError(msg) from None
 
 
-def _parse_snap_tolerance(value: str) -> tuple[str, float | None]:
+def _parse_snapping_distance(value: str) -> tuple[str, float | None]:
     if value == "auto":
         return "auto", None
     try:
         return "value", float(value)
     except ValueError:
-        msg = f"--snap-tolerance must be 'auto' or a number in meters, got {value!r}"
+        msg = f"--snapping-distance must be 'auto' or a number in meters, got {value!r}"
         raise ValueError(msg) from None
 
 
@@ -56,8 +59,8 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
     output_path: str | Path | None = None,
     issues_path: str | Path | None = None,
     *,
-    gap_width: str = "all",
-    snap_tolerance: str = "auto",
+    maximum_gap_width: str = "all",
+    snapping_distance: str = "auto",
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
     overwrite: bool = False,
@@ -75,8 +78,8 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
 
-    parsed_gap_width = _parse_gap_width(gap_width)
-    parsed_snap_tolerance = _parse_snap_tolerance(snap_tolerance)
+    parsed_maximum_gap_width = _parse_maximum_gap_width(maximum_gap_width)
+    parsed_snapping_distance = _parse_snapping_distance(snapping_distance)
 
     input_path = Path(input_path)
     output_path = (
@@ -131,8 +134,8 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     clean_stage.main(
                         conn,
                         name,
-                        gap_width=parsed_gap_width,
-                        snap_tolerance=parsed_snap_tolerance,
+                        gap_maximum_width=parsed_maximum_gap_width,
+                        snapping_distance=parsed_snapping_distance,
                         debug=debug,
                     )
                 elif s == "outputs":

@@ -39,25 +39,20 @@ def check_gaps(conn: DuckDBPyConnection, table: str) -> None:
         raise RuntimeError(error)
 
 
-def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input, not decomposable
+def coverage_clean(  # noqa: PLR0913, PLR0917 -- each param is a distinct required input, not decomposable
     conn: DuckDBPyConnection,
     table_in: str,
     table_out: str,
     fids: list[int] | None,
-    gap_max_width: float | None,
-    snap_distance: float = -1.0,
+    gap_maximum_width: float | None,
+    snapping_distance: float | None = None,
 ) -> None:
     """Write table_out from table_in with ST_CoverageClean applied to a subset (or all).
 
-    ``fids=None`` runs the clean over the entire table. ``gap_max_width=None``
-    is equivalent to ``-1.0`` (GEOS's own no-op sentinel -- see
-    GEOSCoverageCleanParams_setGapMaximumWidth: a negative value leaves the
-    gap-merge width at its hardcoded 0.0 default, i.e. no gap-filling).
-    ``snap_distance=-1.0`` (default) keeps GEOS's auto-computed snapping
-    distance (extent diameter / 1e8); 0.0 disables snapping; a positive value
-    overrides it. Always uses the 3-arg ST_CoverageClean overload -- verified
-    functionally identical to the 1-arg/2-arg overloads for -1.0/omitted
-    values, since DuckDB's own Bind() defaults missing args to -1.0.
+    ``fids=None`` runs the clean over the entire table. ``gap_maximum_width``
+    and ``snapping_distance`` are passed as named SQL arguments (DuckDB's own
+    spelling); ``None`` omits the argument, which is GEOS's own default for
+    each.
 
     Mapping back to source rows: ST_CoverageClean returns a GeometryCollection
     whose i-th element corresponds to input i. ST_Dump recursively unnests
@@ -67,8 +62,12 @@ def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input,
     via ST_Collect.
     """
     where = "" if fids is None else f"WHERE fid IN ({','.join(str(f) for f in fids)})"
-    gap = -1.0 if gap_max_width is None else gap_max_width
-    cc = f"ST_CoverageClean(list(geom ORDER BY fid), {snap_distance}, {gap})"
+    cc_args = ["list(geom ORDER BY fid)"]
+    if snapping_distance is not None:
+        cc_args.append(f"snapping_distance := {snapping_distance}")
+    if gap_maximum_width is not None:
+        cc_args.append(f"gap_maximum_width := {gap_maximum_width}")
+    cc = f"ST_CoverageClean({', '.join(cc_args)})"
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{table_out}" AS
         WITH ord AS (

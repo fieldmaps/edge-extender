@@ -14,7 +14,11 @@ MIN_ISSUE_AREA_M2 = 1e-4
 REDUCED_PRECISION_DEG = 1e-10
 
 # Relative headroom added to the widest detected gap's own width when
-# --gap-width=all resolves gap_maximum_width, so the widest gap itself
-# reliably clears ST_CoverageClean's <= comparison rather than landing
+# --maximum-gap-width=all resolves gap_maximum_width, so the widest gap
+# itself reliably clears ST_CoverageClean's <= comparison rather than landing
 # exactly on the boundary.
 ALL_GAP_WIDTH_EPSILON_FACTOR = 1.001
+
+# Thinness-ratio (Polsby-Popper compactness) cutoff for
+# --maximum-gap-width=auto. Not user-configurable.
+DEFAULT_THINNESS_RATIO = 0.3

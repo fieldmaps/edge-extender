@@ -26,6 +26,11 @@ from topo_tools.cli.main import cli
 #     not ST_Intersects -- ST_Overlaps alone is false here by OGC definition
 #     (the intersection equals fid 8 exactly, not "different from both
 #     inputs"), so this pair only gets caught via the ST_Contains half.
+#   - fid 9-12: a second donut, enclosing a 10x0.1 sliver-shaped gap at
+#     (51,1)-(61,1.1) -- same area (1.0) as the fid 1-4 hole but a thinness
+#     ratio (~0.03) far below DEFAULT_THINNESS_RATIO, unlike fid 1-4's square
+#     hole (~0.785). Distinguishes --maximum-gap-width=auto's shape-based
+#     fill from the compact hole it must leave alone.
 _SYNTHETIC_WKT = [
     (1, "POLYGON((0 0, 3 0, 3 1, 2 1, 1 1, 0 1, 0 0))"),
     (2, "POLYGON((0 2, 1 2, 2 2, 3 2, 3 3, 0 3, 0 2))"),
@@ -35,6 +40,10 @@ _SYNTHETIC_WKT = [
     (6, "POLYGON((10.95 0, 12 0, 12 1, 10.95 1, 10.95 0))"),
     (7, "POLYGON((30 0, 32 0, 32 2, 30 2, 30 0))"),
     (8, "POLYGON((30.5 0.5, 31.5 0.5, 31.5 1.5, 30.5 1.5, 30.5 0.5))"),
+    (9, "POLYGON((50 0, 62 0, 62 1, 50 1, 50 0))"),
+    (10, "POLYGON((50 1.1, 62 1.1, 62 2.1, 50 2.1, 50 1.1))"),
+    (11, "POLYGON((50 1, 51 1, 51 1.1, 50 1.1, 50 1))"),
+    (12, "POLYGON((61 1, 62 1, 62 1.1, 61 1.1, 61 1))"),
 ]
 
 _STEPS = ["inputs", "issues", "clean", "outputs"]
@@ -134,42 +143,76 @@ def test_clean_default_output_paths(synthetic_input):
     assert expected_issues.exists()
 
 
-def test_clean_gap_width_all_fills_gap(synthetic_input, tmp_path):
+def test_clean_maximum_gap_width_all_fills_gap(synthetic_input, tmp_path):
     output_path = tmp_path / "all.parquet"
     issues_path = tmp_path / "all_issues.parquet"
-    clean(synthetic_input, output_path, issues_path, gap_width="all", overwrite=True)
+    clean(
+        synthetic_input,
+        output_path,
+        issues_path,
+        maximum_gap_width="all",
+        overwrite=True,
+    )
 
     assert _real_hole_area(output_path) == pytest.approx(0.0, abs=1e-9)
 
 
-def test_clean_gap_width_auto_leaves_gap(synthetic_input, tmp_path):
+def test_clean_maximum_gap_width_auto_fills_only_thin_gap(synthetic_input, tmp_path):
+    """Auto fills the fid 9-12 sliver but leaves the fid 1-4 compact square alone."""
     output_path = tmp_path / "auto.parquet"
     issues_path = tmp_path / "auto_issues.parquet"
-    clean(synthetic_input, output_path, issues_path, gap_width="auto", overwrite=True)
+    clean(
+        synthetic_input,
+        output_path,
+        issues_path,
+        maximum_gap_width="auto",
+        overwrite=True,
+    )
 
-    assert _real_hole_area(output_path) == pytest.approx(1.0, rel=1e-6)
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        compact_filled, thin_filled = conn.execute(f"""
+            WITH u AS (SELECT ST_Union_Agg(geometry) AS g FROM '{output_path}')
+            SELECT ST_Contains(u.g, ST_Point(1.5, 1.5)),
+                   ST_Contains(u.g, ST_Point(55, 1.05))
+            FROM u
+        """).fetchone()
+    assert compact_filled is False
+    assert thin_filled is True
 
 
-def test_clean_gap_width_explicit_meters(synthetic_input, tmp_path):
+def test_clean_maximum_gap_width_explicit_meters(synthetic_input, tmp_path):
     narrow_output = tmp_path / "narrow.parquet"
     narrow_issues = tmp_path / "narrow_issues.parquet"
     clean(
-        synthetic_input, narrow_output, narrow_issues, gap_width="50000", overwrite=True
+        synthetic_input,
+        narrow_output,
+        narrow_issues,
+        maximum_gap_width="50000",
+        overwrite=True,
     )
+    # 50km clears the thin gap's ~11km MIC width but not the compact square's
+    # ~111km one, so only the compact hole (area 1.0) remains.
     assert _real_hole_area(narrow_output) == pytest.approx(1.0, rel=1e-6)
 
     wide_output = tmp_path / "wide.parquet"
     wide_issues = tmp_path / "wide_issues.parquet"
-    clean(synthetic_input, wide_output, wide_issues, gap_width="200000", overwrite=True)
+    clean(
+        synthetic_input,
+        wide_output,
+        wide_issues,
+        maximum_gap_width="200000",
+        overwrite=True,
+    )
     assert _real_hole_area(wide_output) == pytest.approx(0.0, abs=1e-9)
 
 
-def test_clean_invalid_gap_width_value(synthetic_input, tmp_path):
-    with pytest.raises(ValueError, match="gap-width"):
+def test_clean_invalid_maximum_gap_width_value(synthetic_input, tmp_path):
+    with pytest.raises(ValueError, match="maximum-gap-width"):
         clean(
             synthetic_input,
             tmp_path / "bad.parquet",
-            gap_width="potato",
+            maximum_gap_width="potato",
             overwrite=True,
         )
 

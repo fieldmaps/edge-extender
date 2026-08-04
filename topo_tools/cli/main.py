@@ -110,16 +110,17 @@ def extend(  # noqa: PLR0913, PLR0917
     help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
 )
 @click.option(
-    "--gap-width",
-    envvar="GAP_WIDTH",
+    "--maximum-gap-width",
+    envvar="MAXIMUM_GAP_WIDTH",
     type=str,
     default="all",
     show_default=True,
-    help="'auto' (no fill), 'all' (fill every detected gap), or a number in meters.",
+    help="'auto' (fill only thin/sliver-shaped gaps), 'all' (fill every detected "
+    "gap), or a number in meters.",
 )
 @click.option(
-    "--snap-tolerance",
-    envvar="SNAP_TOLERANCE",
+    "--snapping-distance",
+    envvar="SNAPPING_DISTANCE",
     type=str,
     default="auto",
     show_default=True,
@@ -155,8 +156,8 @@ def clean(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     issues_file: str | None,
-    gap_width: str,
-    snap_tolerance: str,
+    maximum_gap_width: str,
+    snapping_distance: str,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
@@ -173,17 +174,17 @@ def clean(  # noqa: PLR0913, PLR0917
       topo-tools clean example.geojson
 
       \b
-      # Don't fill any gaps, just detect and report every defect
-      topo-tools clean example.gpkg --gap-width auto
+      # Only auto-fill thin/sliver-shaped gaps, leave the rest for review
+      topo-tools clean example.gpkg --maximum-gap-width auto
 
       \b
       # Cap gap-filling at 5m
-      topo-tools clean example.parquet --gap-width 5
+      topo-tools clean example.parquet --maximum-gap-width 5
     """
     logger.info(
-        "--gap-width=%s --snap-tolerance=%s --debug=%s",
-        gap_width,
-        snap_tolerance,
+        "--maximum-gap-width=%s --snapping-distance=%s --debug=%s",
+        maximum_gap_width,
+        snapping_distance,
         debug,
     )
     try:
@@ -191,8 +192,8 @@ def clean(  # noqa: PLR0913, PLR0917
             Path(input_file),
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
-            gap_width=gap_width,
-            snap_tolerance=snap_tolerance,
+            maximum_gap_width=maximum_gap_width,
+            snapping_distance=snapping_distance,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,
