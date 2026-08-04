@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `clean`: sliver detection/reporting (`--sliver-tolerance`, issues-file
+  `kind='sliver'` rows). Detection was unreliable even at tiny real-data
+  scale (OOM confirmed on a 21-fid Angola admin1 file) and slivers were
+  never auto-fixable in the first place -- see `docs/clean.md`. `clean` now
+  only detects/fixes gaps and overlaps.
+
 ## [0.1.0] - 2026-07-10
 
 Initial release: four tools, CLI + Python API for each.

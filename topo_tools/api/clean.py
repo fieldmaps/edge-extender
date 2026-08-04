@@ -12,7 +12,6 @@ from topo_tools.core.clean import _01_inputs as inputs
 from topo_tools.core.clean import _02_issues as issues
 from topo_tools.core.clean import _03_clean as clean_stage
 from topo_tools.core.clean import _04_outputs as outputs
-from topo_tools.core.clean._constants import SLIVER_TOLERANCE_DEFAULT_M
 from topo_tools.core.duckdb_utils import (
     cleanup_tmp,
     export_debug_tables,
@@ -59,7 +58,6 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
     *,
     gap_width: str = "all",
     snap_tolerance: str = "auto",
-    sliver_tolerance_m: float = SLIVER_TOLERANCE_DEFAULT_M,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
     overwrite: bool = False,
@@ -68,14 +66,10 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
 ) -> None:
     """Detect and fix gap/overlap defects in a single polygon layer.
 
-    Processes exactly one file per call. Slivers (near-miss boundary
-    mismatches) are detected and reported but never auto-fixed -- widening
-    ST_CoverageClean's snap tolerance to force one closed re-nodes the whole
-    coverage, not just the defect site. Always writes two files: the cleaned
-    dataset (output_path, "_cleaned" suffix if omitted) and an issues report
-    (issues_path, "_issues" suffix if omitted) so a human can review flagged
-    slivers -- and any gaps left unfilled -- before deciding what to do with
-    them.
+    Processes exactly one file per call. Always writes two files: the
+    cleaned dataset (output_path, "_cleaned" suffix if omitted) and an
+    issues report (issues_path, "_issues" suffix if omitted) so a human can
+    review any gaps left unfilled before deciding what to do with them.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
@@ -95,13 +89,6 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
         if issues_path is not None
         else output_path.with_stem(output_path.stem + "_issues")
     )
-    if issues_path.suffix == ".shp":
-        msg = (
-            "issues file cannot be Shapefile: the issues report mixes Polygon "
-            "(gap/overlap) and LineString (sliver) geometry in one table, which "
-            "Shapefile's single-geometry-type-per-file format can't represent"
-        )
-        raise ValueError(msg)
     if output_path.exists() and not overwrite:
         msg = f"output already exists: {output_path}"
         raise FileExistsError(msg)
@@ -139,9 +126,7 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if s == "inputs":
                     inputs.main(conn, name, input_path)
                 elif s == "issues":
-                    issues.main(
-                        conn, name, sliver_tolerance_m=sliver_tolerance_m, debug=debug
-                    )
+                    issues.main(conn, name, debug=debug)
                 elif s == "clean":
                     clean_stage.main(
                         conn,

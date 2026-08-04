@@ -1,4 +1,4 @@
-"""Fixes gap/overlap defects with ST_CoverageClean; slivers are never touched.
+"""Fixes gap/overlap defects with ST_CoverageClean.
 
 Overlaps are always fixed unconditionally by ST_CoverageClean itself -- no
 flag controls that. gap_width and snap_tolerance are the only tunables (see

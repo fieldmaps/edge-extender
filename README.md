@@ -13,7 +13,7 @@ tools, usable from the CLI or as a Python package:
 
 | Tool | What it does | Usage |
 | --- | --- | --- |
-| **clean** | Detects and fixes gap/overlap defects in a single polygon layer; reports slivers separately for manual review. | [`docs/clean.md`](docs/clean.md) |
+| **clean** | Detects and fixes gap/overlap defects in a single polygon layer, reporting issues for manual review. | [`docs/clean.md`](docs/clean.md) |
 | **extend** | Fills gaps around a polygon layer (missing coastline, disputed areas, water bodies) with a Voronoi extension, producing full coverage. | [`docs/extend.md`](docs/extend.md) |
 | **match** | Fits a finer child polygon layer into a coarser parent layer, grouping and extending each child to fill gaps within its own parent. | [`docs/match.md`](docs/match.md) |
 | **change** | Compares two versions of a polygon layer and classifies every unit as unchanged, renamed, modified, split, merged, created, or removed. | [`docs/change.md`](docs/change.md) |

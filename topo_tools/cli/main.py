@@ -10,7 +10,6 @@ from topo_tools.api import clean as _clean
 from topo_tools.api import extend as _extend
 from topo_tools.api import match as _match
 from topo_tools.core.change._constants import TAU_MATCH_DEFAULT, TAU_SAME_DEFAULT
-from topo_tools.core.clean._constants import SLIVER_TOLERANCE_DEFAULT_M
 
 basicConfig(level=INFO, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 logger = getLogger(__name__)
@@ -58,7 +57,7 @@ def cli() -> None:
     default=None,
     help="Run only one named stage.",
 )
-def extend(  # noqa: PLR0913
+def extend(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     memory_gb: float,
@@ -125,15 +124,7 @@ def extend(  # noqa: PLR0913
     default="auto",
     show_default=True,
     help="'auto' (GEOS's computed default) or a number in meters. Noding robustness "
-    "only -- not a way to fix slivers.",
-)
-@click.option(
-    "--sliver-tolerance",
-    envvar="SLIVER_TOLERANCE_M",
-    type=float,
-    default=SLIVER_TOLERANCE_DEFAULT_M,
-    show_default=True,
-    help="Near-miss boundary detection cutoff, in meters. 0 disables sliver detection.",
+    "knob only.",
 )
 @click.option(
     "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
@@ -160,13 +151,12 @@ def extend(  # noqa: PLR0913
     default=None,
     help="Run only one named stage.",
 )
-def clean(  # noqa: PLR0913
+def clean(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     issues_file: str | None,
     gap_width: str,
     snap_tolerance: str,
-    sliver_tolerance: float,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
@@ -176,11 +166,10 @@ def clean(  # noqa: PLR0913
     r"""Detect and fix gap/overlap defects in a single polygon layer.
 
     OUTPUT_FILE defaults to INPUT_FILE with a "_cleaned" suffix if omitted.
-    Slivers are detected and reported in the issues file, never auto-fixed.
 
     \b
     Examples:
-      # Basic run: fill every detected gap, report slivers for review
+      # Basic run: fill every detected gap
       topo-tools clean example.geojson
 
       \b
@@ -188,8 +177,8 @@ def clean(  # noqa: PLR0913
       topo-tools clean example.gpkg --gap-width auto
 
       \b
-      # Cap gap-filling at 5m, widen sliver detection to 25m
-      topo-tools clean example.parquet --gap-width 5 --sliver-tolerance 25
+      # Cap gap-filling at 5m
+      topo-tools clean example.parquet --gap-width 5
     """
     logger.info(
         "--gap-width=%s --snap-tolerance=%s --debug=%s",
@@ -204,7 +193,6 @@ def clean(  # noqa: PLR0913
             Path(issues_file) if issues_file is not None else None,
             gap_width=gap_width,
             snap_tolerance=snap_tolerance,
-            sliver_tolerance_m=sliver_tolerance,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,
@@ -312,7 +300,7 @@ def clean(  # noqa: PLR0913
     default=None,
     help="Run only one named stage.",
 )
-def change(  # noqa: PLR0913
+def change(  # noqa: PLR0913, PLR0917
     old_file: str,
     new_file: str,
     output_file: str | None,
@@ -415,7 +403,7 @@ def change(  # noqa: PLR0913
     default=None,
     help="Run only one named stage.",
 )
-def match(  # noqa: PLR0913
+def match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,

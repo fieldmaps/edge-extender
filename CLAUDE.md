@@ -32,13 +32,12 @@ tools:
   its own parent. `core.match` depends on `core.extend`; the reverse
   dependency is forbidden by an import-linter contract (see Key Patterns).
 - **clean**: detects and fixes coverage defects (gaps, overlaps) in a single
-  polygon layer with `ST_CoverageClean`; can also detect (but never
-  auto-fix) slivers (near-miss boundary mismatches), reporting them in a
-  separate issues file alongside the cleaned dataset for manual review --
-  disabled by default (`--sliver-tolerance 0`) due to a real-data OOM bug
-  in detection, see `docs/clean.md`. `core.clean`
-  depends on `core.extend`; the reverse dependency is forbidden by the same
-  kind of import-linter contract as `match`. See `docs/clean.md`.
+  polygon layer with `ST_CoverageClean`, reporting them in a separate issues
+  file alongside the cleaned dataset for manual review. Sliver
+  detection/reporting was removed (never auto-fixable, and detection itself
+  was unreliable even at tiny real-data scale -- see `docs/clean.md`).
+  `core.clean` depends on `core.extend`; the reverse dependency is forbidden
+  by the same kind of import-linter contract as `match`. See `docs/clean.md`.
 - **change**: compares two versions of a polygon layer (old vs. new) and
   classifies every unit as unchanged/renamed/modified/relocated/split/merge/
   complex/created/removed, using spatial overlap (`tau_match`/`tau_same`
@@ -107,7 +106,7 @@ uv run topo-tools extend example.geojson
 # Run the match tool (fits a child layer into a parent/clip layer)
 uv run topo-tools match children.geojson parents.geojson
 
-# Run the clean tool (detects/fixes gaps+overlaps, reports slivers separately)
+# Run the clean tool (detects/fixes gaps+overlaps, reports issues separately)
 uv run topo-tools clean example.geojson
 
 # Run the change tool (compares an old/new polygon layer pair)
@@ -180,15 +179,14 @@ exception — see `docs/match.md`). Three layers, each with a specific job
    `read_and_reproject()` helper, **without** `extend`'s own auto-clean
    pre-check — `clean`'s detection stage needs to see the raw, uncleaned
    input (`{name}_01`).
-2. **`_02_issues.main`** — Detects gap/overlap/sliver defects, writing one
-   issues table (`{name}_02`: `key`, `kind`, `area_m2`, `max_width_m`,
-   `unit_a`, `unit_b`, `geom` — mixed Polygon/LineString geometry). Gaps only
-   catch fully-enclosed holes; overlaps are bbox-prefiltered pairwise
-   intersections; slivers are `ST_CoverageInvalidEdges_Agg` near-misses with
-   already-detected gap/overlap regions subtracted. See `docs/clean.md`.
+2. **`_02_issues.main`** — Detects gap/overlap defects, writing one issues
+   table (`{name}_02`: `key`, `kind`, `area_m2`, `max_width_m`, `unit_a`,
+   `unit_b`, `geom` — Polygon geometry). Gaps only catch fully-enclosed
+   holes; overlaps are bbox-prefiltered pairwise intersections. See
+   `docs/clean.md`.
 3. **`_03_clean.main`** — Fixes gaps/overlaps via `extend`'s
    `coverage_clean()` (gated: a no-op copy if the input has no coverage
-   violations at all), writing `{name}_03`. Slivers are never touched.
+   violations at all), writing `{name}_03`.
 4. **`_04_outputs.main`** — Validates overlaps are gone (`check_overlaps`,
    hard gate); logs (does not raise on) any gaps left unfilled by design;
    exports both the cleaned dataset and the issues report. Does **not**
@@ -259,9 +257,7 @@ as a side effect of importing). Settings now flow in two ways:
 (`_cleaned` suffix) and optional `issues_path` (`_issues` suffix, derived
 from `output_path`'s stem), plus `gap_width` (`"auto"`/`"all"`/a meters
 string, default `"all"`), `snap_tolerance` (`"auto"`/a meters string,
-default `"auto"`), `sliver_tolerance_m` (default `0.0`, sliver detection
-disabled by default — see `docs/clean.md`'s "Sliver detection disabled by
-default"), and the same
+default `"auto"`), and the same
 `threads`/`tmp_dir`/`overwrite`/`debug` settings; `step` chooses among
 `inputs/issues/clean/outputs`. No `memory_gb` — `clean` has no Voronoi stage
 to size a resampling budget for.
@@ -347,7 +343,7 @@ Do not rely on recalled knowledge about DuckDB or spatial extension functions �
 
 - `docs/topology.md` — topology approach (ST_Node + ST_Polygonize), DuckDB spatial function reference, SPATIAL_JOIN memory reservation bug
 - `docs/match.md` — match's largest-overlap assignment algorithm, per-group subprocess isolation rationale, the `fids=None` whole-table-clean constraint, and the check_gaps/parent-layer-gaps caveat
-- `docs/clean.md` — clean's gap/overlap/sliver detection approach, why slivers are detect-only, verified `ST_CoverageClean` parameter semantics (`gap_maximum_width` has no GEOS-native auto-fill default, unlike `snapping_distance`), and the issues-file schema
+- `docs/clean.md` — clean's gap/overlap detection approach, why sliver detection/reporting was removed, verified `ST_CoverageClean` parameter semantics (`gap_maximum_width` has no GEOS-native auto-fill default, unlike `snapping_distance`), and the issues-file schema
 - `docs/change.md` — change's overlap/classification algorithm, why the WASM point-sampling fallback is dropped, the identity-claim guard's purpose, the output schema, and the two-output-file design
 - `docs/performance.md` — thread-scaling benchmarks, pipeline phase profiles, `get_connection` settings, RTREE experiment
 - `docs/voronoi-memory.md` — Voronoi collinearity degeneracy fix (segment cap, dynamic resampling distance), `--memory-gb`-derived point budget fitted inside a real memory-limited Docker container, and two documented (not gated) memory ceilings in `inputs.py`/`lines.py` that genuinely exceed 4GB for large files (`phl_admin3`, `idn_admin3`)
