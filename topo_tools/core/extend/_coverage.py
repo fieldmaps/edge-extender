@@ -39,10 +39,11 @@ def check_gaps(conn: DuckDBPyConnection, table: str) -> None:
         raise RuntimeError(error)
 
 
-def coverage_clean(  # noqa: PLR0913, PLR0917 -- each param is a distinct required input, not decomposable
+def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input, not decomposable
     conn: DuckDBPyConnection,
     table_in: str,
     table_out: str,
+    *,
     fids: list[int] | None,
     gap_maximum_width: float | None,
     snapping_distance: float | None = None,

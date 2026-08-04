@@ -17,6 +17,8 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     already from extend's own merge stage because it reintroduced seam-gap
     bugs. Do not reintroduce it here.
     """
-    coverage_clean(conn, f"{name}_03", f"{name}_04", None, SNAP_TOLERANCE)
+    coverage_clean(
+        conn, f"{name}_03", f"{name}_04", fids=None, gap_maximum_width=SNAP_TOLERANCE
+    )
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03"')

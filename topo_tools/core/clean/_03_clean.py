@@ -71,9 +71,9 @@ def main(
             conn,
             table,
             f"{name}_03",
-            None,
-            gap_maximum_width_deg,
-            snapping_distance_deg,
+            fids=None,
+            gap_maximum_width=gap_maximum_width_deg,
+            snapping_distance=snapping_distance_deg,
         )
     except Exception as e:  # noqa: BLE001 -- GEOS topology failures surface as generic duckdb errors
         logger.warning(
@@ -90,9 +90,9 @@ def main(
             conn,
             reduced,
             f"{name}_03",
-            None,
-            gap_maximum_width_deg,
-            snapping_distance_deg,
+            fids=None,
+            gap_maximum_width=gap_maximum_width_deg,
+            snapping_distance=snapping_distance_deg,
         )
         if not debug:
             conn.execute(f'DROP TABLE IF EXISTS "{reduced}"')

@@ -85,4 +85,6 @@ def main(conn: DuckDBPyConnection, name: str, path: Path) -> None:
 
     if has_coverage_violations(conn, f"{name}_01"):
         logger.info("cleaning coverage: invalid edges detected")
-        coverage_clean(conn, f"{name}_01", f"{name}_01", None, None)
+        coverage_clean(
+            conn, f"{name}_01", f"{name}_01", fids=None, gap_maximum_width=None
+        )
