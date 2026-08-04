@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `clean`: `--maximum-gap-width` now defaults to `auto` (fill only
+  thin/sliver-shaped gaps) instead of `all` (fill every detected gap).
+  `all` remains available as an explicit opt-in.
+
 ### Removed
 
 - `clean`: sliver detection/reporting (`--sliver-tolerance`, issues-file

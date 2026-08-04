@@ -113,7 +113,7 @@ def extend(  # noqa: PLR0913, PLR0917
     "--maximum-gap-width",
     envvar="MAXIMUM_GAP_WIDTH",
     type=str,
-    default="all",
+    default="auto",
     show_default=True,
     help="'auto' (fill only thin/sliver-shaped gaps), 'all' (fill every detected "
     "gap), or a number in meters.",
@@ -170,12 +170,12 @@ def clean(  # noqa: PLR0913, PLR0917
 
     \b
     Examples:
-      # Basic run: fill every detected gap
+      # Basic run: auto-fill only thin/sliver-shaped gaps, leave the rest for review
       topo-tools clean example.geojson
 
       \b
-      # Only auto-fill thin/sliver-shaped gaps, leave the rest for review
-      topo-tools clean example.gpkg --maximum-gap-width auto
+      # Fill every detected gap, not just slivers
+      topo-tools clean example.gpkg --maximum-gap-width all
 
       \b
       # Cap gap-filling at 5m

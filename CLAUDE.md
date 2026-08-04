@@ -255,9 +255,9 @@ as a side effect of importing). Settings now flow in two ways:
 
 `topo_tools.api.clean.clean()` takes `input_path`, optional `output_path`
 (`_cleaned` suffix) and optional `issues_path` (`_issues` suffix, derived
-from `output_path`'s stem), plus `gap_width` (`"auto"`/`"all"`/a meters
-string, default `"all"`), `snap_tolerance` (`"auto"`/a meters string,
-default `"auto"`), and the same
+from `output_path`'s stem), plus `maximum_gap_width` (`"auto"`/`"all"`/a
+meters string, default `"auto"`), `snapping_distance` (`"auto"`/a meters
+string, default `"auto"`), and the same
 `threads`/`tmp_dir`/`overwrite`/`debug` settings; `step` chooses among
 `inputs/issues/clean/outputs`. No `memory_gb` — `clean` has no Voronoi stage
 to size a resampling budget for.

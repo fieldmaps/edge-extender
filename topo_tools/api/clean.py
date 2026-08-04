@@ -59,7 +59,7 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
     output_path: str | Path | None = None,
     issues_path: str | Path | None = None,
     *,
-    maximum_gap_width: str = "all",
+    maximum_gap_width: str = "auto",
     snapping_distance: str = "auto",
     threads: int | None = None,
     tmp_dir: str | Path | None = None,

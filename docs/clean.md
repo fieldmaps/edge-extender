@@ -25,7 +25,7 @@ clean("example.geojson")
 | Option | Description |
 | --- | --- |
 | `--issues-file` | Issues report path. Defaults to `OUTPUT_FILE` with an `_issues` suffix. |
-| `--maximum-gap-width` | `auto` (fill only thin/sliver-shaped gaps), `all` (fill every detected gap, default), or a number in meters. |
+| `--maximum-gap-width` | `auto` (fill only thin/sliver-shaped gaps, default), `all` (fill every detected gap), or a number in meters. |
 | `--snapping-distance` | `auto` (GEOS's computed default, default) or a number in meters. Noding robustness knob only. |
 | `--overwrite` | Overwrite an existing output file. |
 | `--threads` | DuckDB thread count. |
@@ -135,7 +135,7 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
 
 ## `--maximum-gap-width auto|all|<meters>`
 
-- `auto` -- fills only gaps whose *shape* looks like a digitization sliver,
+- `auto` (default when the flag is omitted) -- fills only gaps whose *shape* looks like a digitization sliver,
   regardless of their absolute width. `gap_maximum_width` is a pure width
   cutoff with no shape concept of its own (verified live against GDAL's
   `gdal vector clean-coverage` docs), so this computes the width to feed
@@ -158,7 +158,7 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   tolerance philosophy (see Units section below). When no gap qualifies as
   thin, the argument is omitted entirely (no gap-filling), same as `all`
   when no gaps were detected at all.
-- `all` (default when the flag is omitted) -- fills every gap the detection
+- `all` -- fills every gap the detection
   stage found. Computed as the widest detected gap's own width (`max(
   {name}_02.max_width_m WHERE kind='gap')`, already GEOS's own width metric:
   2x the gap polygon's `ST_MaximumInscribedCircle` radius) plus a small
