@@ -11,7 +11,7 @@ and what a finished pull request looks like.
 ## Setup
 
 ```bash
-git clone https://github.com/fieldmaps/topo-tools-py.git
+git clone https://github.com/OCHA-DAP/topo-tools-py.git
 cd topo-tools-py
 uv sync
 uv run pre-commit install

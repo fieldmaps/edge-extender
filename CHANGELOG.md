@@ -45,5 +45,5 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/fieldmaps/topo-tools-py/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/fieldmaps/topo-tools-py/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/OCHA-DAP/topo-tools-py/releases/tag/v0.1.0

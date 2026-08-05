@@ -3,7 +3,8 @@
 ## One-time setup (already done)
 
 - GitHub Environment `pypi` on this repo, with a required-reviewer protection rule (repo Settings → Environments). Approval is required before the `publish` job in `.github/workflows/publish.yml` can run, even after a Release is published.
-- Pending trusted publisher registered at <https://pypi.org/manage/account/publishing/>: project `topo-tools`, owner `fieldmaps`, repo `topo-tools-py`, workflow `publish.yml`, environment `pypi`. This authorizes GitHub Actions to publish via OIDC — no long-lived API token stored anywhere.
+- Pending trusted publisher registered at <https://pypi.org/manage/account/publishing/>: project `topo-tools`, owner `OCHA-DAP`, repo `topo-tools-py`, workflow `publish.yml`, environment `pypi`. This authorizes GitHub Actions to publish via OIDC — no long-lived API token stored anywhere.
+- **Repo moved from `fieldmaps` to `OCHA-DAP`** — if the PyPI trusted publisher still shows owner `fieldmaps`, update it at the link above before the next release; GitHub's OIDC token now asserts `OCHA-DAP` as the repo owner and the publish job's OIDC exchange will fail on a mismatch.
 - `.github/workflows/publish.yml` triggers only on `release: published`, never on push/tag alone.
 
 None of the above needs to be redone for future releases. It's specific to real PyPI — TestPyPI (below) is a fully separate service with its own account/tokens and isn't wired into this workflow.
