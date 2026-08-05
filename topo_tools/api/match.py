@@ -41,7 +41,6 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
     clip_path: str | Path,
     output_path: str | Path | None = None,
     *,
-    memory_gb: float = 4.0,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
     overwrite: bool = False,
@@ -114,7 +113,6 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         conn,
                         name,
                         tmp_dir_path,
-                        memory_gb=memory_gb,
                         threads=threads,
                         debug=debug,
                     )

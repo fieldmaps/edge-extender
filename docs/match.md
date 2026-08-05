@@ -16,7 +16,7 @@ topo-tools match children.geojson parents.geojson
 ```python
 from topo_tools import match
 
-match("admin4.geojson", "admin0.geojson", "admin4_matched.geojson", memory_gb=4)
+match("admin4.geojson", "admin0.geojson", "admin4_matched.geojson")
 ```
 
 `OUTPUT_FILE` (positional, optional) defaults to `INPUT_FILE` with a
@@ -24,7 +24,6 @@ match("admin4.geojson", "admin0.geojson", "admin4_matched.geojson", memory_gb=4)
 
 | Option | Description |
 | --- | --- |
-| `--memory-gb` | Available memory in GB; sizes point density automatically (default `4`). |
 | `--overwrite` | Overwrite an existing output file. |
 | `--threads` | DuckDB thread count. |
 | `--debug` | Keep intermediate tables, export to Parquet, log timing/memory per query. |
@@ -36,7 +35,7 @@ match("admin4.geojson", "admin0.geojson", "admin4_matched.geojson", memory_gb=4)
 topo-tools match adm4.geojson adm0.geojson
 
 # Fit admin3 into admin2 groups, each cleaned against its own parent
-topo-tools match adm3.gpkg adm2.gpkg adm3_matched.gpkg --memory-gb 2
+topo-tools match adm3.gpkg adm2.gpkg adm3_matched.gpkg
 ```
 
 Each parent's group of children runs in its own isolated subprocess, so a run
@@ -141,14 +140,15 @@ subprocess spawns, zero dropped children, zero failed groups, valid output
 coverage (see verification steps in the project's implementation history).
 
 **Colombia-scale profiling** (portolan `col/latest/adm3` → `col/latest/adm2`,
-`--memory-gb 4 --debug`, Apple Silicon/10 logical cores): 31,880 children
-against 1,122 parents, 1,120 of them with at least one assigned child (the
-other 2 parents had zero overlapping children — not a failure, no adm3 unit
-fell inside them). All 1,120 spawned subprocesses succeeded — zero dropped
-children, zero failed groups. Wall time 35m44s, peak RSS 5.26 GB (during the
-final whole-table `_04_merge` coverage-clean pass, exceeding the 4 GB
-`--memory-gb` soft target — same "document, don't gate" situation as
-`clean`'s Philippines run, see `docs/clean.md`). Stage breakdown:
+`--debug`, Apple Silicon/10 logical cores): 31,880 children against 1,122
+parents, 1,120 of them with at least one assigned child (the other 2 parents
+had zero overlapping children — not a failure, no adm3 unit fell inside
+them). All 1,120 spawned subprocesses succeeded — zero dropped children,
+zero failed groups. Wall time 35m44s, peak RSS 5.26 GB (during the final
+whole-table `_04_merge` coverage-clean pass — this run predates `--memory-gb`'s
+removal, see `docs/voronoi-memory.md`; a real 5.26 GB peak against a
+supposed 4 GB target is exactly the kind of soft-target result that made the
+flag not worth keeping). Stage breakdown:
 
 | Stage    | Wall time | Share |
 | -------- | --------- | ----- |

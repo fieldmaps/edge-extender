@@ -47,7 +47,6 @@ def extend(  # noqa: C901, PLR0912, PLR0913, PLR0915
     input_path: str | Path,
     output_path: str | Path | None = None,
     *,
-    memory_gb: float = 4.0,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
     overwrite: bool = False,
@@ -105,7 +104,7 @@ def extend(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 elif s == "lines":
                     lines.main(conn, name)
                 elif s == "attempt":
-                    attempt.main(conn, name, memory_gb=memory_gb, debug=debug)
+                    attempt.main(conn, name, debug=debug)
                 elif s == "merge":
                     merge.main(conn, name, debug=debug)
                 elif s == "outputs":

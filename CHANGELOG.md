@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scale (OOM confirmed on a 21-fid Angola admin1 file) and slivers were
   never auto-fixable in the first place -- see `docs/clean.md`. `clean` now
   only detects/fixes gaps and overlaps.
+- `extend`/`match`: `--memory-gb`. It only ever sized `attempt.py`'s
+  Voronoi resampling distance -- other stages (`_01_inputs`, `_02_lines`,
+  the whole-table `_05_merge`/`_04_merge` coverage-clean pass) have no
+  resampling lever and routinely exceed whatever ceiling was declared
+  anyway (documented cases up to ~5.9GB against a 4GB target), so the flag
+  gave a false sense of a memory guarantee the pipeline never actually
+  provided. The starting resampling distance is now always
+  `min(DEFAULT_DISTANCE, natural_res)`; the existing doubling-retry loop
+  still handles any resulting failure the same way it always did -- see
+  `docs/voronoi-memory.md`.
 
 ## [0.1.0] - 2026-07-10
 

@@ -229,10 +229,6 @@ Both are plain floats in `[0, 1]`, with no `auto`/`all` string modes the way
 `clean`'s `--gap-width` has — these thresholds have no GEOS-native
 auto-default to defer to, they're this tool's own tunables.
 
-## No `--memory-gb`
-
-Like `clean`, there's no Voronoi stage to size a resampling budget for.
-
 ## Portolan-scale profiling
 
 Real old/new version pairs from the portolan catalog, `--debug`, Apple

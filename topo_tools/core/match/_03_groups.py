@@ -35,12 +35,11 @@ def list_groups(conn: DuckDBPyConnection, name: str) -> list[int]:
     return [row[0] for row in rows]
 
 
-def main(  # noqa: PLR0913
+def main(
     conn: DuckDBPyConnection,
     name: str,
     tmp_dir: Path,
     *,
-    memory_gb: float,
     threads: int | None,
     debug: bool = False,
 ) -> None:
@@ -69,7 +68,7 @@ def main(  # noqa: PLR0913
         result_queue = ctx.Queue()
         process = ctx.Process(
             target=_group_worker,
-            args=(group_dir, memory_gb, threads, debug, result_queue),
+            args=(group_dir, threads, debug, result_queue),
         )
         process.start()
         process.join()
@@ -131,7 +130,6 @@ def _append_to_reassembly(
 
 def _group_worker(
     group_dir: Path,
-    memory_gb: float,
     threads: int | None,
     debug: bool,  # noqa: FBT001
     result_queue: multiprocessing.Queue,
@@ -157,7 +155,7 @@ def _group_worker(
             """)  # already reprojected/coverage-cleaned by match's own inputs stage
 
             lines.main(conn, "group")
-            attempt.main(conn, "group", memory_gb=memory_gb, debug=debug)
+            attempt.main(conn, "group", debug=debug)
             merge.main(conn, "group", debug=debug)  # -> "group_05"
 
             clip_to_parent_geom(

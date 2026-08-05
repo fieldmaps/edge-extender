@@ -145,7 +145,7 @@ exception — see `docs/match.md`). Three layers, each with a specific job
 
 ### Pipeline Stages
 
-1. **`inputs.main`** — Reads geodata via DuckDB `ST_Read`, reprojects to EPSG:4326, stores as `*_01` (geometry). Then pre-checks `_01` with `ST_CoverageInvalidEdges_Agg`; if it finds invalid edges, runs `ST_CoverageClean` over the whole table and rewrites `*_01` in place. No-op otherwise. Requires DuckDB spatial ≥ 1.5.3 for native `ST_CoverageClean`. No memory-budget check here — `ST_CoverageClean`'s cost scales with the file's own raw vertex count with no resampling lever to shrink it (`phl_admin3`, 13.85M vertices, needs ~5.9GB and won't fit a 4GB deployment — see `docs/voronoi-memory.md`); `--memory-gb` is a soft target for `attempt.py`'s DISTANCE selection, not a hard gate here. Does not distinguish real holes from digitization slivers — inputs are expected to be pre-cleaned upstream; any narrow gap that slips through is treated the same as a real hole and left for `merge.main`'s Voronoi extension to divide. Byte-exact preservation of untouched polygons is not a goal — see Key Patterns.
+1. **`inputs.main`** — Reads geodata via DuckDB `ST_Read`, reprojects to EPSG:4326, stores as `*_01` (geometry). Then pre-checks `_01` with `ST_CoverageInvalidEdges_Agg`; if it finds invalid edges, runs `ST_CoverageClean` over the whole table and rewrites `*_01` in place. No-op otherwise. Requires DuckDB spatial ≥ 1.5.3 for native `ST_CoverageClean`. No memory-budget check here — `ST_CoverageClean`'s cost scales with the file's own raw vertex count with no resampling lever to shrink it (`phl_admin3`, 13.85M vertices, needs ~5.9GB and won't fit a 4GB deployment — see `docs/voronoi-memory.md`). Does not distinguish real holes from digitization slivers — inputs are expected to be pre-cleaned upstream; any narrow gap that slips through is treated the same as a real hole and left for `merge.main`'s Voronoi extension to divide. Byte-exact preservation of untouched polygons is not a goal — see Key Patterns.
 2. **`lines.main`** — Extracts each polygon's exterior boundary (its own boundary minus a bbox-prefiltered union of its neighbors' boundaries); produces `*_02`. Same caveat as `inputs.main`: the neighbor-union self-join's cost scales with `_01`'s raw vertex count with no resampling lever (`idn_admin3`, 7.48M vertices, needs ~5.4GB — see `docs/voronoi-memory.md`); no runtime memory check here.
 3. **`attempt.main`** — Wrapper around `points.main` + `voronoi.main` that retries with doubling distance on failure (0.0002 → 0.1024, up to 10 attempts); `points.main` creates `*_03a` (buffered endpoint union) and `*_03b` (interpolated points), `voronoi.main` generates Voronoi polygons (`*_04`)
 4. **`merge.main`** — Unions each fid's original geometry with its Voronoi extension (`*_04`) minus a bbox-prefiltered union of nearby originals, then runs a single whole-table `ST_CoverageClean` pass to close floating-point-scale seams (`*_05`)
@@ -226,24 +226,23 @@ as a side effect of importing). Settings now flow in two ways:
 - **User-configurable, varies per call** — plain keyword arguments on
   `topo_tools.api.extend.extend()`, threaded explicitly into exactly the stage
   functions that read them (confirmed by reading every stage: `_01_inputs`/`_02_lines`
-  need nothing; `_03_points`/`_04_voronoi`/`_05_merge` need `debug`; `attempt` needs
-  `memory_gb` + `debug`; `_06_outputs` needs `debug`; `get_connection` needs
-  `threads` + `debug`). `topo_tools/cli/main.py`'s `extend` command maps CLI
-  args/flags/env vars 1:1 onto these kwargs (env var names match the old
-  `config.py` ones — `INPUT_FILE`, `MEMORY_GB`, `DEBUG`, etc. — via click's
-  `envvar=`; `INPUT_FILE`/`OUTPUT_FILE` are positional `click.argument`s,
-  everything else is a `click.option`).
+  need nothing; `_03_points`/`_04_voronoi`/`_05_merge`/`attempt` need `debug`;
+  `_06_outputs` needs `debug`; `get_connection` needs `threads` + `debug`).
+  `topo_tools/cli/main.py`'s `extend` command maps CLI args/flags/env vars
+  1:1 onto these kwargs (env var names match the old `config.py` ones —
+  `INPUT_FILE`, `DEBUG`, etc. — via click's `envvar=`; `INPUT_FILE`/
+  `OUTPUT_FILE` are positional `click.argument`s, everything else is a
+  `click.option`).
 - **Not user-configurable, pure literals** — `topo_tools/core/extend/_constants.py`
   (`MAX_POINTS`, `SNAP_TOLERANCE`, `DEFAULT_DISTANCE`,
-  `MAX_POINTS_PER_SEGMENT`, the memory-model constants, `COPY_OPTS`). Safe to import
-  at module load — no argparse, no env reads.
+  `MAX_POINTS_PER_SEGMENT`, `COPY_OPTS`). Safe to import at module load — no
+  argparse, no env reads.
 
 | Setting                    | Description                                                         |
 | -------------------------- | ------------------------------------------------------------------- |
 | `input_path` / `output_path` | Input/output file paths (one file per call); `output_path` defaults to `input_path` with an `_extended` suffix when omitted |
 | `tmp_dir`                  | Intermediate DuckDB + Parquet location; defaults to a fresh `tempfile.mkdtemp()` when unset, cleaned up after the call unless `debug` |
 | `threads`                  | DuckDB thread count; unset defers to DuckDB default                 |
-| `memory_gb`                | Available memory in GB; derives attempt.py's per-file resampling distance/point budget (see `docs/voronoi-memory.md`) — set to the real container/deployment limit |
 | `overwrite`                | Overwrite existing output                                           |
 | `debug`                    | Keep intermediate tables, export all to Parquet, and log timing + memory delta per query |
 | `step`                     | Run only one named stage (inputs/lines/attempt/merge/outputs)       |
@@ -259,8 +258,7 @@ from `output_path`'s stem), plus `maximum_gap_width` (`"auto"`/`"all"`/a
 meters string, default `"auto"`), `snapping_distance` (`"auto"`/a meters
 string, default `"auto"`), and the same
 `threads`/`tmp_dir`/`overwrite`/`debug` settings; `step` chooses among
-`inputs/issues/clean/outputs`. No `memory_gb` — `clean` has no Voronoi stage
-to size a resampling budget for.
+`inputs/issues/clean/outputs`.
 
 `topo_tools.api.change.change()` takes `old_path`/`new_path`
 (positional), optional `output_path` (tabular changelog, `.csv`/`.parquet`
@@ -272,8 +270,7 @@ suffix inheriting `old_path`'s format if omitted), plus `tau_match` (default
 `code_column_a`/`code_column_b`/`name_column_a`/`name_column_b` (auto-detected
 via regex when the corresponding link flag is set and no explicit column is
 given), and the same `threads`/`tmp_dir`/`overwrite`/`debug` settings; `step`
-chooses among `inputs/overlap/classify/outputs`. No `memory_gb` — same
-reasoning as `clean`.
+chooses among `inputs/overlap/classify/outputs`.
 
 ### Table Naming Convention
 
@@ -346,5 +343,5 @@ Do not rely on recalled knowledge about DuckDB or spatial extension functions �
 - `docs/clean.md` — clean's gap/overlap detection approach, why sliver detection/reporting was removed, verified `ST_CoverageClean` parameter semantics (`gap_maximum_width` has no GEOS-native auto-fill default, unlike `snapping_distance`), and the issues-file schema
 - `docs/change.md` — change's overlap/classification algorithm, why the WASM point-sampling fallback is dropped, the identity-claim guard's purpose, the output schema, and the two-output-file design
 - `docs/performance.md` — thread-scaling benchmarks, pipeline phase profiles, `get_connection` settings, RTREE experiment
-- `docs/voronoi-memory.md` — Voronoi collinearity degeneracy fix (segment cap, dynamic resampling distance), `--memory-gb`-derived point budget fitted inside a real memory-limited Docker container, and two documented (not gated) memory ceilings in `inputs.py`/`lines.py` that genuinely exceed 4GB for large files (`phl_admin3`, `idn_admin3`)
+- `docs/voronoi-memory.md` — Voronoi collinearity degeneracy fix (segment cap, dynamic resampling distance), why the `--memory-gb`-derived point budget that once sized it was tried and then removed, and two documented (not gated) memory ceilings in `inputs.py`/`lines.py` that genuinely exceed 4GB for large files (`phl_admin3`, `idn_admin3`)
 - `docs/publishing.md` — PyPI release process (GitHub Release → required-reviewer approval → trusted-publisher OIDC), and the TestPyPI rehearsal loop for testing packaging changes

@@ -259,6 +259,6 @@ Two real bugs surfaced and fixed by this run (`_02_issues.py`'s
 **Philippines admin3 exceeded the 4 GB container target** (5.15 GB peak) on
 this run, driven mostly by the (since-removed) sliver-detection pass in the
 `issues` stage; gap/overlap detection alone is expected to be substantially
-lighter. Unlike `extend`'s Voronoi stage, `clean` has no `--memory-gb`-derived
-knob to fall back on, so per this repo's "document, don't gate" policy (see
-`docs/voronoi-memory.md`) this is noted here rather than runtime-checked.
+lighter. `clean` has no resampling knob to fall back on (nor does `extend`
+anymore — see `docs/voronoi-memory.md`), so per this repo's "document, don't
+gate" policy this is noted here rather than runtime-checked.

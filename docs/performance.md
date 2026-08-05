@@ -13,8 +13,8 @@ Machine: Apple Silicon, macOS, 10 logical cores.
   `duckdb` wheel from PyPI. Use a glibc-based image (e.g. `python:3.x-slim`)
   instead.
 - Every CLI flag also has an environment variable equivalent (`INPUT_FILE`,
-  `MEMORY_GB`, `DEBUG`, etc. — see `topo_tools/cli/main.py`), useful when
-  flags are awkward to pass in a container entrypoint.
+  `DEBUG`, etc. — see `topo_tools/cli/main.py`), useful when flags are
+  awkward to pass in a container entrypoint.
 - Air-gapped or network-restricted environments need the DuckDB `spatial`
   extension pre-installed rather than downloaded on first run (see
   [DuckDB's extension docs](https://duckdb.org/docs/extensions/overview)).
@@ -87,14 +87,16 @@ against real portolan data under the current code until now.
 
 `phl_admin3` (portolan `phl/latest/adm3`, 1,642 fids, 13.85M vertices —
 the same file `docs/voronoi-memory.md` documents as needing ~5.9GB in
-`_01_inputs.py`'s coverage-clean fallback path), `--memory-gb 4 --debug`,
-Apple Silicon/10 logical cores:
+`_01_inputs.py`'s coverage-clean fallback path), `--debug`, Apple Silicon/10
+logical cores. This run predates `--memory-gb`'s removal (see
+`docs/voronoi-memory.md`); the `attempt` note below reflects that
+since-removed budget model, kept for the real measured numbers:
 
 | Stage   | Wall time | Notes                                                    |
 | ------- | --------- | --------------------------------------------------------- |
 | inputs  | 12s       | no invalid edges detected — fallback `ST_CoverageClean` did **not** trigger |
 | lines   | 39s       |                                                             |
-| attempt | 2m13s     | 13.07M raw segments needed ~11.1GB to decompose/remerge alone, exceeding the ~4GB budget before resampling — proceeded anyway with `DEFAULT_DISTANCE` per the soft-target policy, succeeded on the first attempt (no retry) |
+| attempt | 2m13s     | 13.07M raw segments needed ~11.1GB to decompose/remerge alone, exceeding the ~4GB budget in effect at the time before resampling — proceeded anyway with `DEFAULT_DISTANCE`, succeeded on the first attempt (no retry) |
 | merge   | 1m24s     |                                                             |
 | outputs | 1m47s     |                                                             |
 | **Total** | **6m15s** | peak RSS **4.55 GB**                                     |
@@ -132,9 +134,9 @@ Key thread-sensitivity breakdown:
 - `_05` (cell-point ST_Within `_01` then `_04` fallback): 1.8s → 1.9s, negligible
 
 For memory-constrained deployments: `--threads=1` gives a similar peak (~7.2 GB) to
-default threads. Both are above a 4 GB WASM/Docker target — reducing below that requires
-pipeline changes (chunking or a coarser `--memory-gb`-derived resampling distance, see
-`docs/voronoi-memory.md`).
+default threads. Both are above a 4 GB WASM/Docker target — reducing below that would
+require pipeline changes (e.g. chunking); see `docs/voronoi-memory.md` for why a
+resampling-distance budget isn't that lever anymore.
 
 ---
 

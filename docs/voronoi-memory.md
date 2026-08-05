@@ -40,44 +40,49 @@ vertices in its exterior boundary alone) — fixed by only capping segments
 that are actually long, and letting normal segments fall back to the
 original whole-line resampling formula.
 
-## Memory ceiling: `--memory-gb` and the per-file point budget
+## Memory ceiling: `--memory-gb` was tried, then removed
 
-`target_point_budget` above is not a hardcoded constant — an earlier version
-used a single value (`TARGET_POINT_BUDGET = 5_500_000`) calibrated once
-against `chl_admin3`'s RSS-peak behavior on an unconstrained dev machine.
-That calibration point was never actually safe: tested inside a real
-`--memory=4g --memory-swap=4g` (no swap) Docker container — the real
-deployment constraint, not RSS inference — Chile OOM'd at exactly that
-"known-good" distance. `docker inspect`'s `.State.OOMKilled` confirmed this
-is a hard kernel SIGKILL, not a catchable `DuckDBError` — `attempt.py`'s
-retry-doubling loop never runs in that case, so the budget must avoid the
-ceiling in the first place, not retry after crossing it.
+An earlier version derived `effective_distance`'s starting point from a
+`--memory-gb`-parameterized point budget instead of just `min(DEFAULT_DISTANCE,
+natural_res)`. Full history, for context on why that path was explored and
+then abandoned:
 
-The corrected model has two DISTANCE-independent terms plus one
-DISTANCE-dependent term, fitted from probes run inside the real container:
+An even earlier version used a single hardcoded value
+(`TARGET_POINT_BUDGET = 5_500_000`) calibrated once against `chl_admin3`'s
+RSS-peak behavior on an unconstrained dev machine. That calibration point was
+never actually safe: tested inside a real `--memory=4g --memory-swap=4g` (no
+swap) Docker container — the real deployment constraint, not RSS inference —
+Chile OOM'd at exactly that "known-good" distance. `docker inspect`'s
+`.State.OOMKilled` confirmed this is a hard kernel SIGKILL, not a catchable
+`DuckDBError` — `attempt.py`'s retry-doubling loop never runs in that case,
+so a budget-based approach has to avoid the ceiling in the first place, not
+retry after crossing it.
 
-1. **Segment decompose+remerge cost** (`_REMERGE_BYTES_PER_RAW_SEGMENT` in
-   `config.py`) — scales with each file's own raw vertex count, *before* any
-   DISTANCE is applied. Measured: `idn_admin3` 2.49M segments → 1788MB;
-   `chl_admin3` 3.23M segments → 2544MB (~787 B/segment, used as the
-   constant). `phl_admin3` (13.07M segments) OOM'd on this step alone,
-   confirming no DISTANCE value can rescue a file whose raw vertex count
-   alone exceeds the budget — `attempt.py` now logs a warning and falls back
-   to the plain default distance in this case instead of computing a
-   budget-derived one that would be nonsensical, since `--memory-gb` is a
-   soft target, not a hard limit (see "Two more bottlenecks" below for why
-   this isn't a hard block).
-2. **Fixed app/DuckDB startup overhead** (`_BASELINE_OVERHEAD_MB = 500`).
-3. **Final point cost** (`_BYTES_PER_POINT`, `_SAFETY_MARGIN`) — the
-   DISTANCE-dependent `ST_VoronoiDiagram` → join → union sequence, fitted at
-   ~1.82 KB/point from 7 concordant real+synthetic data points in-container.
+The `--memory-gb` model that replaced it had two DISTANCE-independent terms
+plus one DISTANCE-dependent term, fitted from probes run inside the real
+container (segment decompose+remerge cost, fixed startup overhead, and a
+per-point cost for the `ST_VoronoiDiagram` → join → union sequence), and
+did fix the immediate problem: verified in the real 4GB container, Chad and
+Algeria stayed unaffected and Chile succeeded (previously OOM'd even at the
+old "calibrated" default).
 
-`--memory-gb` (default 4, env `MEMORY_GB`) parameterizes this instead of
-assuming one fixed ceiling fits every deployment — the same formula
-re-derives a safe budget for a smaller container or, eventually, a WASM heap
-limit. Verified in the real 4GB container after the fix: Chad/Algeria
-unaffected, **Chile now succeeds** (previously OOM'd even at the old
-"calibrated" default).
+It was removed anyway. `attempt.py`'s budget only ever controlled the
+Voronoi resampling distance in one stage — but `_01_inputs.py`,
+`_02_lines.py`, and `_05_merge.py` (the whole-table `ST_CoverageClean` pass)
+have no DISTANCE lever at all and routinely exceed 4GB regardless (see "Two
+more bottlenecks" below: `phl_admin3` needs ~5.9GB, `idn_admin3` ~5.4GB; a
+real Colombia `match()` run peaked at 5.26GB during its merge stage, `docs/
+match.md`). A container genuinely constrained to 4GB was never actually
+achievable pipeline-wide, so a budget that only shaved this one stage was
+mostly theater — real headroom has to come from swap or a larger container
+regardless of what `attempt.py` picks. `--memory-gb` was never wired into
+DuckDB's own `memory_limit` either; it only ever chose a starting distance
+for a retry loop that already existed and already escalates on failure. The
+one real, non-SIGKILL failure mode it also protected against (raw vertex
+count alone exceeding the budget before any resampling) already degrades
+gracefully without it: `attempt.py` just starts at `DEFAULT_DISTANCE` and
+lets the doubling-retry loop run, same fallback path it always had for a
+too-many-points failure.
 
 ## Two more bottlenecks, investigated and documented (no runtime gate added)
 
@@ -87,14 +92,13 @@ verifying the fix above under a real container. Both are DISTANCE-independent
 floor (which sits inside `attempt.py`'s retry loop and needs to pick a sane
 fallback DISTANCE to avoid a nonsensical calculation), these two run in
 `_01_inputs.py`/`_02_lines.py`, which have no DISTANCE at all to fall back to.
-A runtime memory-budget check was built for both, then deliberately removed:
-`--memory-gb` is meant as a soft target for `attempt.py`'s DISTANCE
-selection, not a hard gate on whether *any* file is even attempted — a real
-deployment may have swap headroom beyond the stated `--memory-gb`, and once
-the check no longer blocked (see below), it had zero effect on execution
-besides one log line, at the cost of two probe-fitted constants that would
-need future upkeep. Findings are recorded here instead so a future OOM on
-one of these files points back to a known, already-diagnosed cause.
+A runtime memory-budget check was built for both, then deliberately removed
+(and `--memory-gb` itself was later removed entirely — see above): a real
+deployment may have swap headroom beyond any stated ceiling, and a check
+that can't do anything but log a line isn't worth the upkeep of the
+probe-fitted constants it needs. Findings are recorded here instead so a
+future OOM on one of these files points back to a known, already-diagnosed
+cause.
 
 **Docker Desktop VM memory cap gotcha, discovered mid-investigation.** Every
 container test in this whole document up to this point was silently running
