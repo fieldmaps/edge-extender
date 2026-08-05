@@ -2,7 +2,9 @@
 
 from duckdb import DuckDBPyConnection
 
-from ._constants import EQUAL_AREA_CRS, INTERSECTION_SLIVER_DEG2
+from topo_tools.core.extend._constants import EQUAL_AREA_CRS
+
+from ._constants import INTERSECTION_SLIVER_DEG2
 
 
 def main(conn: DuckDBPyConnection, name: str) -> None:

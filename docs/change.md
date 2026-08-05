@@ -103,11 +103,12 @@ a cheap pre-filter before the equal-area transform, which is only ever
 applied to surviving intersection geometry (not the whole layer, to bound
 the cost). Areas and ratios use `EPSG:8857` (Equal Earth), matching `match`'s
 own reasoning for avoiding raw `EPSG:4326` degree-area bias toward
-higher-latitude units. `EQUAL_AREA_CRS` is duplicated as a literal in
-`change`'s own `_constants.py` rather than imported from `core.match` —
-`change` stays decoupled from `match`/`clean` the same way they're
-decoupled from each other (no import-linter contract needed for one string
-constant).
+higher-latitude units. `EQUAL_AREA_CRS` lives in `core/extend/_constants.py`
+and is imported from there, not duplicated as a separate literal in
+`change`'s own `_constants.py` the way it once was — `change` still stays
+decoupled from `match`/`clean` the same way they're decoupled from each
+other, since both only depend on the shared `extend` hub, never on one
+another.
 
 ## Classification: identity + spatial union-find
 

@@ -4,6 +4,12 @@ from decimal import Decimal
 
 MAX_POINTS = 10_000_000
 SNAP_TOLERANCE = 0.00000001
+# Equal Earth -- used by match/change to rank/compute areas for cross-polygon
+# area comparison (never stored). Lives here, not in either tool's own
+# _constants.py, so both import the same literal instead of each declaring
+# their own copy of it -- match and change still don't depend on each other,
+# only on this shared hub, same as SNAP_TOLERANCE above.
+EQUAL_AREA_CRS = "EPSG:8857"
 # Exact (case-sensitive) column names DuckDB's GDAL COPY writer treats
 # specially as the feature's implicit FID, colliding with our own internal
 # "fid" or a source column already named this way -- confirmed via a minimal

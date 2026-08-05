@@ -4,7 +4,7 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
-from ._constants import EQUAL_AREA_CRS
+from topo_tools.core.extend._constants import EQUAL_AREA_CRS
 
 logger = getLogger(__name__)
 

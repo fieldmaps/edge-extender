@@ -9,12 +9,6 @@ TAU_MATCH_DEFAULT = 0.8
 # than modified. Ported from topo-tools-js's current App.svelte default.
 TAU_SAME_DEFAULT = 0.98
 
-# Equal Earth -- used to compute shared/whole-polygon areas for coverage_a/
-# coverage_b/iou ratios (never stored). Duplicated from core/match/_constants.py's
-# EQUAL_AREA_CRS rather than imported: change stays decoupled from match/
-# clean the same way they're decoupled from each other.
-EQUAL_AREA_CRS = "EPSG:8857"
-
 # Intersection crumbs below this area (deg^2, ~1cm^2) are dropped as noise
 # before shared-area aggregation. Ported as-is from topo-tools-js's
 # src/lib/db/overlap.ts SLIVER constant.
