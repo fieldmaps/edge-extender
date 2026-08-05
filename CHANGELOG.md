@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `clean`: `--maximum-gap-width` now defaults to `auto` (fill only
   thin/sliver-shaped gaps) instead of `all` (fill every detected gap).
   `all` remains available as an explicit opt-in.
+- **Breaking:** `clean`: `--maximum-gap-width`/`--snapping-distance` (and
+  the matching `api.clean.clean()` kwargs) now take decimal degrees instead
+  of meters -- the units `ST_CoverageClean` itself takes on our
+  always-EPSG:4326 data, and the same convention GDAL/OGR uses for distance
+  parameters on an unprojected layer. Removes a dataset-wide
+  `cos(centroid latitude)` conversion that was a real approximation over
+  large north-south extents. See `docs/clean.md`.
+- `clean`: `_03_clean.py` now retries the resolved `gap_maximum_width`
+  (from `auto`/`all`/an explicit value) through a validated escalation
+  ladder (widening only, never below the original target) if
+  `ST_CoverageClean` leaves residual invalid edges, raises, or silently
+  erodes real polygon area -- two confirmed real `ST_CoverageClean` failure
+  modes, unrelated to `snapping_distance`. Validation now checks both
+  `has_coverage_violations()` and a total-area sanity floor, since the
+  former alone passes a totally empty result as "no violations." If every
+  rung fails, `clean` now raises a clear, actionable error instead of the
+  previous bare `OVERLAPS: {table}`. `--maximum-gap-width all`'s width is
+  still computed from the widest actually-detected gap (unchanged
+  behavior) -- a fixed large constant was tried during development and
+  rejected after it was shown to make `ST_CoverageClean` erase real
+  polygon area on real data. See `docs/clean.md`.
 
 ### Removed
 

@@ -39,7 +39,7 @@ def _parse_maximum_gap_width(value: str) -> tuple[str, float | None]:
     except ValueError:
         msg = (
             f"--maximum-gap-width must be 'auto', 'all', or a number in "
-            f"meters, got {value!r}"
+            f"decimal degrees, got {value!r}"
         )
         raise ValueError(msg) from None
 
@@ -50,7 +50,10 @@ def _parse_snapping_distance(value: str) -> tuple[str, float | None]:
     try:
         return "value", float(value)
     except ValueError:
-        msg = f"--snapping-distance must be 'auto' or a number in meters, got {value!r}"
+        msg = (
+            f"--snapping-distance must be 'auto' or a number in decimal "
+            f"degrees, got {value!r}"
+        )
         raise ValueError(msg) from None
 
 

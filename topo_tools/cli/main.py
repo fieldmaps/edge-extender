@@ -106,7 +106,8 @@ def extend(  # noqa: PLR0913, PLR0917
     default="auto",
     show_default=True,
     help="'auto' (fill only thin/sliver-shaped gaps), 'all' (fill every detected "
-    "gap), or a number in meters.",
+    "gap), or a number in decimal degrees (the layer's EPSG:4326 units -- "
+    "matches GDAL/OGR convention, not meters).",
 )
 @click.option(
     "--snapping-distance",
@@ -114,8 +115,8 @@ def extend(  # noqa: PLR0913, PLR0917
     type=str,
     default="auto",
     show_default=True,
-    help="'auto' (GEOS's computed default) or a number in meters. Noding robustness "
-    "knob only.",
+    help="'auto' (GEOS's computed default) or a number in decimal degrees. Noding "
+    "robustness knob only.",
 )
 @click.option(
     "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
@@ -168,8 +169,8 @@ def clean(  # noqa: PLR0913, PLR0917
       topo-tools clean example.gpkg --maximum-gap-width all
 
       \b
-      # Cap gap-filling at 5m
-      topo-tools clean example.parquet --maximum-gap-width 5
+      # Cap gap-filling at ~0.0001 degrees (~11m at the equator)
+      topo-tools clean example.parquet --maximum-gap-width 0.0001
     """
     logger.info(
         "--maximum-gap-width=%s --snapping-distance=%s --debug=%s",

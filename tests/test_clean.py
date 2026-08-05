@@ -10,8 +10,10 @@ import duckdb
 import pytest
 from click.testing import CliRunner
 
+import topo_tools.core.clean._03_clean as clean_stage
 from topo_tools.api.clean import clean
 from topo_tools.cli.main import cli
+from topo_tools.core.clean._constants import GAP_WIDTH_ESCALATION_FACTORS
 
 # Two independent groups, spatially separated so each exercises exactly one
 # defect kind without interference:
@@ -143,11 +145,43 @@ def test_clean_default_output_paths(synthetic_input):
     assert expected_issues.exists()
 
 
-def test_clean_maximum_gap_width_all_fills_gap(synthetic_input, tmp_path):
+@pytest.fixture
+def scaled_gap_input(tmp_path):
+    """Write a single compact 1x1 hole inside a ~10,200-area ring, not ~8.
+
+    `_SYNTHETIC_WKT`'s fid 1-4 group makes its hole a huge (12.5%) fraction
+    of the surrounding ring's own area -- fine for the thin-vs-compact shape
+    tests, but unrepresentative of real admin-boundary data (where the
+    widest gap is a tiny fraction of its surroundings) and it triggers a
+    real `ST_CoverageClean` defect when combined with fid 9-12's
+    differently-scaled group in the same call: several unrelated polygons
+    collapse to zero area, confirmed to not happen with either group
+    processed alone. This fixture keeps the hole's shape/width identical
+    (still 1x1, same ~0.785 thinness) so `--maximum-gap-width` assertions
+    stay valid, just embedded in a realistically-scaled, single-group ring.
+    """
+    path = tmp_path / "scaled_gap.parquet"
+    wkt = [
+        (1, "POLYGON((0 0, 101 0, 101 50, 0 50, 0 0))"),
+        (2, "POLYGON((0 51, 101 51, 101 101, 0 101, 0 51))"),
+        (3, "POLYGON((0 50, 50 50, 50 51, 0 51, 0 50))"),
+        (4, "POLYGON((51 50, 101 50, 101 51, 51 51, 51 50))"),
+    ]
+    values = ", ".join(f"({fid}, ST_GeomFromText('{w}'))" for fid, w in wkt)
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t(id, geom)"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+    return path
+
+
+def test_clean_maximum_gap_width_all_fills_gap(scaled_gap_input, tmp_path):
     output_path = tmp_path / "all.parquet"
     issues_path = tmp_path / "all_issues.parquet"
     clean(
-        synthetic_input,
+        scaled_gap_input,
         output_path,
         issues_path,
         maximum_gap_width="all",
@@ -181,27 +215,27 @@ def test_clean_maximum_gap_width_auto_fills_only_thin_gap(synthetic_input, tmp_p
     assert thin_filled is True
 
 
-def test_clean_maximum_gap_width_explicit_meters(synthetic_input, tmp_path):
+def test_clean_maximum_gap_width_explicit_degrees(scaled_gap_input, tmp_path):
     narrow_output = tmp_path / "narrow.parquet"
     narrow_issues = tmp_path / "narrow_issues.parquet"
     clean(
-        synthetic_input,
+        scaled_gap_input,
         narrow_output,
         narrow_issues,
-        maximum_gap_width="50000",
+        maximum_gap_width="0.5",
         overwrite=True,
     )
-    # 50km clears the thin gap's ~11km MIC width but not the compact square's
-    # ~111km one, so only the compact hole (area 1.0) remains.
+    # 0.5 degrees doesn't clear the compact square's ~1 degree MIC width,
+    # so the hole (area 1.0) remains.
     assert _real_hole_area(narrow_output) == pytest.approx(1.0, rel=1e-6)
 
     wide_output = tmp_path / "wide.parquet"
     wide_issues = tmp_path / "wide_issues.parquet"
     clean(
-        synthetic_input,
+        scaled_gap_input,
         wide_output,
         wide_issues,
-        maximum_gap_width="200000",
+        maximum_gap_width="2",
         overwrite=True,
     )
     assert _real_hole_area(wide_output) == pytest.approx(0.0, abs=1e-9)
@@ -214,6 +248,112 @@ def test_clean_invalid_maximum_gap_width_value(synthetic_input, tmp_path):
             tmp_path / "bad.parquet",
             maximum_gap_width="potato",
             overwrite=True,
+        )
+
+
+def _overlapping_pair_conn():
+    """Open a connection with a minimal 2-fid overlapping `stage_01` table."""
+    conn = duckdb.connect()
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    conn.execute("""
+        CREATE TABLE stage_01 AS
+        SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))')),
+            (2, ST_GeomFromText('POLYGON((1 1, 3 1, 3 3, 1 3, 1 1))'))
+        ) AS t(fid, geom)
+    """)
+    return conn
+
+
+def test_clean_gap_width_escalation_recovers_after_transient_failures(monkeypatch):
+    """The escalation loop moves past a rung that fails outright and succeeds later.
+
+    The first rung's own two sub-attempts (original + reduced-precision retry)
+    both fail here, so recovery lands on the second rung's first sub-attempt --
+    the third `coverage_clean` call overall.
+    """
+    expected_row_count = 2
+    recovery_call_count = 3
+    calls = []
+    real_coverage_clean = clean_stage.coverage_clean
+
+    def flaky_coverage_clean(conn, table_in, table_out, **kwargs):
+        calls.append(kwargs["gap_maximum_width"])
+        if len(calls) < recovery_call_count:
+            msg = "simulated GEOS instability at this width"
+            raise RuntimeError(msg)
+        real_coverage_clean(conn, table_in, table_out, **kwargs)
+
+    monkeypatch.setattr(clean_stage, "coverage_clean", flaky_coverage_clean)
+
+    with _overlapping_pair_conn() as conn:
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
+        )
+        row_count = conn.execute("SELECT COUNT(*) FROM stage_03").fetchone()[0]
+
+    assert row_count == expected_row_count
+    assert len(calls) == recovery_call_count
+
+
+def test_clean_gap_width_escalation_exhausted_raises(monkeypatch):
+    """Every rung failing raises a clear error instead of silently degrading."""
+    calls = []
+
+    def always_fails(*_args, **kwargs):
+        calls.append(kwargs["gap_maximum_width"])
+        msg = "simulated persistent GEOS instability"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(clean_stage, "coverage_clean", always_fails)
+
+    with (
+        _overlapping_pair_conn() as conn,
+        pytest.raises(RuntimeError, match="escalation exhausted"),
+    ):
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
+        )
+
+    # Each rung retries once at reduced precision before giving up on that rung.
+    assert len(calls) == len(GAP_WIDTH_ESCALATION_FACTORS) * 2
+
+
+def test_clean_gap_width_escalation_rejects_eroded_output(monkeypatch):
+    """A totally empty coverage_clean() result must not be accepted as success.
+
+    Regression: has_coverage_violations() alone passes an empty result as
+    "no violations" -- confirmed directly against a real ST_CoverageClean
+    call at a large gap_maximum_width that silently erased all polygon
+    area. The escalation loop must also reject on the area-sanity check,
+    not just the invalid-edges check, so a call that "succeeds" by
+    returning nothing still counts as this rung failing.
+    """
+
+    def empties_output(conn, table_in, table_out, **_kwargs):
+        query = (
+            f'CREATE OR REPLACE TABLE "{table_out}" AS '
+            f'SELECT * FROM "{table_in}" WHERE FALSE'
+        )
+        conn.execute(query)
+
+    monkeypatch.setattr(clean_stage, "coverage_clean", empties_output)
+
+    with (
+        _overlapping_pair_conn() as conn,
+        pytest.raises(RuntimeError, match="escalation exhausted"),
+    ):
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
         )
 
 
