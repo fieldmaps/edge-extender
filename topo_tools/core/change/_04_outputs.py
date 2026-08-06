@@ -4,7 +4,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.extend._constants import COPY_OPTS
+from topo_tools.core.extend._coverage import export_geometry_table
 
 from ._constants import TABLE_COPY_OPTS
 
@@ -46,16 +46,11 @@ def main(
     """)
 
     dest.parent.mkdir(exist_ok=True, parents=True)
-    overlay_dest.parent.mkdir(exist_ok=True, parents=True)
 
     conn.execute(f"""--sql
         COPY (SELECT * FROM "{name}_03c") TO '{dest}' {TABLE_COPY_OPTS[dest.suffix]}
     """)
-    conn.execute(f"""--sql
-        COPY (
-            SELECT * RENAME (geom AS geometry) FROM "{name}_04"
-        ) TO '{overlay_dest}' {COPY_OPTS[overlay_dest.suffix]}
-    """)
+    export_geometry_table(conn, f"{name}_04", overlay_dest, exclude_fid=False)
 
     if not debug:
         for t in ("a_01", "b_01", "02", "03a", "03b", "03c", "04"):

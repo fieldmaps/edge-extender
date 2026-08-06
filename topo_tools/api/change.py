@@ -1,12 +1,7 @@
 """Public API: compare two polygon layer versions and classify what changed."""
 
-import shutil
-import signal
-import tempfile
 from logging import getLogger
 from pathlib import Path
-from types import FrameType
-from typing import NoReturn
 
 from duckdb import DuckDBPyConnection
 
@@ -21,10 +16,9 @@ from topo_tools.core.change._constants import (
     TAU_SAME_DEFAULT,
 )
 from topo_tools.core.duckdb_utils import (
-    cleanup_tmp,
-    export_debug_tables,
-    get_connection,
-    log_file,
+    maybe_export_debug_tables,
+    pipeline_connection,
+    resolve_tmp_dir,
 )
 from topo_tools.core.extend._constants import COPY_OPTS
 
@@ -56,7 +50,7 @@ def _resolve_column(
     return column
 
 
-def change(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def change(  # noqa: C901, PLR0912, PLR0913
     old_path: str | Path,
     new_path: str | Path,
     output_path: str | Path | None = None,
@@ -128,97 +122,72 @@ def change(  # noqa: C901, PLR0912, PLR0913, PLR0915
         msg = f"output already exists: {overlay_path}"
         raise FileExistsError(msg)
 
-    owns_tmp_dir = tmp_dir is None
-    tmp_dir_path = (
-        Path(tmp_dir)
-        if tmp_dir is not None
-        else Path(tempfile.mkdtemp(prefix="topo_tools_"))
-    )
-    tmp_dir_path.mkdir(exist_ok=True, parents=True)
-
     # "_changelog" keeps every table/file this call creates distinct from an
     # extend()/match()/clean() run against the same old_path/tmp_dir, same
     # collision-avoidance reasoning as match's "_match" and clean's "_clean".
     name = old_path.name.replace(".", "_") + "_changelog"
-    if not step:
-        cleanup_tmp(name, tmp_dir_path, parquet=True)
 
-    with log_file(name, tmp_dir_path):
-        conn = get_connection(name, tmp_dir_path, threads=threads, debug=debug)
-
-        def _interrupt(_sig: int, _frame: FrameType | None) -> NoReturn:
-            conn.interrupt()
-            raise KeyboardInterrupt
-
-        old_handler = signal.signal(signal.SIGINT, _interrupt)
-        try:
-            logger.info("starting: %s", name)
-            for s in _STEP_ORDER:
-                if step and step != s:
-                    continue
-                if debug:
-                    logger.info("=== %s ===", s)
-                if s == "inputs":
-                    inputs.main(conn, name, old_path, new_path)
-                elif s == "overlap":
-                    overlap.main(conn, name)
-                elif s == "classify":
-                    resolved_code_a = (
-                        _resolve_column(
-                            conn, f"{name}_a_01", code_column_a, kind="code", side="a"
-                        )
-                        if link_by_code
-                        else code_column_a
-                    )
-                    resolved_code_b = (
-                        _resolve_column(
-                            conn, f"{name}_b_01", code_column_b, kind="code", side="b"
-                        )
-                        if link_by_code
-                        else code_column_b
-                    )
-                    resolved_name_a = (
-                        _resolve_column(
-                            conn, f"{name}_a_01", name_column_a, kind="name", side="a"
-                        )
-                        if link_by_name
-                        else name_column_a
-                    )
-                    resolved_name_b = (
-                        _resolve_column(
-                            conn, f"{name}_b_01", name_column_b, kind="name", side="b"
-                        )
-                        if link_by_name
-                        else name_column_b
-                    )
-                    classify.main(
-                        conn,
-                        name,
-                        tau_match=tau_match,
-                        tau_same=tau_same,
-                        link_by_code=link_by_code,
-                        link_by_name=link_by_name,
-                        link_mode=link_mode,
-                        code_col_a=resolved_code_a,
-                        code_col_b=resolved_code_b,
-                        name_col_a=resolved_name_a,
-                        name_col_b=resolved_name_b,
-                    )
-                elif s == "outputs":
-                    outputs.main(conn, name, output_path, overlay_path, debug=debug)
+    with (
+        resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,
+        pipeline_connection(
+            name, tmp_dir_path, threads=threads, debug=debug, step=step
+        ) as conn,
+    ):
+        logger.info("starting: %s", name)
+        for s in _STEP_ORDER:
+            if step and step != s:
+                continue
             if debug:
-                only = None
-                if step and step in _STEP_TABLES:
-                    only = {t.format(n=name) for t in _STEP_TABLES[step]}
-                export_debug_tables(conn, tmp_dir_path, only=only)
-            logger.info("done: %s", name)
-        finally:
-            signal.signal(signal.SIGINT, old_handler)
-            conn.close()
-            if not step and not debug:
-                cleanup_tmp(name, tmp_dir_path)
-            if owns_tmp_dir:
-                if debug:
-                    logger.info("tmp_dir preserved for --debug: %s", tmp_dir_path)
-                else:
-                    shutil.rmtree(tmp_dir_path, ignore_errors=True)
+                logger.info("=== %s ===", s)
+            if s == "inputs":
+                inputs.main(conn, name, old_path, new_path)
+            elif s == "overlap":
+                overlap.main(conn, name)
+            elif s == "classify":
+                resolved_code_a = (
+                    _resolve_column(
+                        conn, f"{name}_a_01", code_column_a, kind="code", side="a"
+                    )
+                    if link_by_code
+                    else code_column_a
+                )
+                resolved_code_b = (
+                    _resolve_column(
+                        conn, f"{name}_b_01", code_column_b, kind="code", side="b"
+                    )
+                    if link_by_code
+                    else code_column_b
+                )
+                resolved_name_a = (
+                    _resolve_column(
+                        conn, f"{name}_a_01", name_column_a, kind="name", side="a"
+                    )
+                    if link_by_name
+                    else name_column_a
+                )
+                resolved_name_b = (
+                    _resolve_column(
+                        conn, f"{name}_b_01", name_column_b, kind="name", side="b"
+                    )
+                    if link_by_name
+                    else name_column_b
+                )
+                classify.main(
+                    conn,
+                    name,
+                    tau_match=tau_match,
+                    tau_same=tau_same,
+                    link_by_code=link_by_code,
+                    link_by_name=link_by_name,
+                    link_mode=link_mode,
+                    code_col_a=resolved_code_a,
+                    code_col_b=resolved_code_b,
+                    name_col_a=resolved_name_a,
+                    name_col_b=resolved_name_b,
+                )
+            elif s == "outputs":
+                outputs.main(conn, name, output_path, overlay_path, debug=debug)
+        maybe_export_debug_tables(
+            conn, tmp_dir_path, name, step, _STEP_TABLES, debug=debug
+        )
+        logger.info("done: %s", name)

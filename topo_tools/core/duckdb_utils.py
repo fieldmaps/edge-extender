@@ -2,11 +2,16 @@
 
 import contextlib
 import re
+import shutil
+import signal
+import tempfile
 import threading
 import time
 from collections.abc import Iterator
 from logging import FileHandler, Formatter, getLogger
 from pathlib import Path
+from types import FrameType
+from typing import NoReturn
 
 from duckdb import DuckDBPyConnection
 from duckdb import connect as duckdb_connect
@@ -158,6 +163,88 @@ def export_debug_tables(
         ).fetchall()[0][0]
         opts = _GEO_PARQUET if has_geom else _PARQUET
         conn.execute(f"COPY \"{table}\" TO '{out}' {opts}")
+
+
+@contextlib.contextmanager
+def resolve_tmp_dir(
+    tmp_dir: str | Path | None, *, debug: bool = False
+) -> Iterator[Path]:
+    """Resolve tmp_dir to a Path, owning a fresh mkdtemp() (and its cleanup) if unset.
+
+    Mirrors every api/*.py entrypoint's tmp_dir lifecycle: a caller-supplied
+    tmp_dir is left untouched on exit; an omitted one gets a private
+    tempfile.mkdtemp() that's removed on a clean exit (preserved under
+    --debug) but deliberately left in place if the run raises, for
+    post-mortem inspection.
+    """
+    owns_tmp_dir = tmp_dir is None
+    path = (
+        Path(tmp_dir)
+        if tmp_dir is not None
+        else Path(tempfile.mkdtemp(prefix="topo_tools_"))
+    )
+    path.mkdir(exist_ok=True, parents=True)
+    yield path
+    if owns_tmp_dir:
+        if debug:
+            logger.info("tmp_dir preserved for --debug: %s", path)
+        else:
+            shutil.rmtree(path, ignore_errors=True)
+
+
+@contextlib.contextmanager
+def pipeline_connection(
+    name: str,
+    tmp_dir: Path,
+    *,
+    threads: int | None = None,
+    debug: bool = False,
+    step: str | None = None,
+) -> Iterator[ProfiledConnection]:
+    """Set up logging, a DuckDB connection, and SIGINT handling for one pipeline run.
+
+    Purges stale same-name tmp tables/files before a full (non-`--step`) run,
+    tees the root logger to a per-run log file, installs a SIGINT handler
+    that interrupts the in-flight query instead of hanging, and always closes
+    the connection (dropping its tmp tables on a full run) on the way out --
+    the shared shutdown contract every api/*.py entrypoint needs.
+    """
+    if not step:
+        cleanup_tmp(name, tmp_dir, parquet=True)
+
+    with log_file(name, tmp_dir):
+        conn = get_connection(name, tmp_dir, threads=threads, debug=debug)
+
+        def _interrupt(_sig: int, _frame: FrameType | None) -> NoReturn:
+            conn.interrupt()
+            raise KeyboardInterrupt
+
+        old_handler = signal.signal(signal.SIGINT, _interrupt)
+        try:
+            yield conn
+        finally:
+            signal.signal(signal.SIGINT, old_handler)
+            conn.close()
+            if not step and not debug:
+                cleanup_tmp(name, tmp_dir)
+
+
+def maybe_export_debug_tables(  # noqa: PLR0913 -- each param is a distinct required input
+    conn: DuckDBPyConnection,
+    tmp_dir: Path,
+    name: str,
+    step: str | None,
+    step_tables: dict[str, list[str]],
+    *,
+    debug: bool,
+) -> None:
+    """Export debug tables for the run, scoped to one step's tables under --step."""
+    if not debug:
+        return
+    only = None
+    if step and step in step_tables:
+        only = {t.format(n=name) for t in step_tables[step]}
+    export_debug_tables(conn, tmp_dir, only=only)
 
 
 class _EagerResult:

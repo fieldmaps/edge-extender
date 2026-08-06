@@ -5,8 +5,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.extend._constants import COPY_OPTS
-from topo_tools.core.extend._coverage import check_overlaps
+from topo_tools.core.extend._coverage import check_overlaps, export_geometry_table
 
 logger = getLogger(__name__)
 
@@ -47,21 +46,8 @@ def main(
     check_overlaps(conn, f"{name}_03")
     _warn_on_unfilled_gaps(conn, name)
 
-    dest.parent.mkdir(exist_ok=True, parents=True)
-    issues_dest.parent.mkdir(exist_ok=True, parents=True)
-
-    conn.execute(f"""--sql
-        COPY (
-            SELECT * EXCLUDE (fid) RENAME (geom AS geometry)
-            FROM "{name}_03"
-        ) TO '{dest}' {COPY_OPTS[dest.suffix]}
-    """)
-    conn.execute(f"""--sql
-        COPY (
-            SELECT * RENAME (geom AS geometry)
-            FROM "{name}_02"
-        ) TO '{issues_dest}' {COPY_OPTS[issues_dest.suffix]}
-    """)
+    export_geometry_table(conn, f"{name}_03", dest)
+    export_geometry_table(conn, f"{name}_02", issues_dest, exclude_fid=False)
 
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_01"')

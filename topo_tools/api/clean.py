@@ -1,22 +1,16 @@
 """Public API: detect and fix coverage defects (gaps, overlaps) in a polygon layer."""
 
-import shutil
-import signal
-import tempfile
 from logging import getLogger
 from pathlib import Path
-from types import FrameType
-from typing import NoReturn
 
 from topo_tools.core.clean import _01_inputs as inputs
 from topo_tools.core.clean import _02_issues as issues
 from topo_tools.core.clean import _03_clean as clean_stage
 from topo_tools.core.clean import _04_outputs as outputs
 from topo_tools.core.duckdb_utils import (
-    cleanup_tmp,
-    export_debug_tables,
-    get_connection,
-    log_file,
+    maybe_export_debug_tables,
+    pipeline_connection,
+    resolve_tmp_dir,
 )
 
 logger = getLogger(__name__)
@@ -57,7 +51,7 @@ def _parse_snapping_distance(value: str) -> tuple[str, float | None]:
         raise ValueError(msg) from None
 
 
-def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def clean(  # noqa: C901, PLR0913
     input_path: str | Path,
     output_path: str | Path | None = None,
     issues_path: str | Path | None = None,
@@ -102,59 +96,34 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
         msg = f"output already exists: {issues_path}"
         raise FileExistsError(msg)
 
-    owns_tmp_dir = tmp_dir is None
-    tmp_dir_path = (
-        Path(tmp_dir)
-        if tmp_dir is not None
-        else Path(tempfile.mkdtemp(prefix="topo_tools_"))
-    )
-    tmp_dir_path.mkdir(exist_ok=True, parents=True)
-
     name = input_path.name.replace(".", "_") + "_clean"
-    if not step:
-        cleanup_tmp(name, tmp_dir_path, parquet=True)
 
-    with log_file(name, tmp_dir_path):
-        conn = get_connection(name, tmp_dir_path, threads=threads, debug=debug)
-
-        def _interrupt(_sig: int, _frame: FrameType | None) -> NoReturn:
-            conn.interrupt()
-            raise KeyboardInterrupt
-
-        old_handler = signal.signal(signal.SIGINT, _interrupt)
-        try:
-            logger.info("starting: %s", name)
-            for s in _STEP_ORDER:
-                if step and step != s:
-                    continue
-                if debug:
-                    logger.info("=== %s ===", s)
-                if s == "inputs":
-                    inputs.main(conn, name, input_path)
-                elif s == "issues":
-                    issues.main(conn, name, debug=debug)
-                elif s == "clean":
-                    clean_stage.main(
-                        conn,
-                        name,
-                        gap_maximum_width=parsed_maximum_gap_width,
-                        snapping_distance=parsed_snapping_distance,
-                    )
-                elif s == "outputs":
-                    outputs.main(conn, name, output_path, issues_path, debug=debug)
+    with (
+        resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,
+        pipeline_connection(
+            name, tmp_dir_path, threads=threads, debug=debug, step=step
+        ) as conn,
+    ):
+        logger.info("starting: %s", name)
+        for s in _STEP_ORDER:
+            if step and step != s:
+                continue
             if debug:
-                only = None
-                if step and step in _STEP_TABLES:
-                    only = {t.format(n=name) for t in _STEP_TABLES[step]}
-                export_debug_tables(conn, tmp_dir_path, only=only)
-            logger.info("done: %s", name)
-        finally:
-            signal.signal(signal.SIGINT, old_handler)
-            conn.close()
-            if not step and not debug:
-                cleanup_tmp(name, tmp_dir_path)
-            if owns_tmp_dir:
-                if debug:
-                    logger.info("tmp_dir preserved for --debug: %s", tmp_dir_path)
-                else:
-                    shutil.rmtree(tmp_dir_path, ignore_errors=True)
+                logger.info("=== %s ===", s)
+            if s == "inputs":
+                inputs.main(conn, name, input_path)
+            elif s == "issues":
+                issues.main(conn, name, debug=debug)
+            elif s == "clean":
+                clean_stage.main(
+                    conn,
+                    name,
+                    gap_maximum_width=parsed_maximum_gap_width,
+                    snapping_distance=parsed_snapping_distance,
+                )
+            elif s == "outputs":
+                outputs.main(conn, name, output_path, issues_path, debug=debug)
+        maybe_export_debug_tables(
+            conn, tmp_dir_path, name, step, _STEP_TABLES, debug=debug
+        )
+        logger.info("done: %s", name)

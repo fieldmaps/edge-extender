@@ -4,8 +4,11 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.extend._constants import COPY_OPTS
-from topo_tools.core.extend._coverage import check_gaps, check_overlaps
+from topo_tools.core.extend._coverage import (
+    check_gaps,
+    check_overlaps,
+    export_geometry_table,
+)
 
 
 def main(
@@ -22,14 +25,7 @@ def main(
     check_overlaps(conn, f"{name}_04")
     check_gaps(conn, f"{name}_04")
 
-    dest.parent.mkdir(exist_ok=True, parents=True)
-
-    conn.execute(f"""--sql
-        COPY (
-            SELECT * EXCLUDE (fid) RENAME (geom AS geometry)
-            FROM "{name}_04"
-        ) TO '{dest}' {COPY_OPTS[dest.suffix]}
-    """)
+    export_geometry_table(conn, f"{name}_04", dest)
 
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
