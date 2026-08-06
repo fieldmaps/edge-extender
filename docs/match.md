@@ -227,10 +227,8 @@ is for. Reverted both variants; `_clip.py` stays a plain
 
 ## `check_gaps` and parent-layer gaps
 
-`_05_outputs.py` reuses `extend`'s `check_overlaps`/`check_gaps` (hoisted
-into `topo_tools/core/extend/_coverage.py` as public functions so `match` can
-import them without a private cross-package import) unmodified, on the
-final `{name}_04` table. This cannot distinguish a gap `match`'s own clip
+`_05_outputs.py` reuses `check_overlaps`/`check_gaps` from the shared
+`topo_tools/core/coverage.py` unmodified, on the final `{name}_04` table. This cannot distinguish a gap `match`'s own clip
 step introduced from a gap the parent/clip layer already had between two
 different parents' territories (e.g. a world ADM0 layer with disputed or
 unclaimed areas). This is intentional: a gap here is a real signal that the

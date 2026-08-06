@@ -72,15 +72,56 @@ source_modules = ["topo_tools.core.extend"]
 forbidden_modules = ["topo_tools.core.match"]
 
 [[tool.importlinter.contracts]]
-id = "clean-may-use-extend-not-reverse"
-name = "clean may depend on extend; extend must not depend on clean"
-type = "forbidden"
-source_modules = ["topo_tools.core.extend"]
-forbidden_modules = ["topo_tools.core.clean"]
-
-[[tool.importlinter.contracts]]
 id = "change-may-use-extend-not-reverse"
 name = "change may depend on extend; extend must not depend on change"
 type = "forbidden"
 source_modules = ["topo_tools.core.extend"]
 forbidden_modules = ["topo_tools.core.change"]
+
+[[tool.importlinter.contracts]]
+id = "core-constants-is-leaf"
+name = "core.constants must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.constants"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+]
+
+[[tool.importlinter.contracts]]
+id = "core-coverage-is-leaf"
+name = "core.coverage must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.coverage"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+]
+
+[[tool.importlinter.contracts]]
+id = "core-io-is-leaf"
+name = "core.io must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.io"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+]
+
+[[tool.importlinter.contracts]]
+id = "core-duckdb-utils-is-leaf"
+name = "core.duckdb_utils must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.duckdb_utils"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+]

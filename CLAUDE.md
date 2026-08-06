@@ -36,8 +36,8 @@ tools:
   file alongside the cleaned dataset for manual review. Sliver
   detection/reporting was removed (never auto-fixable, and detection itself
   was unreliable even at tiny real-data scale -- see `docs/clean.md`).
-  `core.clean` depends on `core.extend`; the reverse dependency is forbidden
-  by the same kind of import-linter contract as `match`. See `docs/clean.md`.
+  `core.clean` depends only on the shared `core.io`/`core.coverage` leaf
+  modules, not on `core.extend`. See `docs/clean.md`.
 - **change**: compares two versions of a polygon layer (old vs. new) and
   classifies every unit as unchanged/renamed/modified/relocated/split/merge/
   complex/created/removed, using spatial overlap (`tau_match`/`tau_same`
@@ -130,9 +130,14 @@ exception — see `docs/match.md`). Three layers, each with a specific job
 
 - `topo_tools/core/extend/`, `topo_tools/core/match/`, `topo_tools/core/clean/`,
   `topo_tools/core/change/` — the real stage implementations. No `click`
-  import. `core.match`, `core.clean`, and `core.change` may each import
-  from `core.extend` (all three reuse `extend`'s stage functions/helpers);
-  the reverse is forbidden by import-linter contracts (`pyproject.toml`).
+  import. `core.match` and `core.change` each import from `core.extend`
+  (reusing `extend`'s own Voronoi-pipeline stage functions); the reverse is
+  forbidden by import-linter contracts (`pyproject.toml`). All four tools,
+  plus `core.duckdb_utils`, may import the neutral shared leaf modules
+  `core.constants`/`core.coverage`/`core.io` (generic constants,
+  coverage-topology validation/repair, and geodata read/write helpers used
+  by more than one tool) — those leaf modules never import back from any
+  tool package, also enforced by import-linter.
 - `topo_tools/api/extend.py`, `topo_tools/api/match.py`, `topo_tools/api/clean.py`,
   `topo_tools/api/change.py` — the public `extend()`/`match()`/`clean()`/
   `change()` functions; each chains its own tool's stages together for
@@ -169,23 +174,23 @@ exception — see `docs/match.md`). Three layers, each with a specific job
    any output at all. See `docs/match.md` for the full rationale.
 4. **`_04_merge.main`** — Single whole-table `ST_CoverageClean` pass over
    `{name}_03` to close cross-group seams (`{name}_04`).
-5. **`_05_outputs.main`** — Validates topology (reusing `extend`'s
-   `check_overlaps`/`check_gaps`, hoisted into `core/extend/_coverage.py` as
-   public functions) and exports via DuckDB COPY.
+5. **`_05_outputs.main`** — Validates topology (reusing `check_overlaps`/
+   `check_gaps` from the shared `core/coverage.py`) and exports via DuckDB
+   COPY.
 
 ### Clean Pipeline Stages
 
-1. **`_01_inputs.main`** — Reads and reprojects via `extend`'s
-   `read_and_reproject()` helper, **without** `extend`'s own auto-clean
-   pre-check — `clean`'s detection stage needs to see the raw, uncleaned
-   input (`{name}_01`).
+1. **`_01_inputs.main`** — Reads and reprojects via the shared
+   `core.io.read_and_reproject()` helper, **without** `extend`'s own
+   auto-clean pre-check — `clean`'s detection stage needs to see the raw,
+   uncleaned input (`{name}_01`).
 2. **`_02_issues.main`** — Detects gap/overlap defects, writing one issues
    table (`{name}_02`: `key`, `kind`, `area_m2`, `max_width_m`, `unit_a`,
    `unit_b`, `geom` — Polygon geometry). Gaps only catch fully-enclosed
    holes; overlaps are bbox-prefiltered pairwise intersections. See
    `docs/clean.md`.
-3. **`_03_clean.main`** — Fixes gaps/overlaps via `extend`'s
-   `coverage_clean()` (gated: a no-op copy if the input has no coverage
+3. **`_03_clean.main`** — Fixes gaps/overlaps via the shared
+   `core.coverage.coverage_clean()` (gated: a no-op copy if the input has no coverage
    violations at all), writing `{name}_03`. Retries the resolved
    `gap_maximum_width` through an escalation ladder (widening only, never
    below the `auto`/`all`/explicit target) if the result still has invalid
@@ -237,9 +242,10 @@ as a side effect of importing). Settings now flow in two ways:
   `OUTPUT_FILE` are positional `click.argument`s, everything else is a
   `click.option`).
 - **Not user-configurable, pure literals** — `topo_tools/core/extend/_constants.py`
-  (`MAX_POINTS`, `SNAP_TOLERANCE`, `DEFAULT_DISTANCE`,
-  `MAX_POINTS_PER_SEGMENT`, `COPY_OPTS`). Safe to import at module load — no
-  argparse, no env reads.
+  (`MAX_POINTS`, `DEFAULT_DISTANCE`, `MAX_POINTS_PER_SEGMENT`, Voronoi-specific)
+  and the shared `topo_tools/core/constants.py` (`SNAP_TOLERANCE`,
+  `EQUAL_AREA_CRS`, `RESERVED_COLUMN_NAMES`, `COPY_OPTS`, used by more than
+  one tool). Safe to import at module load — no argparse, no env reads.
 
 | Setting                    | Description                                                         |
 | -------------------------- | ------------------------------------------------------------------- |
@@ -316,20 +322,21 @@ pass — `change` is a read-only comparison, not a fix.
 
 - **DuckDB spatial extension** handles all geometry operations (`ST_*` functions). One file-backed connection is created per input file in `topo_tools/core/duckdb_utils.py` and returned as a `ProfiledConnection` proxy that logs timing and memory per query when `--debug` is set.
 - **DuckDB tables as IPC** — stages read and write named tables on the shared connection; no Parquet between stages.
-- **Topology validation** in `_06_outputs.py` (`_check_overlaps`, `_check_gaps`) always runs in outputs, backed by `has_coverage_violations` in `topo_tools/core/extend/_coverage.py`. Both unnest MultiPolygon geometries before checking to ensure correct coverage validation across individual polygon pieces. There is no byte-exactness check — see below.
+- **Topology validation** in `_06_outputs.py` (`_check_overlaps`, `_check_gaps`) always runs in outputs, backed by `has_coverage_violations` in the shared `topo_tools/core/coverage.py`. Both unnest MultiPolygon geometries before checking to ensure correct coverage validation across individual polygon pieces. There is no byte-exactness check — see below.
+- **`core/constants.py`, `core/coverage.py`, `core/io.py` are neutral leaf modules, alongside `core/duckdb_utils.py`.** Any of the four tools (or a future one) may import them; none of the four may import back from `core.extend`/`match`/`clean`/`change`, enforced by a `*-is-leaf` import-linter contract per module. A generic constant/helper used by 2+ tools belongs here, not in any one tool's own `_constants.py` or duplicated across tools.
 - **Geometry column names**: `geom` in DuckDB tables, `geometry` in final output.
 - **`duckdb_memory()` measurements in isolation underestimate pipeline peaks.** A fresh connection with few tables in the DuckDB file can show 4 GB for a query that peaks at 8 GB in a full pipeline run, because the buffer pool from other large tables (`_01`, `_04`, `_05_tmp1`, etc.) adds several GB of additional pressure. Profile with `--step=X --debug` on a database file that already has all prior-stage tables present.
 - **Avoid materializing one global `ST_Union_Agg` of `_01` as a per-row `ST_Difference`/join operand.** At Chile scale the union can hold millions of vertices; using it as an operand against every fid individually made GEOS pay that cost on every row and OOM'd outright (confirmed during development of `_05_merge.py`). Use a bbox-prefiltered join against nearby originals instead (see `_05_merge.py`'s `_05_tmp1`/`_05_tmp2`, which explodes multipolygon fids into parts first — a whole-fid bbox can span mainland-to-remote-island and defeat the prefilter). **`_02_lines.py`'s neighbor-union self-join deliberately does NOT do this** — it joins on whole-fid bboxes. Exploding it into per-part bboxes looks like the same fix but isn't: it helps files with many fids that each have a few widely-scattered parts (e.g. `idn_admin3`) but badly regresses files with one fid made of thousands of tightly-clustered parts (e.g. `chl_admin3` has a single fid with 3,796 parts) by multiplying self-join row count far more than the tighter bboxes save — confirmed empirically (Chile: 3.3GB peak with whole-fid bboxes vs. OOM at 10GB+ with per-part bboxes). See `docs/voronoi-memory.md`.
 - **Byte-exact preservation of original polygon vertices is not a goal.** `ST_CoverageClean` may shift any polygon's boundary, including previously-untouched ones. Don't reintroduce per-fid violator scoping, snapshot/restore, or escalation logic to protect vertex-level exactness — that machinery was removed deliberately (see `docs/topology.md`).
 - **`core.match` may import from `core.extend`; the reverse is forbidden.** Enforced by the `match-may-use-extend-not-reverse` import-linter contract in `pyproject.toml`. `match` reuses `extend`'s stage functions per-group rather than duplicating Voronoi gap-filling logic; `extend` must stay usable standalone with zero knowledge of `match`.
 - **`match`'s per-group work runs in an isolated subprocess, not `match()`'s own connection/process.** GEOS's native heap isn't fully released between files even after closing the DuckDB connection (the same finding that makes `extend()` process one file per OS process) — a many-parent-group `match()` run would hit the same failure mode in-process, just with groups substituting for files. See `docs/match.md`.
-- **`core.clean` may import from `core.extend`; the reverse is forbidden.** Enforced by the `clean-may-use-extend-not-reverse` import-linter contract. `clean` reuses `extend`'s `read_and_reproject()` (inputs, without the auto-clean pre-check) and `coverage_clean()` (fix stage); `extend` must stay usable standalone with zero knowledge of `clean`.
+- **`core.clean` depends only on the shared leaf modules, not on `core.extend`.** `clean` reuses `core.io.read_and_reproject()` (inputs, without extend's own auto-clean pre-check) and `core.coverage.coverage_clean()` (fix stage) — both neutral, tool-independent helpers, not `extend`-specific code.
 - **`ST_CoverageClean`'s `gap_maximum_width` has no GEOS-native auto-fill default.** Verified against upstream source (duckdb-spatial's `geos_module.cpp`, GEOS's `CoverageCleaner.h`/`.cpp`): the C++ class member is hardcoded to `0.0`, and a negative/omitted value is a no-op that leaves it there — unlike `snapping_distance`, which does have a real computed auto-default (`extent_diameter / 1e8`). `clean`'s `--gap-width auto` mode computes an explicit width from the widest *thin* detected gap; `all` mode computes one from the widest gap overall (thin or not) — both avoid relying on any GEOS-side "auto-fill." A fixed "just make it huge" constant for `all` was tried and rejected — see the next bullet. See `docs/clean.md`.
 - **`ST_CoverageClean` has two confirmed real failure modes tied to `gap_maximum_width`, independent of `snapping_distance` (confirmed: sweeping `snapping_distance` alone across 8 orders of magnitude never fixed either one).** (1) Residual invalid edges, or an outright `TopologyException`, at specific widths — verified against a real admin-boundary defect via a controlled experiment holding every input fixed and varying only `gap_maximum_width`: a ~0.25% change deterministically flipped an unrelated part of the coverage between valid/invalid, 3/3 reproducible each way (this was initially misdiagnosed as GEOS nondeterminism before controlling for a concurrent code change — it is fully deterministic given fixed inputs). Mapping the surrounding width-space at 1.1m and then 1cm resolution showed the bad region is patchy, not a single band — good/bad/good/**crash**/bad/good across a ~24m span. (2) Silent area erosion once the width approaches the scale of the data's own local topology — confirmed on real data at multi-degree widths (164-fid layer, 190km² → 50km² at 10°, fully empty at 20°+, which is why `all` mode computes its width from actually-detected gaps rather than using any large fixed constant) **and**, more surprisingly, on a small synthetic fixture at a width matching one of its own real gaps exactly, but only when combined with a second, differently-scaled group in the same `ST_CoverageClean` call — several unrelated polygons collapsed to zero area even though each group was fine processed alone. That second trigger condition isn't fully understood and is worth a closer look or an upstream bug report. `_03_clean.py`'s `main()` handles both failure modes with `GAP_WIDTH_ESCALATION_FACTORS`, a validated escalation ladder (only ever widens the resolved target, never narrows it, preserving `auto`/`all`/explicit semantics) that checks **both** `has_coverage_violations()` **and** a total-area sanity floor (`AREA_SANITY_FACTOR = 0.8`) — the invalid-edges check alone passes a totally empty result as "no violations," confirmed directly, so it cannot catch failure mode 2 on its own. Raises a clear error if every rung fails rather than silently degrading to a different gap-filling behavior. Validated end-to-end on the real stress-case dataset in both `auto` and `all` modes: output area matches input to within ~0.0003km² out of ~190km². See `docs/clean.md`.
 - **`ST_Distance(GEOMETRY, GEOMETRY)` is unreliable for two disjoint polygons at small separations** — confirmed it returns `0.0` for two clearly-separated polygons (~3cm apart) on the installed DuckDB version, while the equivalent POINT/LINESTRING pair correctly returns the true distance. Use `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` extent comparisons or `ST_MaximumInscribedCircle` instead when checking polygon disjointness/gap width.
 - **`clean/_02_issues.py`'s per-detection-kind retry didn't actually fall back to empty on a double failure.** The module docstring always promised "retried once at reduced precision, then falls back to an empty result (logged) rather than raising," but `_run_with_retry` only logged on the second failure — it never created the temp table, so a double failure left it entirely missing and crashed `main()`'s downstream `UNION ALL` with a binder/catalog error instead of degrading gracefully. Fixed by passing each call site an explicit `empty_sql` that `_run_with_retry` executes when both attempts fail, so the target table always exists afterward. Same "one kind failing shouldn't block the others" contract as before, now actually honored.
-- **`core.change` may import from `core.extend`; the reverse is forbidden.** Enforced by the `change-may-use-extend-not-reverse` import-linter contract. `change` reuses `extend`'s `_01_inputs.main()` (both layers pre-cleaned), `_constants.COPY_OPTS` (overlay export), and `_constants.EQUAL_AREA_CRS` (shared with `match`, see below); it deliberately does **not** import from `core.match` even though `_02_overlap.py`'s bbox-prefiltered join mirrors `_02_assign.py`'s pattern closely — `change` stays decoupled from `match`/`clean` the same way they're decoupled from each other.
-- **`EQUAL_AREA_CRS` ("EPSG:8857") lives in `core/extend/_constants.py`, not in `match`'s or `change`'s own `_constants.py`.** Both tools need the same equal-area projection to rank/compute areas for cross-polygon comparison; rather than each declaring its own copy (as `change` used to, deliberately, to avoid a direct match↔change dependency) or adding a new cross-tool import-linter contract between them, it's hoisted into `extend`, the hub both already depend on — same pattern `SNAP_TOLERANCE` already used. `match`/`change` still don't depend on each other.
+- **`core.change` may import from `core.extend`; the reverse is forbidden.** Enforced by the `change-may-use-extend-not-reverse` import-linter contract. `change` reuses `extend`'s `_01_inputs.main()` (both layers pre-cleaned) plus the shared `core.constants.COPY_OPTS` (overlay export) and `core.constants.EQUAL_AREA_CRS`; it deliberately does **not** import from `core.match` even though `_02_overlap.py`'s bbox-prefiltered join mirrors `_02_assign.py`'s pattern closely — `change` stays decoupled from `match`/`clean` the same way they're decoupled from each other.
+- **`EQUAL_AREA_CRS` ("EPSG:8857") and `SNAP_TOLERANCE` live in the shared `core/constants.py`, not in any one tool's own `_constants.py`.** `match`, `clean`, and `change` all need one or both; none should depend on another's private constants module. `match`/`change` still don't depend on each other.
 - **`change`'s classification runs in Python, not SQL.** Union-find and cardinality classification (`core/change/_03_classify.py`, ported from topo-tools-js's `classify.ts`) scale with feature count, not vertex count, so fetching every pair row into memory and classifying with plain Python dicts/sets is safe under this repo's memory model even for a large admin layer — unlike the vertex-scaled Voronoi/coverage-clean work `extend`/`clean` do. See `docs/change.md`.
 - **`change` always uses exact `ST_Intersection`, never point-sampling.** The sister JS app falls back to a 32×32 point-sampling overlap estimate on a documented WASM-only GEOS OverlayNG bug; JS's own git history confirmed the bug doesn't reproduce natively, so the Python port drops the fallback entirely rather than porting dead-weight WASM-workaround code. See `docs/change.md`.
 - **`clean`'s `--maximum-gap-width`/`--snapping-distance` are decimal degrees, not meters.** `_01` is always EPSG:4326, so `ST_CoverageClean` itself takes these in degrees; a meters-based CLI would need a dataset-wide `cos(centroid latitude)` conversion (as `--maximum-gap-width`'s old meters mode did) that's a real approximation over large north-south extents and adds indirection between what a user types and what GEOS receives. `core/clean/_units.py` now only converts the other direction (degrees/m² → meters/m² for the issues file's `area_m2`/`max_width_m` reporting columns, plus the internal non-user-facing `MIN_ISSUE_AREA_M2` noise floor); it no longer converts any CLI input. See `docs/clean.md`.

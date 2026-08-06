@@ -34,7 +34,7 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.extend._coverage import has_coverage_violations
+from topo_tools.core.coverage import has_coverage_violations
 
 from ._constants import MIN_ISSUE_AREA_M2
 from ._units import METERS_PER_DEGREE, cos_lat_factor, m2_to_deg_sq

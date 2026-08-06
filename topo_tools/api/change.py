@@ -15,12 +15,12 @@ from topo_tools.core.change._constants import (
     TAU_MATCH_DEFAULT,
     TAU_SAME_DEFAULT,
 )
+from topo_tools.core.constants import COPY_OPTS
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.extend._constants import COPY_OPTS
 
 logger = getLogger(__name__)
 

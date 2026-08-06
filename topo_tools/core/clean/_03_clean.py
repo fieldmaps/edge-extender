@@ -31,7 +31,7 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.extend._coverage import coverage_clean, has_coverage_violations
+from topo_tools.core.coverage import coverage_clean, has_coverage_violations
 
 from ._constants import (
     ALL_GAP_WIDTH_EPSILON_FACTOR,

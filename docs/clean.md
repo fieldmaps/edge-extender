@@ -45,8 +45,8 @@ Run `topo-tools clean --help` for the full, always-current option list.
 
 ## Pipeline
 
-1. **`_01_inputs`** -- reads and reprojects to EPSG:4326 via `extend`'s
-   `read_and_reproject()` helper, **without** `extend`'s own auto-clean
+1. **`_01_inputs`** -- reads and reprojects to EPSG:4326 via the shared
+   `core.io.read_and_reproject()` helper, **without** `extend`'s own auto-clean
    pre-check. This is deliberate: `clean`'s whole purpose is to detect
    defects in the *raw* input, so the detection stage needs to see them, not
    a table `ST_CoverageClean` has already silently rewritten.
@@ -72,7 +72,7 @@ even though the input had zero defects, because overlap detection ran
 unconditionally regardless of whether anything was actually wrong.
 
 `main()` now checks `has_coverage_violations()` (`ST_CoverageInvalidEdges_Agg`,
-`core/extend/_coverage.py`) before running `_build_overlaps`, and writes an
+the shared `core/coverage.py`) before running `_build_overlaps`, and writes an
 empty overlaps table directly when it's already False -- ~5s on the
 9,658-fid layer, versus minutes for the equivalent self-join, since a
 coverage with no invalid edges cannot contain an overlapping or nested pair
@@ -153,7 +153,7 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   own `--maximum-gap-width auto` has to compute a real width itself (see
   below) rather than leaning on any GEOS-side default the way
   `--snapping-distance auto` can.
-- **Naming**: `coverage_clean()` (`core/extend/_coverage.py`) calls
+- **Naming**: `coverage_clean()` (the shared `core/coverage.py`) calls
   `ST_CoverageClean` with DuckDB's own named arguments,
   `gap_maximum_width := ...` / `snapping_distance := ...` (verified live via
   `duckdb_functions()`) -- a Python `None` omits the argument entirely

@@ -5,7 +5,8 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.extend._coverage import check_overlaps, export_geometry_table
+from topo_tools.core.coverage import check_overlaps
+from topo_tools.core.io import export_geometry_table
 
 logger = getLogger(__name__)
 

@@ -2,8 +2,8 @@
 
 from duckdb import DuckDBPyConnection
 
-from ._constants import SNAP_TOLERANCE
-from ._coverage import coverage_clean
+from topo_tools.core.constants import SNAP_TOLERANCE
+from topo_tools.core.coverage import coverage_clean
 
 
 def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:

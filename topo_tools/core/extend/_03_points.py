@@ -4,7 +4,9 @@ from decimal import Decimal
 
 from duckdb import DuckDBPyConnection
 
-from ._constants import MAX_POINTS_PER_SEGMENT, SNAP_TOLERANCE
+from topo_tools.core.constants import SNAP_TOLERANCE
+
+from ._constants import MAX_POINTS_PER_SEGMENT
 
 
 def build_segments(conn: DuckDBPyConnection, name: str) -> None:

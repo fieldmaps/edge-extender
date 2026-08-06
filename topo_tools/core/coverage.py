@@ -1,11 +1,8 @@
-"""Coverage-topology helpers shared by the inputs and merge stages."""
+"""Shared coverage-topology validation and repair helpers."""
 
 from logging import getLogger
-from pathlib import Path
 
 from duckdb import DuckDBPyConnection
-
-from ._constants import COPY_OPTS
 
 logger = getLogger(__name__)
 
@@ -49,24 +46,6 @@ def check_gaps(conn: DuckDBPyConnection, table: str) -> None:
         error = f"GAPS: {table}"
         logger.error(error)
         raise RuntimeError(error)
-
-
-def export_geometry_table(
-    conn: DuckDBPyConnection, table: str, dest: Path, *, exclude_fid: bool = True
-) -> None:
-    """Export a geometry table to dest, renaming `geom` to `geometry` for output.
-
-    Shared by every outputs stage (extend/match/clean/change) -- exclude_fid
-    drops the internal row-numbering `fid` column for a tool's own polygon
-    output; issues/overlay tables that never had one pass exclude_fid=False.
-    """
-    dest.parent.mkdir(exist_ok=True, parents=True)
-    select = "* EXCLUDE (fid)" if exclude_fid else "*"
-    conn.execute(f"""--sql
-        COPY (
-            SELECT {select} RENAME (geom AS geometry) FROM "{table}"
-        ) TO '{dest}' {COPY_OPTS[dest.suffix]}
-    """)
 
 
 def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input, not decomposable

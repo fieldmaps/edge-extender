@@ -10,7 +10,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.extend._01_inputs import read_and_reproject
+from topo_tools.core.io import read_and_reproject
 
 
 def main(conn: DuckDBPyConnection, name: str, path: Path) -> None:
