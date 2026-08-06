@@ -17,7 +17,17 @@ def _warn_on_unfilled_gaps(conn: DuckDBPyConnection, name: str) -> None:
     Unlike extend/match, clean can legitimately leave gaps unfilled by design
     (--gap-width auto, or a numeric cap narrower than some detected gap) --
     this is visibility for the issues file, not a failure condition.
+
+    Checks for any gap rows first -- the whole-table union below is expensive
+    (it's the same cost as issues' own gap-detection union) and DuckDB can't
+    skip computing it just because the join against `_02` turns out empty.
     """
+    has_gaps = conn.execute(f"""--sql
+        SELECT EXISTS (SELECT 1 FROM "{name}_02" WHERE kind = 'gap')
+    """).fetchall()[0][0]
+    if not has_gaps:
+        return
+
     row = conn.execute(f"""--sql
         WITH u AS (SELECT ST_Union_Agg(geom) AS g FROM "{name}_03")
         SELECT
@@ -27,7 +37,7 @@ def _warn_on_unfilled_gaps(conn: DuckDBPyConnection, name: str) -> None:
         WHERE i.kind = 'gap'
     """).fetchall()[0]
     remaining, total = row
-    if total and remaining:
+    if remaining:
         logger.warning(
             "clean: %d of %d detected gap(s) remain unfilled -- see the issues file",
             remaining,
