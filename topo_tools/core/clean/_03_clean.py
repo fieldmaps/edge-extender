@@ -81,15 +81,20 @@ def main(
     table = f"{name}_01"
     out_table = f"{name}_03"
 
-    if not has_coverage_violations(conn, table):
+    base_gap_maximum_width_deg = _resolve_gap_maximum_width_deg(
+        conn, name, gap_maximum_width
+    )
+    # has_coverage_violations() only catches overlaps/mismatched edges, never
+    # gaps (confirmed empirically: a valid edge-matched ring fully surrounding
+    # a real hole returns False -- see docs/clean.md). A gap-only input with
+    # nothing to escalate (base width is None, i.e. no gap qualifies to fill
+    # under the resolved mode) is the only case with truly nothing to fix.
+    if not has_coverage_violations(conn, table) and base_gap_maximum_width_deg is None:
         conn.execute(
             f'CREATE OR REPLACE TABLE "{out_table}" AS SELECT * FROM "{table}"'
         )
         return
 
-    base_gap_maximum_width_deg = _resolve_gap_maximum_width_deg(
-        conn, name, gap_maximum_width
-    )
     snap_mode, snap_value = snapping_distance
     snapping_distance_deg = None if snap_mode == "auto" else snap_value
     input_area = _total_area(conn, table)

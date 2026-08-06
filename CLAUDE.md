@@ -190,8 +190,11 @@ exception — see `docs/match.md`). Three layers, each with a specific job
    holes; overlaps are bbox-prefiltered pairwise intersections. See
    `docs/clean.md`.
 3. **`_03_clean.main`** — Fixes gaps/overlaps via the shared
-   `core.coverage.coverage_clean()` (gated: a no-op copy if the input has no coverage
-   violations at all), writing `{name}_03`. Retries the resolved
+   `core.coverage.coverage_clean()` (gated: a no-op copy only if the input
+   has no coverage violations *and* no detected gap qualifies to fill under
+   the resolved `gap_maximum_width` — `has_coverage_violations()` alone
+   can't stand in for "nothing to fix," since it never detects gaps),
+   writing `{name}_03`. Retries the resolved
    `gap_maximum_width` through an escalation ladder (widening only, never
    below the `auto`/`all`/explicit target) if the result still has invalid
    edges; raises if every rung fails. See `docs/clean.md`.

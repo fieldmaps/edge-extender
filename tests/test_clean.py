@@ -177,6 +177,66 @@ def scaled_gap_input(tmp_path):
     return path
 
 
+@pytest.fixture
+def gap_only_input(tmp_path):
+    """Write a ring of 4 polygons enclosing a 1x1 hole, with no overlaps anywhere.
+
+    Fully noded (each neighbor's shared corner is an explicit vertex on the
+    other's ring, same style as `_SYNTHETIC_WKT`'s fid 1-4 group) and scaled
+    so the hole is a small fraction of the ring (same reasoning as
+    `scaled_gap_input`), so `has_coverage_violations()`
+    (`ST_CoverageInvalidEdges_Agg`) is False -- confirmed directly -- without
+    tripping the area-erosion instability a non-noded or too-small-scale
+    fixture hits. Regression fixture for `_03_clean.py`'s fix stage: it used
+    to gate the whole `ST_CoverageClean` call on `has_coverage_violations()`,
+    which only detects overlaps/mismatched edges, never gaps -- silently
+    no-opping on exactly this shape of input.
+    """
+    path = tmp_path / "gap_only.parquet"
+    wkt = [
+        (1, "POLYGON((0 0, 101 0, 101 50, 51 50, 50 50, 0 50, 0 0))"),
+        (2, "POLYGON((0 51, 50 51, 51 51, 101 51, 101 101, 0 101, 0 51))"),
+        (3, "POLYGON((0 50, 50 50, 50 51, 0 51, 0 50))"),
+        (4, "POLYGON((51 50, 101 50, 101 51, 51 51, 51 50))"),
+    ]
+    values = ", ".join(f"({fid}, ST_GeomFromText('{w}'))" for fid, w in wkt)
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t(id, geom)"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+    return path
+
+
+def test_clean_fills_gap_with_no_coverage_violations(gap_only_input, tmp_path):
+    """`--maximum-gap-width all` must still fill a gap when nothing overlaps.
+
+    Regression for the `_03_clean.py` gate bug: has_coverage_violations()
+    is False for this fixture (no overlaps/mismatched edges), but a real
+    fully-enclosed gap exists and must still get filled.
+    """
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        violations = conn.execute(f"""
+            SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL
+            FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM '{gap_only_input}')
+        """).fetchone()[0]
+    assert violations is False
+
+    output_path = tmp_path / "gap_only_cleaned.parquet"
+    issues_path = tmp_path / "gap_only_issues.parquet"
+    clean(
+        gap_only_input,
+        output_path,
+        issues_path,
+        maximum_gap_width="all",
+        overwrite=True,
+    )
+
+    assert _real_hole_area(output_path) == pytest.approx(0.0, abs=1e-9)
+
+
 def test_clean_maximum_gap_width_all_fills_gap(scaled_gap_input, tmp_path):
     output_path = tmp_path / "all.parquet"
     issues_path = tmp_path / "all_issues.parquet"

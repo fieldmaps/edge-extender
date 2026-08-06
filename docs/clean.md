@@ -56,7 +56,11 @@ Run `topo-tools clean --help` for the full, always-current option list.
    False -- see "Skipping overlap detection when the coverage is already
    valid" below.
 3. **`_03_clean`** -- fixes gaps/overlaps via `ST_CoverageClean` (gated: a
-   no-op copy if the input has no coverage violations at all), retrying the
+   no-op copy only if the input has no coverage violations *and* no detected
+   gap qualifies to fill under the resolved `gap_maximum_width` -- see
+   "`has_coverage_violations()` alone cannot stand in for gap detection"
+   below; that check is only about overlaps/mismatched edges, so a gap-only
+   input still needs `ST_CoverageClean` to actually run), retrying the
    resolved `gap_maximum_width` through an escalation ladder if the result
    still has invalid edges (see "gap_maximum_width escalation" below).
 4. **`_04_outputs`** -- validates overlaps are gone (hard gate), logs
@@ -96,7 +100,12 @@ dataset that actually has gaps.
 verified empirically with a synthetic fixture (a pinwheel of 4 valid,
 edge-matched polygons fully surrounding a real 1x1 hole): it returned
 `False` even though a genuine fully-enclosed gap existed. It only detects
-overlaps/mismatched edges, never gaps.
+overlaps/mismatched edges, never gaps. `_03_clean.py`'s fix-stage gate used
+to rely on this check alone to decide whether `ST_CoverageClean` was worth
+running at all, which meant a gap-only input (no overlaps) was silently
+never fixed despite being correctly reported in the issues file -- the gate
+now also checks whether any detected gap qualifies to fill under the
+resolved `gap_maximum_width` (see "Pipeline" above).
 
 ## Sliver detection/fixing was removed
 
