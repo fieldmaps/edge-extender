@@ -136,6 +136,32 @@ def test_clean_detects_full_containment_overlap(synthetic_input, tmp_path):
     assert area == [(1.0,)]
 
 
+def test_clean_issues_report_overlap_outcome(synthetic_input, tmp_path):
+    """An overlap row reports each unit's own real area change, not just the defect.
+
+    fid 8 sits fully inside fid 7 -- the fix must give fid 8's entire area
+    to fid 7, so one unit's change is a large loss and the other is
+    untouched. unit_a/unit_b order isn't guaranteed to match which of the
+    two is the swallowed one (see test above), so check the pair unordered.
+    """
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    clean(synthetic_input, output_path, issues_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        a_change, b_change = conn.execute(f"""
+            SELECT unit_a_area_change_m2, unit_b_area_change_m2 FROM '{issues_path}'
+            WHERE kind = 'overlap'
+              AND ST_Within(geometry, ST_MakeEnvelope(30, 0, 32, 2))
+        """).fetchall()[0]
+
+    clearly_lost_a_lot_m2 = -1e9
+    swallowed, untouched = sorted([a_change, b_change])
+    assert swallowed < clearly_lost_a_lot_m2
+    assert untouched == pytest.approx(0.0)
+
+
 def test_clean_default_output_paths(synthetic_input):
     clean(synthetic_input, overwrite=True)
 
@@ -250,6 +276,14 @@ def test_clean_maximum_gap_width_all_fills_gap(scaled_gap_input, tmp_path):
 
     assert _real_hole_area(output_path) == pytest.approx(0.0, abs=1e-9)
 
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        filled = conn.execute(
+            f"SELECT filled_area_m2 FROM '{issues_path}' WHERE kind = 'gap'"
+        ).fetchall()[0][0]
+    # The gap is fully closed, so its whole area counts as filled.
+    assert filled > 0
+
 
 def test_clean_maximum_gap_width_auto_fills_only_thin_gap(synthetic_input, tmp_path):
     """Auto fills the fid 9-12 sliver but leaves the fid 1-4 compact square alone."""
@@ -311,8 +345,20 @@ def test_clean_invalid_maximum_gap_width_value(synthetic_input, tmp_path):
         )
 
 
+def _empty_issues_table_sql(name: str) -> str:
+    return f"""
+        CREATE TABLE {name} AS
+        SELECT NULL::VARCHAR AS key, NULL::VARCHAR AS kind,
+               NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
+               NULL::DOUBLE AS thinness_ratio,
+               NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b,
+               NULL::GEOMETRY AS geom
+        WHERE FALSE
+    """
+
+
 def _overlapping_pair_conn():
-    """Open a connection with a minimal 2-fid overlapping `stage_01` table."""
+    """Open a connection with a minimal 2-fid overlapping `stage_01`/`stage_02` pair."""
     conn = duckdb.connect()
     conn.execute("INSTALL spatial; LOAD spatial;")
     conn.execute("""
@@ -321,6 +367,18 @@ def _overlapping_pair_conn():
             (1, ST_GeomFromText('POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))')),
             (2, ST_GeomFromText('POLYGON((1 1, 3 1, 3 3, 1 3, 1 1))'))
         ) AS t(fid, geom)
+    """)
+    # The two squares above overlap on (1 1, 2 2) -- area 1 -- so the
+    # erosion-budget check must see that exposure or it would reject the
+    # legitimate shrink coverage_clean() applies to resolve it.
+    conn.execute("""
+        CREATE TABLE stage_02 AS
+        SELECT 'overlap-1' AS key, 'overlap' AS kind,
+               NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
+               NULL::DOUBLE AS thinness_ratio,
+               1 AS unit_a, 2 AS unit_b,
+               ST_Intersection(a.geom, b.geom) AS geom
+        FROM stage_01 a, stage_01 b WHERE a.fid = 1 AND b.fid = 2
     """)
     return conn
 
@@ -413,6 +471,108 @@ def test_clean_gap_width_escalation_rejects_eroded_output(monkeypatch):
             gap_maximum_width=("value", 0.5),
             snapping_distance=("auto", None),
         )
+
+
+def test_clean_gap_width_escalation_rejects_collapsed_fid(monkeypatch):
+    """A fid collapsing to zero area must not be accepted, even if the total survives.
+
+    Regression: the area-sanity floor only checks the summed total, so a
+    small feature vanishing entirely inside a much larger dataset clears it
+    while still being a real defect -- confirmed separately from the
+    total-collapse case above (unrelated polygons can collapse to zero area
+    within an otherwise-successful call). Neither fid here touches a gap or
+    an overlap, so both are held to the strict no-change bound.
+    """
+
+    def collapses_one_fid(conn, table_in, table_out, **_kwargs):
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{table_out}" AS
+            SELECT fid,
+                   CASE WHEN fid = 1 THEN ST_GeomFromText('POLYGON EMPTY')
+                        ELSE geom END AS geom
+            FROM "{table_in}"
+        """)
+
+    monkeypatch.setattr(clean_stage, "coverage_clean", collapses_one_fid)
+
+    conn = duckdb.connect()
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    conn.execute("""
+        CREATE TABLE stage_01 AS
+        SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
+            (2, ST_GeomFromText('POLYGON((10 10, 20 10, 20 20, 10 20, 10 10))'))
+        ) AS t(fid, geom)
+    """)
+    conn.execute(_empty_issues_table_sql("stage_02"))
+
+    with conn, pytest.raises(RuntimeError, match="escalation exhausted"):
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
+        )
+
+
+def test_clean_gap_width_escalation_rejects_bad_geometry_type(monkeypatch):
+    """A fid degenerating into a mixed-type GeometryCollection must be rejected.
+
+    Regression: ST_Area() on a GeometryCollection only sums its polygonal
+    members, so a fix that fuses a stray line into a fid's geometry via
+    ST_Collect can preserve that fid's measured area exactly while still
+    being invalid output -- the erosion-budget check alone would miss this.
+    """
+
+    def degenerates_one_fid(conn, table_in, table_out, **_kwargs):
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{table_out}" AS
+            SELECT fid,
+                   CASE WHEN fid = 1
+                        THEN ST_GeomFromText(
+                            'GEOMETRYCOLLECTION('
+                            'LINESTRING(0 0, 1 1), '
+                            'POLYGON((0 0, 1 0, 1 1, 0 1, 0 0)))'
+                        )
+                        ELSE geom END AS geom
+            FROM "{table_in}"
+        """)
+
+    monkeypatch.setattr(clean_stage, "coverage_clean", degenerates_one_fid)
+
+    conn = duckdb.connect()
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    conn.execute("""
+        CREATE TABLE stage_01 AS
+        SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
+            (2, ST_GeomFromText('POLYGON((10 10, 20 10, 20 20, 10 20, 10 10))'))
+        ) AS t(fid, geom)
+    """)
+    conn.execute(_empty_issues_table_sql("stage_02"))
+
+    with conn, pytest.raises(RuntimeError, match="escalation exhausted"):
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
+        )
+
+
+def test_clean_logs_area_change_on_success(caplog):
+    """A successful fix reports the overall area change, not just pass/fail."""
+    with _overlapping_pair_conn() as conn, caplog.at_level("INFO"):
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
+        )
+
+    messages = [r.message for r in caplog.records if "total area" in r.message]
+    assert len(messages) == 1
+    assert "lost" in messages[0]
 
 
 def test_cli_positional_args(synthetic_input, tmp_path):

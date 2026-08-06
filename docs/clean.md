@@ -272,6 +272,32 @@ and the human running `clean` deserves to know a specific input triggered
 something unusual rather than getting output that quietly differs from
 what they asked for.
 
+### The total-area floor alone misses a small, localized collapse
+
+`AREA_SANITY_FACTOR` only bounds the *summed* output area, so a single
+small feature collapsing entirely can hide inside it if the rest of the
+dataset is much larger. Each escalation attempt is also checked per fid:
+
+- **Erosion budget.** A fid touching a gap that gets filled, or a party to
+  a detected overlap, is exempt -- `ST_CoverageClean` can legitimately
+  redraw that fid's whole neighborhood, not just the two features directly
+  in conflict. Confirmed directly: filling a gap can fully reassign an
+  adjacent fid's entire area into a neighbor even though that fid was never
+  itself part of any overlap (two small connector strips bordering a filled
+  sliver gap were fully absorbed into a third fid in testing). Any other
+  fid -- no connection to either kind of detected defect -- is expected to
+  come out essentially unchanged; any real loss there fails this rung.
+- **Geometry type.** `ST_Area()` sums only the polygonal members of a mixed
+  `GEOMETRYCOLLECTION`, so a fid partly reduced to a stray line or point
+  during the fix could otherwise still measure as area-preserving. Any fid
+  whose fixed geometry isn't a `POLYGON`/`MULTIPOLYGON` fails this rung.
+
+Both checks compare against exact, defect-derived bounds rather than a
+guessed percentage floor -- a percentage floor on a per-fid basis was tried
+and rejected, since full containment (one fid entirely absorbed by another)
+and gap-neighborhood redistribution are both legitimate 100%-loss outcomes
+for the fid actually involved.
+
 ## `--snapping-distance auto|<degrees>`
 
 `auto` omits the argument from the `ST_CoverageClean` call, keeping GEOS's
@@ -283,12 +309,26 @@ undesirable data alteration."
 ## Issues file schema
 
 `key VARCHAR, kind VARCHAR, area_m2 DOUBLE, max_width_m DOUBLE,
-thinness_ratio DOUBLE, unit_a BIGINT, unit_b BIGINT, geom GEOMETRY`. `kind`
-is `'gap'` or `'overlap'`. `thinness_ratio` (Polsby-Popper compactness,
-see `--maximum-gap-width auto` above) is populated only for gap rows;
-`unit_a`/`unit_b` (the two fids involved) are populated only for overlap
-rows. Geometry is always Polygon, so any of `extend`'s four export formats
-(including Shapefile) can hold the issues file.
+thinness_ratio DOUBLE, unit_a BIGINT, unit_b BIGINT,
+unit_a_area_change_m2 DOUBLE, unit_b_area_change_m2 DOUBLE,
+filled_area_m2 DOUBLE, geom GEOMETRY`. `kind` is `'gap'` or `'overlap'`.
+`thinness_ratio` and `filled_area_m2` are populated only for gap rows;
+`unit_a`/`unit_b` (the two fids involved) and
+`unit_a_area_change_m2`/`unit_b_area_change_m2` are populated only for
+overlap rows. Geometry is always Polygon, so any of `extend`'s four export
+formats (including Shapefile) can hold the issues file.
+
+The `_area_change_m2`/`filled_area_m2` columns are the actual measured
+*outcome* of the fix, not the defect as originally detected -- computed by
+`_04_outputs.py` from `{name}_01` and `{name}_03` after `_03_clean.py` has
+run, since that's the first point both the pre- and post-fix geometry are
+available together. For an overlap row, each is that unit's own real area
+change (output minus input); for a gap row, `filled_area_m2` is how much
+of the gap's own area ended up covered by the cleaned output (`0` if the
+gap was left unfilled by design). `_03_clean.py`'s own success log line
+reports the same idea at the whole-dataset level (total area
+gained/lost, as a percentage) regardless of which individual defects
+caused it.
 
 ## Units: decimal degrees in, meters out
 
@@ -302,10 +342,28 @@ values against a specific `ST_CoverageClean` result, since a hidden
 conversion factor would mean the number on the CLI and the number GEOS
 actually sees are never quite the same thing.
 
-The internal `MIN_ISSUE_AREA_M2` noise floor (`_constants.py`, not
-user-facing) is still expressed in square meters for readability of its
-own rationale, and converted to square degrees via `core/clean/_units.py`'s
-`m2_to_deg_sq`.
+`clean` reports every detected gap and overlap regardless of size -- no
+floating-point noise floor is applied. An earlier version discarded
+anything below `MIN_ISSUE_AREA_M2` (`1e-4 m^2`, ~1cm^2), ported directly
+from topo-tools-js's own noise floor -- itself sized to a float-jitter
+magnitude (up to `1.6e-7 m^2`) observed in that app's WASM-compiled GEOS
+build, never independently measured against this native pipeline.
+
+Verified directly: running this pipeline's exact gap- and
+overlap-detection queries with the floor removed against five real/
+synthetic already-clean inputs -- two hand-built synthetic fixtures, a
+real 9,658-fid COD admin4 layer, and Chile/Philippines/Indonesia admin3's
+`extended.parquet` (full-pipeline output -- `ST_MakeValid` ->
+`ST_Transform` -> Voronoi merge -> whole-table `ST_CoverageClean`, each
+confirmed `has_coverage_violations() == False`) -- found zero
+floating-point artifacts on either detection path. The overlap join
+predicate itself (`ST_Overlaps`/`ST_Contains`) never matched a candidate
+pair on any of these valid coverages, since it requires true interior
+intersection, not mere boundary-touching, so `ST_Intersection` never even
+ran on a real candidate. Consistent with `docs/change.md`'s documented
+WASM-only GEOS `OverlayNG` bug that doesn't reproduce natively: constants
+tuned against topo-tools-js's WASM-compiled GEOS build don't necessarily
+carry over to this native pipeline without independent verification.
 
 The *output* side still reports in meters for human readability: the
 issues file's `area_m2`/`max_width_m` columns are computed from raw

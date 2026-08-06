@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `clean`: the fix-stage escalation loop now also rejects a rung if any fid
+  with no detected defect of its own (not touching a filled gap, not party
+  to an overlap) came out with a materially different area, or if any
+  fid's fixed geometry isn't a Polygon/MultiPolygon. The existing total-area
+  sanity floor only checks the summed total, so a single small feature
+  collapsing (or degenerating into a stray line via a mixed
+  `GEOMETRYCOLLECTION`) could pass it if the rest of the dataset is much
+  larger. Defect-involved fids are exempt rather than held to a percentage
+  floor -- `ST_CoverageClean` can legitimately redraw a whole neighborhood
+  around a fix (confirmed: filling a gap fully reassigned two small,
+  overlap-uninvolved connector strips into a third fid), and full
+  containment is a legitimate 100%-loss outcome for the absorbed fid.
+- `clean`: the fix stage now logs the accepted result's total area change
+  (gained/lost, as a percentage) on every successful run, not just on
+  escalation or failure.
+- `clean`: the issues report now includes the actual measured outcome of
+  the fix for every row, not just the defect as detected --
+  `unit_a_area_change_m2`/`unit_b_area_change_m2` (each named unit's own
+  real area change) for overlap rows, `filled_area_m2` (how much of the
+  gap's own area ended up covered) for gap rows.
+
+### Fixed
+
+- `clean`: the fix stage no longer skips `ST_CoverageClean` entirely on a
+  gap-only input (no overlaps at all). The gate previously relied on
+  `has_coverage_violations()` alone, which never detects gaps -- a
+  correctly-detected, fillable gap could sit in the issues file forever
+  without ever actually being fixed. The gate now also checks whether any
+  detected gap qualifies to fill under the resolved `gap_maximum_width`.
+
 ### Changed
 
 - `clean`: `--maximum-gap-width` now defaults to `auto` (fill only
@@ -36,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `clean`: the `MIN_ISSUE_AREA_M2` (~1cm²) floating-point noise floor on
+  detected gaps/overlaps. Ported from topo-tools-js's own WASM-tuned
+  constant; empirical testing against this native pipeline (a real
+  9,658-fid COD admin4 layer, plus Chile/Philippines/Indonesia admin3's
+  full-pipeline `extended.parquet` output) found zero floating-point
+  artifacts on either detection path with the floor removed. `clean` now
+  reports every detected gap/overlap regardless of size. See
+  `docs/clean.md`.
 - `clean`: sliver detection/reporting (`--sliver-tolerance`, issues-file
   `kind='sliver'` rows). Detection was unreliable even at tiny real-data
   scale (OOM confirmed on a 21-fid Angola admin1 file) and slivers were

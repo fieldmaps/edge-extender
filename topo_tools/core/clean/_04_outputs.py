@@ -8,7 +8,44 @@ from duckdb import DuckDBPyConnection
 from topo_tools.core.coverage import check_overlaps
 from topo_tools.core.io import export_geometry_table
 
+from ._02_issues import centroid_lat_of
+from ._units import METERS_PER_DEGREE, cos_lat_factor
+
 logger = getLogger(__name__)
+
+
+def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
+    """Extend `{name}_02` with what actually happened to each issue during the fix.
+
+    Detection rows only describe the defect as found; this adds the
+    measured outcome -- each named unit's own real area change for an
+    overlap row, how much of the gap's own area ended up covered for a gap
+    row -- in the same square-meters units as `area_m2`.
+    """
+    m2_per_deg2 = METERS_PER_DEGREE**2 * cos_lat_factor(
+        centroid_lat_of(conn, f"{name}_01")
+    )
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{name}_02" AS
+        WITH before AS (SELECT fid, ST_Area(geom) AS area FROM "{name}_01"),
+             after AS (SELECT fid, ST_Area(geom) AS area FROM "{name}_03"),
+             fixed_union AS (SELECT ST_Union_Agg(geom) AS g FROM "{name}_03")
+        SELECT
+            i.key, i.kind, i.area_m2, i.max_width_m, i.thinness_ratio,
+            i.unit_a, i.unit_b,
+            (after_a.area - before_a.area) * {m2_per_deg2} AS unit_a_area_change_m2,
+            (after_b.area - before_b.area) * {m2_per_deg2} AS unit_b_area_change_m2,
+            CASE WHEN i.kind = 'gap'
+                 THEN ST_Area(ST_Intersection(i.geom, fixed_union.g)) * {m2_per_deg2}
+            END AS filled_area_m2,
+            i.geom
+        FROM "{name}_02" i
+        LEFT JOIN before before_a ON before_a.fid = i.unit_a
+        LEFT JOIN after after_a ON after_a.fid = i.unit_a
+        LEFT JOIN before before_b ON before_b.fid = i.unit_b
+        LEFT JOIN after after_b ON after_b.fid = i.unit_b
+        CROSS JOIN fixed_union
+    """)
 
 
 def _warn_on_unfilled_gaps(conn: DuckDBPyConnection, name: str) -> None:
@@ -56,6 +93,7 @@ def main(
     """Validate `{name}_03` and export the cleaned dataset + issues report."""
     check_overlaps(conn, f"{name}_03")
     _warn_on_unfilled_gaps(conn, name)
+    _add_outcome_columns(conn, name)
 
     export_geometry_table(conn, f"{name}_03", dest)
     export_geometry_table(conn, f"{name}_02", issues_dest, exclude_fid=False)

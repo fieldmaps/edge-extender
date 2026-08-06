@@ -20,11 +20,24 @@ gap_maximum_width additionally has two confirmed real failure modes:
    that's both "definitely wide enough" and "definitely safe."
 
 `main()` retries the resolved target width through
-`GAP_WIDTH_ESCALATION_FACTORS`, validating each attempt against both
-has_coverage_violations() and a total-area sanity floor (AREA_SANITY_FACTOR
--- has_coverage_violations() alone passes a totally empty result as "no
-violations"), and only ever widens (never narrows) the target, so
-auto/all/explicit semantics are preserved. See docs/clean.md.
+`GAP_WIDTH_ESCALATION_FACTORS`, validating each attempt against
+has_coverage_violations(), a total-area sanity floor (AREA_SANITY_FACTOR --
+has_coverage_violations() alone passes a totally empty result as "no
+violations"), a per-fid erosion check, and a geometry-type check. The per-fid check
+exempts any fid touching a filled gap or party to a detected overlap --
+ST_CoverageClean can legitimately redraw that fid's whole neighborhood, not
+just the immediate defect -- and requires every other fid (no connection to
+any detected defect) to come out essentially unchanged. This catches a
+small, otherwise-uninvolved feature collapsing even when the dataset's
+total area still clears the sanity floor. The geometry-type check rejects any fid whose
+fixed geometry is not a Polygon/MultiPolygon, since ST_Area() silently sums
+only the polygonal parts of a mixed GeometryCollection and would otherwise
+let a fid partly reduced to a stray line or point pass as area-preserving.
+Both are confirmed real failure shapes, distinct from the total-collapse
+case: several unrelated polygons collapsed to zero area in one combined
+call even though each was fine processed alone. Escalation only ever widens
+(never narrows) the target, so auto/all/explicit semantics are preserved.
+See docs/clean.md.
 """
 
 from logging import getLogger
@@ -68,6 +81,59 @@ def _total_area(conn: DuckDBPyConnection, table: str) -> float:
         conn.execute(f'SELECT SUM(ST_Area(geom)) FROM "{table}"').fetchall()[0][0]
         or 0.0
     )
+
+
+def _eroded_fid_count(
+    conn: DuckDBPyConnection, name: str, table_in: str, table_out: str
+) -> int:
+    """Count fids that shrank with no detected defect of their own to explain it.
+
+    A fid touching a gap that gets filled, or a party to a detected overlap,
+    can legitimately lose (or gain) a large share of its own area --
+    ST_CoverageClean redraws the whole neighborhood around a fix, not just
+    the two features directly in conflict (confirmed: filling a gap can
+    fully reassign an adjacent fid's area into a neighbor even though that
+    fid was never itself part of any overlap). A fid with no connection to
+    either kind of detected defect should come out essentially unchanged;
+    any real loss there is erosion, not a side effect of a legitimate fix.
+    """
+    return conn.execute(f"""--sql
+        WITH overlap_budget AS (
+            SELECT fid, SUM(area) AS allowed_shrink
+            FROM (
+                SELECT unit_a AS fid, ST_Area(geom) AS area
+                FROM "{name}_02" WHERE kind = 'overlap'
+                UNION ALL
+                SELECT unit_b AS fid, ST_Area(geom) AS area
+                FROM "{name}_02" WHERE kind = 'overlap'
+            )
+            GROUP BY fid
+        ),
+        gap_adjacent AS (
+            SELECT DISTINCT i.fid
+            FROM "{table_in}" i, "{name}_02" g
+            WHERE g.kind = 'gap' AND ST_Intersects(i.geom, g.geom)
+        )
+        SELECT COUNT(*)
+        FROM (SELECT fid, ST_Area(geom) AS area FROM "{table_in}") i
+        JOIN (SELECT fid, ST_Area(geom) AS area FROM "{table_out}") o USING (fid)
+        LEFT JOIN overlap_budget b USING (fid)
+        WHERE o.area < i.area - COALESCE(b.allowed_shrink, 0) - i.area * 1e-9
+          AND i.fid NOT IN (SELECT fid FROM gap_adjacent)
+    """).fetchall()[0][0]
+
+
+def _bad_geometry_type_count(conn: DuckDBPyConnection, table: str) -> int:
+    """Count rows whose geometry is not a Polygon or MultiPolygon.
+
+    ST_Area() sums only the polygonal members of a mixed GeometryCollection,
+    so a fid partly reduced to a stray line or point during the fix can
+    still measure as area-preserving while being invalid output.
+    """
+    return conn.execute(f"""--sql
+        SELECT COUNT(*) FROM "{table}"
+        WHERE ST_GeometryType(geom) NOT IN ('POLYGON', 'MULTIPOLYGON')
+    """).fetchall()[0][0]
 
 
 def main(
@@ -126,7 +192,25 @@ def main(
             last_error = e
             continue
         output_area = _total_area(conn, out_table)
-        if not has_coverage_violations(conn, out_table) and output_area >= min_area:
+        eroded = _eroded_fid_count(conn, name, table, out_table)
+        bad_types = _bad_geometry_type_count(conn, out_table)
+        if (
+            not has_coverage_violations(conn, out_table)
+            and output_area >= min_area
+            and eroded == 0
+            and bad_types == 0
+        ):
+            pct_change = (
+                (output_area - input_area) / input_area * 100 if input_area else 0.0
+            )
+            logger.info(
+                "clean: total area %s %.4f%% (%.6f -> %.6f) on %s",
+                "gained" if pct_change >= 0 else "lost",
+                abs(pct_change),
+                input_area,
+                output_area,
+                table,
+            )
             if factor != factors[0]:
                 logger.warning(
                     "coverage_clean needed gap_maximum_width escalated x%.3f "
@@ -138,8 +222,10 @@ def main(
                 )
             return
         last_error = RuntimeError(
-            f"invalid or eroded output (area {output_area} vs input {input_area}) "
-            f"at gap_maximum_width={candidate_width}"
+            f"invalid or eroded output (area {output_area} vs input {input_area}, "
+            f"{eroded} fid(s) eroded beyond their measured overlap exposure, "
+            f"{bad_types} fid(s) with a non-polygon geometry type) at "
+            f"gap_maximum_width={candidate_width}"
         )
 
     widest_tried = candidate_width

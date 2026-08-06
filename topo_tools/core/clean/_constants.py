@@ -1,11 +1,5 @@
 """Non-user-configurable constants for the clean pipeline."""
 
-# Floor below which detected gap/overlap regions are discarded as
-# floating-point noise rather than real defects. Ported from
-# topo-tools-js's MIN_ISSUE_AREA_M2 -- observed float-jitter artifacts there
-# topped out at 1.6e-7 m^2, so 1e-4 m^2 (1cm^2) leaves generous headroom.
-MIN_ISSUE_AREA_M2 = 1e-4
-
 # Relative headroom added to the widest detected gap's own width when
 # --maximum-gap-width=all resolves gap_maximum_width, so the widest gap
 # itself reliably clears ST_CoverageClean's <= comparison rather than landing

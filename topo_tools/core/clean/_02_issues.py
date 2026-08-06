@@ -36,8 +36,7 @@ from duckdb import DuckDBPyConnection
 
 from topo_tools.core.coverage import has_coverage_violations
 
-from ._constants import MIN_ISSUE_AREA_M2
-from ._units import METERS_PER_DEGREE, cos_lat_factor, m2_to_deg_sq
+from ._units import METERS_PER_DEGREE, cos_lat_factor
 
 logger = getLogger(__name__)
 
@@ -71,9 +70,7 @@ def _detect_or_empty(
         conn.execute(empty_sql)
 
 
-def _build_gaps(
-    conn: DuckDBPyConnection, tmp: str, table: str, min_area_deg2: float
-) -> None:
+def _build_gaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{tmp}" AS
         WITH union_cte AS (
@@ -92,13 +89,10 @@ def _build_gaps(
         SELECT row_number() OVER () AS n, geom
         FROM holes
         WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-          AND ST_Area(geom) > {min_area_deg2}
     """)
 
 
-def _build_overlaps(
-    conn: DuckDBPyConnection, tmp: str, table: str, min_area_deg2: float
-) -> None:
+def _build_overlaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
     # ST_Intersects is true for any pair of polygons that merely share a
     # boundary edge -- the normal case for every adjacent pair in a coverage
     # layer, not a defect. At real admin-boundary scale (thousands of fids,
@@ -144,7 +138,6 @@ def _build_overlaps(
         SELECT row_number() OVER () AS n, unit_a, unit_b, geom
         FROM pairs
         WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-          AND ST_Area(geom) > {min_area_deg2}
     """)
     conn.execute(f'DROP TABLE IF EXISTS "{narrow}"')
 
@@ -158,7 +151,6 @@ def main(
     """Detect gap/overlap issues in `{name}_01`, writing `{name}_02`."""
     table = f"{name}_01"
     centroid_lat = centroid_lat_of(conn, table)
-    min_area_deg2 = m2_to_deg_sq(MIN_ISSUE_AREA_M2, centroid_lat)
     cos_lat = cos_lat_factor(centroid_lat)
 
     gaps_tmp = f"{name}_02_tmp1"
@@ -170,7 +162,7 @@ def main(
         table,
         f'CREATE OR REPLACE TABLE "{gaps_tmp}" AS '
         "SELECT NULL::BIGINT AS n, NULL::GEOMETRY AS geom WHERE FALSE",
-        lambda c, t: _build_gaps(c, gaps_tmp, t, min_area_deg2),
+        lambda c, t: _build_gaps(c, gaps_tmp, t),
     )
     empty_overlaps_sql = (
         f'CREATE OR REPLACE TABLE "{overlaps_tmp}" AS '
@@ -183,7 +175,7 @@ def main(
             "overlap",
             table,
             empty_overlaps_sql,
-            lambda c, t: _build_overlaps(c, overlaps_tmp, t, min_area_deg2),
+            lambda c, t: _build_overlaps(c, overlaps_tmp, t),
         )
     else:
         conn.execute(empty_overlaps_sql)
