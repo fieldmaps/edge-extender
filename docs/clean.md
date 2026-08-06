@@ -51,7 +51,10 @@ Run `topo-tools clean --help` for the full, always-current option list.
    defects in the *raw* input, so the detection stage needs to see them, not
    a table `ST_CoverageClean` has already silently rewritten.
 2. **`_02_issues`** -- detects gap/overlap regions, writing one issues table
-   (`{name}_02`).
+   (`{name}_02`). Gap detection always runs; overlap detection is skipped
+   (written empty directly) whenever `has_coverage_violations()` is already
+   False -- see "Skipping overlap detection when the coverage is already
+   valid" below.
 3. **`_03_clean`** -- fixes gaps/overlaps via `ST_CoverageClean` (gated: a
    no-op copy if the input has no coverage violations at all), retrying the
    resolved `gap_maximum_width` through an escalation ladder if the result
@@ -59,6 +62,41 @@ Run `topo-tools clean --help` for the full, always-current option list.
 4. **`_04_outputs`** -- validates overlaps are gone (hard gate), logs
    (never raises on) any gaps still unfilled by design, and exports both the
    cleaned dataset and the issues report.
+
+## Skipping overlap detection when the coverage is already valid
+
+`_02_issues.py`'s `_build_overlaps` (bbox-prefiltered O(n^2) self-join) was
+the dominant cost of a `clean` run on an already-clean dataset -- confirmed
+on a real 9,658-fid admin4 layer: the full `clean` CLI run took ~20 minutes
+even though the input had zero defects, because overlap detection ran
+unconditionally regardless of whether anything was actually wrong.
+
+`main()` now checks `has_coverage_violations()` (`ST_CoverageInvalidEdges_Agg`,
+`core/extend/_coverage.py`) before running `_build_overlaps`, and writes an
+empty overlaps table directly when it's already False -- ~5s on the
+9,658-fid layer, versus minutes for the equivalent self-join, since a
+coverage with no invalid edges cannot contain an overlapping or nested pair
+either.
+
+Gap detection (`_build_gaps`) always runs regardless -- unlike overlaps,
+there's no cheaper GEOS primitive that answers "are there any gaps" without
+doing the same whole-table union `_build_gaps` itself needs to actually
+extract them, so there's nothing to gate it on. An earlier version of this
+optimization added a separate `has_gaps()` pre-check ahead of `_build_gaps`
+to decide whether to skip it too; that pre-check computed its own
+whole-table union just to return a boolean, which `_build_gaps` then
+recomputed from scratch whenever gaps actually existed -- paying for the
+union twice with no benefit. Letting `_build_gaps` run unconditionally
+avoids that duplication and costs the same as the union alone: ~18s on the
+9,658-fid layer, giving the same ~23s total (5s + 18s) for a fully clean
+dataset as the discarded approach, but without the wasted extra union on a
+dataset that actually has gaps.
+
+**`has_coverage_violations()` alone cannot stand in for gap detection** --
+verified empirically with a synthetic fixture (a pinwheel of 4 valid,
+edge-matched polygons fully surrounding a real 1x1 hole): it returned
+`False` even though a genuine fully-enclosed gap existed. It only detects
+overlaps/mismatched edges, never gaps.
 
 ## Sliver detection/fixing was removed
 
@@ -288,13 +326,18 @@ itself misbehaved.
 
 ## Resilience
 
-Each of the two detection queries (gap/overlap) and the fix stage's
-`coverage_clean()` call are retried once against an `ST_ReducePrecision`-
-reduced copy of the input on a GEOS topology failure (`REDUCED_PRECISION_DEG`
-in `_constants.py`, ported from JS's `clean.ts`), then fall back to an empty
-result for that one kind (logged) rather than raising -- consistent with
-`match`'s "failed group is logged and dropped, not fatal" precedent, applied
-per-detection-kind here instead of per-group.
+Each of the two detection queries (gap/overlap) falls back to an empty
+result for that one kind (logged) on a GEOS failure, rather than raising --
+consistent with `match`'s "failed group is logged and dropped, not fatal"
+precedent, applied per-detection-kind here instead of per-group.
+
+A precision-reduction retry (via `ST_ReducePrecision`) is not used as a
+fallback here or in the fix stage. The confirmed driver of `ST_CoverageClean`
+instability is `gap_maximum_width` (see "gap_maximum_width escalation on a
+coverage-clean instability" above), not floating-point precision --
+escalating that value is the validated lever, so a second, unvalidated one
+that silently perturbs input geometry adds risk without addressing the
+actual cause.
 
 ## Portolan-scale profiling
 

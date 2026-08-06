@@ -38,7 +38,6 @@ from ._constants import (
     AREA_SANITY_FACTOR,
     DEFAULT_THINNESS_RATIO,
     GAP_WIDTH_ESCALATION_FACTORS,
-    REDUCED_PRECISION_DEG,
 )
 
 logger = getLogger(__name__)
@@ -71,62 +70,12 @@ def _total_area(conn: DuckDBPyConnection, table: str) -> float:
     )
 
 
-def _attempt_coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input
-    conn: DuckDBPyConnection,
-    table: str,
-    table_out: str,
-    *,
-    gap_maximum_width: float | None,
-    snapping_distance: float | None,
-    debug: bool,
-) -> None:
-    """Run coverage_clean, retrying once at reduced precision on a GEOS exception.
-
-    Raises if both the original and the reduced-precision attempt fail --
-    the caller (an escalation rung) treats that as this rung's failure, not
-    a fatal error.
-    """
-    try:
-        coverage_clean(
-            conn,
-            table,
-            table_out,
-            fids=None,
-            gap_maximum_width=gap_maximum_width,
-            snapping_distance=snapping_distance,
-        )
-    except Exception as e:  # noqa: BLE001 -- GEOS topology failures surface as generic duckdb errors
-        logger.warning(
-            "coverage_clean failed on %s (%s), retrying at reduced precision", table, e
-        )
-        reduced = f"{table}_reduced"
-        conn.execute(f"""--sql
-            CREATE OR REPLACE TABLE "{reduced}" AS
-            SELECT * EXCLUDE (geom),
-                   ST_ReducePrecision(geom, {REDUCED_PRECISION_DEG}) AS geom
-            FROM "{table}"
-        """)
-        try:
-            coverage_clean(
-                conn,
-                reduced,
-                table_out,
-                fids=None,
-                gap_maximum_width=gap_maximum_width,
-                snapping_distance=snapping_distance,
-            )
-        finally:
-            if not debug:
-                conn.execute(f'DROP TABLE IF EXISTS "{reduced}"')
-
-
 def main(
     conn: DuckDBPyConnection,
     name: str,
     *,
     gap_maximum_width: tuple[str, float | None],
     snapping_distance: tuple[str, float | None],
-    debug: bool = False,
 ) -> None:
     """Fix gap/overlap defects in `{name}_01`, writing `{name}_03`."""
     table = f"{name}_01"
@@ -160,13 +109,13 @@ def main(
             else base_gap_maximum_width_deg * factor
         )
         try:
-            _attempt_coverage_clean(
+            coverage_clean(
                 conn,
                 table,
                 out_table,
+                fids=None,
                 gap_maximum_width=candidate_width,
                 snapping_distance=snapping_distance_deg,
-                debug=debug,
             )
         except Exception as e:  # noqa: BLE001 -- this rung failed, try the next one
             last_error = e
@@ -188,11 +137,7 @@ def main(
             f"at gap_maximum_width={candidate_width}"
         )
 
-    widest_tried = (
-        None
-        if base_gap_maximum_width_deg is None
-        else base_gap_maximum_width_deg * factors[-1]
-    )
+    widest_tried = candidate_width
     msg = (
         f"gap_maximum_width escalation exhausted {len(factors)} attempts "
         f"({base_gap_maximum_width_deg} to {widest_tried}) without resolving a "

@@ -23,17 +23,26 @@ def check_overlaps(conn: DuckDBPyConnection, table: str) -> None:
         raise RuntimeError(error)
 
 
-def check_gaps(conn: DuckDBPyConnection, table: str) -> None:
-    """Raise RuntimeError if the union of `table.geom` has any interior holes."""
-    interior_rings = conn.execute(f"""--sql
+def has_gaps(conn: DuckDBPyConnection, table: str) -> bool:
+    """Return True if the union of `table.geom` has any fully-enclosed interior holes.
+
+    Dumps the union into parts before checking -- ST_NumInteriorRings silently
+    returns NULL on a MultiPolygon.
+    """
+    max_interior_rings = conn.execute(f"""--sql
         WITH u AS (
             SELECT ST_Union_Agg(geom) AS g
             FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM "{table}")
         )
-        SELECT ST_NumInteriorRings(g)
-        FROM u
+        SELECT MAX(ST_NumInteriorRings(part))
+        FROM (SELECT UNNEST(ST_Dump(g)).geom AS part FROM u)
     """).fetchall()[0][0]
-    if (interior_rings or 0) > 0:
+    return (max_interior_rings or 0) > 0
+
+
+def check_gaps(conn: DuckDBPyConnection, table: str) -> None:
+    """Raise RuntimeError if the union of `table.geom` has any interior holes."""
+    if has_gaps(conn, table):
         error = f"GAPS: {table}"
         logger.error(error)
         raise RuntimeError(error)

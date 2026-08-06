@@ -139,7 +139,6 @@ def clean(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         name,
                         gap_maximum_width=parsed_maximum_gap_width,
                         snapping_distance=parsed_snapping_distance,
-                        debug=debug,
                     )
                 elif s == "outputs":
                     outputs.main(conn, name, output_path, issues_path, debug=debug)

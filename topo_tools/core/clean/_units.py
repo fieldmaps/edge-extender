@@ -23,21 +23,6 @@ def cos_lat_factor(centroid_lat: float) -> float:
     return max(cos(radians(centroid_lat)), 0.05)
 
 
-def deg_sq_to_m2(area_deg_sq: float, centroid_lat: float) -> float:
-    """Convert an area in square degrees to square meters at the given latitude."""
-    return area_deg_sq * METERS_PER_DEGREE**2 * cos_lat_factor(centroid_lat)
-
-
 def m2_to_deg_sq(area_m2: float, centroid_lat: float) -> float:
     """Convert an area in square meters to square degrees at the given latitude."""
     return area_m2 / (METERS_PER_DEGREE**2 * cos_lat_factor(centroid_lat))
-
-
-def deg_to_m(deg: float) -> float:
-    """Convert a scalar degree distance (e.g. MIC radius) to meters.
-
-    Uses the latitude-scale constant only (no cos(lat) factor) -- exact for
-    N-S distances, approximate for E-W, adequate for display-only widths.
-    Matches units.ts's degToM.
-    """
-    return deg * METERS_PER_DEGREE

@@ -69,7 +69,9 @@ This produces **0 gaps, 0 overlaps, 0 `ST_CoverageInvalidEdges`** on all tested 
 
 ### Topology checks (`_06_outputs.py`)
 
-`_check_overlaps` (`ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL`, via `utils.has_coverage_violations`) and `_check_gaps` (`ST_NumInteriorRings(ST_Union_Agg(geom)) > 0`) run on the final `_05` table and raise `RuntimeError` on failure. Both unnest MultiPolygon rows into single-polygon parts first, so a coverage split into multiple parts (e.g. mainland + offshore islet) doesn't hide a real interior-ring gap. There is no separate area-based check or epsilon-based warning tier — these are the only two topology gates in the pipeline.
+`_check_overlaps` (`ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL`, via `core/extend/_coverage.py`'s `has_coverage_violations`) and `_check_gaps` (via that module's `has_gaps`) run on the final `_05` table and raise `RuntimeError` on failure. Both unnest MultiPolygon rows into single-polygon parts first, so a coverage split into multiple parts (e.g. mainland + offshore islet) doesn't hide a real interior-ring gap. There is no separate area-based check or epsilon-based warning tier — these are the only two topology gates in the pipeline.
+
+`has_gaps()` dumps the whole-table union into individual polygon parts before checking `ST_NumInteriorRings` on each. Calling `ST_NumInteriorRings` on the raw union result directly (the original implementation) is a latent bug: the union of any real multi-part dataset is almost always a `MultiPolygon`, and `ST_NumInteriorRings` silently returns `NULL` (never `> 0`) on a `MultiPolygon` — confirmed on `cod_admin4.parquet` (9,658 fids), where the undumped query returned `NULL` while the dump-then-max version correctly returned `0`. The undumped version would never have raised on a real interior-ring gap in any multi-part dataset, which is most real admin-boundary layers.
 
 ---
 

@@ -17,10 +17,16 @@ topo-tools-js/src/lib/tools/topology-cleaner/pipeline/issues.ts:
 Gap rows also carry a Polsby-Popper thinness ratio (4*pi*Area/Perimeter^2,
 NULL on overlap rows) used by the clean stage's auto gap-fill mode.
 
-Each of the two detection queries is retried once at reduced precision on
-failure, then falls back to an empty result (logged) rather than raising --
-one kind failing shouldn't block the other, matching match's "failed group
-is logged and dropped, not fatal" precedent.
+Each of the two detection queries falls back to an empty result (logged) on
+failure rather than raising -- one kind failing shouldn't block the other,
+matching match's "failed group is logged and dropped, not fatal" precedent.
+
+Gap detection always runs -- the whole-table union it needs is also the
+only way to answer "are there any gaps at all," so there's no cheaper
+substitute check to skip it with. Overlap detection is skipped (an empty
+result written directly) when `has_coverage_violations()` is already False,
+since that's equivalent to "the overlap self-join would find nothing" and
+is far cheaper than actually running the O(n^2) self-join to confirm it.
 """
 
 from collections.abc import Callable
@@ -28,7 +34,9 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
-from ._constants import MIN_ISSUE_AREA_M2, REDUCED_PRECISION_DEG
+from topo_tools.core.extend._coverage import has_coverage_violations
+
+from ._constants import MIN_ISSUE_AREA_M2
 from ._units import METERS_PER_DEGREE, cos_lat_factor, m2_to_deg_sq
 
 logger = getLogger(__name__)
@@ -41,46 +49,24 @@ def centroid_lat_of(conn: DuckDBPyConnection, table: str) -> float:
     return lat if lat is not None else 0.0
 
 
-def _run_with_retry(
+def _detect_or_empty(
     conn: DuckDBPyConnection,
     kind: str,
     source: str,
     empty_sql: str,
     build: Callable[[DuckDBPyConnection, str], None],
 ) -> None:
-    """Call build(conn, source); on failure, retry once at reduced precision.
+    """Call build(conn, source); on failure, log and fall back to an empty result.
 
-    If both attempts fail, executes `empty_sql` so the target table this
-    `build` call was supposed to create always exists afterward -- the
-    module docstring promises "falls back to an empty result" but without
-    this, a double-failure left the table entirely missing and crashed the
-    downstream UNION ALL in `main()` with a binder/catalog error instead.
+    Executes `empty_sql` on failure so the target table this `build` call was
+    supposed to create always exists afterward, instead of crashing the
+    downstream UNION ALL in `main()` with a binder/catalog error.
     """
     try:
         build(conn, source)
     except Exception as e:  # noqa: BLE001 -- GEOS topology failures surface as generic duckdb errors
         logger.warning(
-            "%s detection failed on %s (%s), retrying at reduced precision",
-            kind,
-            source,
-            e,
-        )
-    else:
-        return
-    reduced = f"{source}_reduced"
-    conn.execute(f"""--sql
-        CREATE OR REPLACE TABLE "{reduced}" AS
-        SELECT * EXCLUDE (geom),
-               ST_ReducePrecision(geom, {REDUCED_PRECISION_DEG}) AS geom
-        FROM "{source}"
-    """)
-    try:
-        build(conn, reduced)
-    except Exception as e:  # noqa: BLE001 -- see above
-        logger.warning(
-            "%s detection failed even at reduced precision (%s); reporting none",
-            kind,
-            e,
+            "%s detection failed on %s (%s); reporting none", kind, source, e
         )
         conn.execute(empty_sql)
 
@@ -178,30 +164,29 @@ def main(
     gaps_tmp = f"{name}_02_tmp1"
     overlaps_tmp = f"{name}_02_tmp2"
 
-    empty_n_geom_sql = (
-        "CREATE OR REPLACE TABLE {tmp} AS "
-        "SELECT NULL::BIGINT AS n, NULL::GEOMETRY AS geom WHERE FALSE"
-    )
-    empty_overlaps_sql = (
-        "CREATE OR REPLACE TABLE {tmp} AS "
-        "SELECT NULL::BIGINT AS n, NULL::BIGINT AS unit_a, "
-        "NULL::BIGINT AS unit_b, NULL::GEOMETRY AS geom WHERE FALSE"
-    )
-
-    _run_with_retry(
+    _detect_or_empty(
         conn,
         "gap",
         table,
-        empty_n_geom_sql.format(tmp=f'"{gaps_tmp}"'),
+        f'CREATE OR REPLACE TABLE "{gaps_tmp}" AS '
+        "SELECT NULL::BIGINT AS n, NULL::GEOMETRY AS geom WHERE FALSE",
         lambda c, t: _build_gaps(c, gaps_tmp, t, min_area_deg2),
     )
-    _run_with_retry(
-        conn,
-        "overlap",
-        table,
-        empty_overlaps_sql.format(tmp=f'"{overlaps_tmp}"'),
-        lambda c, t: _build_overlaps(c, overlaps_tmp, t, min_area_deg2),
+    empty_overlaps_sql = (
+        f'CREATE OR REPLACE TABLE "{overlaps_tmp}" AS '
+        "SELECT NULL::BIGINT AS n, NULL::BIGINT AS unit_a, "
+        "NULL::BIGINT AS unit_b, NULL::GEOMETRY AS geom WHERE FALSE"
     )
+    if has_coverage_violations(conn, table):
+        _detect_or_empty(
+            conn,
+            "overlap",
+            table,
+            empty_overlaps_sql,
+            lambda c, t: _build_overlaps(c, overlaps_tmp, t, min_area_deg2),
+        )
+    else:
+        conn.execute(empty_overlaps_sql)
     # area_m2/max_width_m: area_deg2 * METERS_PER_DEGREE^2 * cos(centroid_lat) for
     # area; MIC diameter (deg) * METERS_PER_DEGREE (no cos factor -- matches
     # units.ts's degToM, exact for N-S widths, display-only approximation for E-W).
@@ -227,5 +212,5 @@ def main(
     """)
 
     if not debug:
-        for tmp in (gaps_tmp, overlaps_tmp, f"{table}_reduced"):
+        for tmp in (gaps_tmp, overlaps_tmp):
             conn.execute(f'DROP TABLE IF EXISTS "{tmp}"')

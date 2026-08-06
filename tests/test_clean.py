@@ -268,12 +268,11 @@ def _overlapping_pair_conn():
 def test_clean_gap_width_escalation_recovers_after_transient_failures(monkeypatch):
     """The escalation loop moves past a rung that fails outright and succeeds later.
 
-    The first rung's own two sub-attempts (original + reduced-precision retry)
-    both fail here, so recovery lands on the second rung's first sub-attempt --
-    the third `coverage_clean` call overall.
+    The first rung fails here, so recovery lands on the second rung -- the
+    second `coverage_clean` call overall.
     """
     expected_row_count = 2
-    recovery_call_count = 3
+    recovery_call_count = 2
     calls = []
     real_coverage_clean = clean_stage.coverage_clean
 
@@ -321,8 +320,7 @@ def test_clean_gap_width_escalation_exhausted_raises(monkeypatch):
             snapping_distance=("auto", None),
         )
 
-    # Each rung retries once at reduced precision before giving up on that rung.
-    assert len(calls) == len(GAP_WIDTH_ESCALATION_FACTORS) * 2
+    assert len(calls) == len(GAP_WIDTH_ESCALATION_FACTORS)
 
 
 def test_clean_gap_width_escalation_rejects_eroded_output(monkeypatch):

@@ -6,13 +6,6 @@
 # topped out at 1.6e-7 m^2, so 1e-4 m^2 (1cm^2) leaves generous headroom.
 MIN_ISSUE_AREA_M2 = 1e-4
 
-# Precision-reduction retry grid size (degrees) on a GEOS TopologyException
-# from any detection/clean query. Ported from topo-tools-js's
-# REDUCED_PRECISION_DEG -- empirically the largest value giving a stable,
-# reproducible result (1e-11/1e-12 "succeeded" but were numerically
-# unstable, producing a different result each run).
-REDUCED_PRECISION_DEG = 1e-10
-
 # Relative headroom added to the widest detected gap's own width when
 # --maximum-gap-width=all resolves gap_maximum_width, so the widest gap
 # itself reliably clears ST_CoverageClean's <= comparison rather than landing
