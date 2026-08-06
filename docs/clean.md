@@ -55,14 +55,16 @@ Run `topo-tools clean --help` for the full, always-current option list.
    (written empty directly) whenever `has_coverage_violations()` is already
    False -- see "Skipping overlap detection when the coverage is already
    valid" below.
-3. **`_03_clean`** -- fixes gaps/overlaps via `ST_CoverageClean` (gated: a
-   no-op copy only if the input has no coverage violations *and* no detected
-   gap qualifies to fill under the resolved `gap_maximum_width` -- see
-   "`has_coverage_violations()` alone cannot stand in for gap detection"
-   below; that check is only about overlaps/mismatched edges, so a gap-only
-   input still needs `ST_CoverageClean` to actually run), retrying the
-   resolved `gap_maximum_width` through an escalation ladder if the result
-   still has invalid edges (see "gap_maximum_width escalation" below).
+3. **`_03_clean`** -- fixes gaps/overlaps via a single `ST_CoverageClean`
+   call (gated: a no-op copy only if the input has no coverage violations
+   *and* no detected gap qualifies to fill under the resolved
+   `gap_maximum_width` -- see "`has_coverage_violations()` alone cannot
+   stand in for gap detection" below; that check is only about
+   overlaps/mismatched edges, so a gap-only input still needs
+   `ST_CoverageClean` to actually run), validated against invalid edges, a
+   total-area floor, and a per-fid collapse/geometry-type check, raising
+   immediately if any fails (see "Validating a coverage-clean result"
+   below).
 4. **`_04_outputs`** -- validates overlaps are gone (hard gate), logs
    (never raises on) any gaps still unfilled by design, and exports both the
    cleaned dataset and the issues report.
@@ -163,14 +165,17 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   below) rather than leaning on any GEOS-side default the way
   `--snapping-distance auto` can.
 - **Naming**: `coverage_clean()` (the shared `core/coverage.py`) calls
-  `ST_CoverageClean` with DuckDB's own named arguments,
-  `gap_maximum_width := ...` / `snapping_distance := ...` (verified live via
-  `duckdb_functions()`) -- a Python `None` omits the argument entirely
-  rather than passing a sentinel. The CLI/API layer (`--maximum-gap-width`,
-  `--snapping-distance`, and the matching `api.clean.clean()` kwargs)
-  instead follows GDAL's `gdal vector clean-coverage` word order for the gap
-  one, since that's what a human actually types; `api.clean.clean()` is the
-  one place the two namings meet.
+  `ST_CoverageClean` positionally (`geoms, snapping_distance,
+  gap_maximum_width`), passing `-1` for either argument a Python `None`
+  omits. DuckDB's `:=` named-argument syntax binds by position, not name,
+  for compiled scalar functions (duckdb/duckdb#24574) -- conditionally
+  omitting one named argument silently shifted the other into the wrong
+  slot; see "Validating a coverage-clean result" below for what that broke.
+  The CLI/API layer (`--maximum-gap-width`, `--snapping-distance`, and the
+  matching `api.clean.clean()` kwargs) follows GDAL's `gdal vector
+  clean-coverage` word order for the gap one, since that's what a human
+  actually types; `api.clean.clean()` is the one place the two namings
+  meet.
 - `ST_CoverageClean`'s gap-merge only fills **fully-enclosed** holes -- a
   ring of polygons surrounding missing area (a lake, a missing admin unit).
   An open "inlet" gap between two side-by-side, non-enclosing polygons is
@@ -192,7 +197,7 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   thin* (`{name}_02.thinness_ratio <= DEFAULT_THINNESS_RATIO`), directly in
   degree-space from `{name}_02`'s stored gap geometries (`max((
   ST_MaximumInscribedCircle(geom)).radius * 2)`, GEOS's own width metric)
-  plus a small epsilon (`ALL_GAP_WIDTH_EPSILON_FACTOR` in `_constants.py`)
+  plus a small epsilon (`AUTO_GAP_WIDTH_EPSILON_FACTOR` in `_constants.py`)
   so the widest thin gap itself clears the `<=` comparison. "Thin" is a
   Polsby-Popper compactness score (`4*pi*Area/Perimeter^2`, 1.0 = circle,
   ->0 = elongated crack) at or below `DEFAULT_THINNESS_RATIO = 0.3`
@@ -208,75 +213,47 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   non-thin gap narrower than the widest thin gap would also get swept in.
   When no gap qualifies as thin, the argument is omitted entirely (no
   gap-filling).
-- `all` -- fills every gap the detection stage found. Computed the same way
-  as `auto`'s width, but over *every* detected gap, not just thin ones
-  (`max((ST_MaximumInscribedCircle(geom)).radius * 2) FROM {name}_02 WHERE
-  kind='gap'`), plus the same small epsilon. A fixed "just make it huge"
-  constant was tried and rejected: `gap_maximum_width` in the
-  single-digit-degrees range and up was confirmed to make
-  `ST_CoverageClean` silently erode or entirely erase real polygon area on
-  a real admin-boundary layer (164 fids, 190km² input down to 50km² at 10
-  degrees, fully empty at 20+) -- not just close gaps, destroy data. There
-  is no width that's both "definitely wide enough to fill everything" and
-  "definitely safe"; the widest *actually detected* gap plus a small
-  epsilon is the only value with any principled justification.
+- `all` -- fills every gap the detection stage found, using a fixed
+  `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` (`_constants.py`) rather than computing
+  the widest detected gap. An earlier version computed the widest gap's own
+  width plus a small epsilon instead, after a large fixed constant appeared
+  to make `ST_CoverageClean` erode or erase real polygon area on a real
+  admin-boundary layer (164 fids, 190km² down to 50km² at 10 degrees, fully
+  empty at 20+). That erosion turned out to be `coverage_clean()`'s
+  named-argument bug (see "Naming" above) corrupting `snapping_distance`,
+  not a genuine `gap_maximum_width` effect -- confirmed by sweeping
+  `gap_maximum_width` from `0` to `360` degrees against the same layer with
+  the fixed positional call: flat area, zero invalid edges throughout.
 - A bare number is an explicit cap in decimal degrees, passed straight
   through to `ST_CoverageClean` with no conversion.
 
-## `gap_maximum_width` escalation on a coverage-clean instability
+## Validating a coverage-clean result
 
-`ST_CoverageClean` has two confirmed real failure modes tied to
-`gap_maximum_width`, independent of `snapping_distance` (varying
-`snapping_distance` alone across 8 orders of magnitude never fixed either
-one; only the exact `gap_maximum_width` value mattered):
+`_03_clean.py`'s `main()` makes a single `ST_CoverageClean` call at the
+resolved target width (from `auto`/`all`/an explicit value) and validates
+it against **both** `has_coverage_violations()` *and* a total-area sanity
+floor (`AREA_SANITY_FACTOR = 0.8`) -- the invalid-edges check alone passes
+a totally empty result as "no violations," confirmed directly, so it can't
+catch a collapsed output on its own. `main()` raises immediately if either
+check fails.
 
-1. **Residual invalid edges, or an outright `TopologyException`**, at
-   certain widths -- confirmed against a real admin-boundary defect where
-   the failure was narrow and non-monotonic (good/bad/good/**crash**/bad/
-   good across a ~24m span), not a simple threshold.
-2. **Silent area erosion**, once the width approaches the scale of the
-   data's own local topology (see the `all` mode note above) -- confirmed
-   both on real data at multi-degree widths and, more surprisingly, on a
-   small synthetic fixture at a width exactly matching one of its own real
-   gaps, when combined with a second, differently-scaled group in the same
-   `ST_CoverageClean` call (each group alone was fine; several unrelated
-   polygons in the combined call collapsed to zero area). This one isn't
-   fully understood -- treated as a real, narrow `ST_CoverageClean` quirk
-   worth a closer look or an upstream bug report, not something papered
-   over here.
-
-`_03_clean.py`'s `main()` retries the resolved target width (from
-`auto`/`all`/an explicit value) through `GAP_WIDTH_ESCALATION_FACTORS`
-(`_constants.py`: `1.0, 1.001, 1.002, 1.005, 1.01, 1.02, 1.05, 1.10, 1.20`),
-validating each attempt against **both** `has_coverage_violations()` *and*
-a total-area sanity floor (`AREA_SANITY_FACTOR = 0.8`) -- the invalid-edges
-check alone passes a totally empty result as "no violations," confirmed
-directly, so it cannot catch failure mode 2 on its own. Each rung only
-ever multiplies the *original* target upward, never below it, so
-`auto`/`all`/explicit semantics are preserved: a wider cap can only fill
-*more* gaps, never fewer, so the gap that was actually asked for stays
-filled. The ladder is sized with real margin above the one confirmed
-invalid-edges case (a ~36m-wide instability that cleared at +1.0%) -- the
-last three rungs (+5%, +10%, +20%) are pure safety margin beyond anything
-actually observed needing escalation. Validated end-to-end against the
-real admin-boundary stress case in both `auto` and `all` modes: output
-area matches input to within ~0.0003km² out of ~190km² (the expected,
-tiny overlap-dedup delta), not the catastrophic loss failure mode 2
-produces.
-
-If every rung still fails, `main()` raises rather than silently falling
-back to a different gap-filling behavior (e.g. disabling gap-filling
-entirely) -- retrying with an unrelated, unvalidated parameter change
-risks masking a genuine, dataset-specific GEOS edge case as a routine one,
-and the human running `clean` deserves to know a specific input triggered
-something unusual rather than getting output that quietly differs from
-what they asked for.
+An earlier version retried the resolved width through an escalation
+ladder, believing `ST_CoverageClean` had two real failure modes tied to
+`gap_maximum_width`: residual invalid edges/`TopologyException` at narrow,
+non-monotonic widths, and silent area erosion at wide ones. Both turned
+out to be `coverage_clean()`'s named-argument bug (see "Naming" above)
+corrupting `snapping_distance` in step with `gap_maximum_width`, not
+independent `ST_CoverageClean` instability -- confirmed by sweeping
+`gap_maximum_width` from `1e-6` to `360` degrees against the real
+admin-boundary layer that originally exhibited both symptoms, with the
+fixed positional call: flat, monotonic area and zero invalid edges at
+every width tested. The escalation ladder was removed accordingly.
 
 ### The total-area floor alone misses a small, localized collapse
 
 `AREA_SANITY_FACTOR` only bounds the *summed* output area, so a single
 small feature collapsing entirely can hide inside it if the rest of the
-dataset is much larger. Each escalation attempt is also checked per fid:
+dataset is much larger. The result is also checked per fid:
 
 - **Defect-adjacent exemption.** A fid touching a gap that gets filled, or
   party to a detected overlap, is exempt from both checks below, by any
@@ -290,7 +267,7 @@ dataset is much larger. Each escalation attempt is also checked per fid:
 - **Geometry type.** `ST_Area()` sums only the polygonal members of a mixed
   `GEOMETRYCOLLECTION`, so a fid partly reduced to a stray line or point
   during the fix could otherwise still measure as area-preserving. Any fid
-  whose fixed geometry isn't a `POLYGON`/`MULTIPOLYGON` fails this rung.
+  whose fixed geometry isn't a `POLYGON`/`MULTIPOLYGON` fails validation.
 
 Both checks compare against exact, defect-derived bounds rather than a
 guessed percentage floor -- a percentage floor on a per-fid basis was tried
@@ -300,9 +277,9 @@ for the fid actually involved.
 
 ## `--snapping-distance auto|<degrees>`
 
-`auto` omits the argument from the `ST_CoverageClean` call, keeping GEOS's
-real computed default. An explicit value (decimal degrees, passed straight
-through) overrides it. This is a **noding-robustness knob only** -- per
+`auto` passes `-1` positionally to `ST_CoverageClean`, a no-op that keeps
+GEOS's real computed default. An explicit value (decimal degrees, passed
+straight through) overrides it. This is a **noding-robustness knob only** -- per
 GEOS's own doc comment, "a large snapping distance may introduce
 undesirable data alteration."
 
@@ -384,9 +361,9 @@ its own default-adjacent behavior. Instead it logs a warning with a count of
 how many detected gaps remain uncovered, tested via `ST_Contains` against a
 point on each gap's surface -- visibility for the issues file, not a failure
 condition. `check_overlaps()` **is** reused as a hard gate here too, but by
-the time `_04_outputs.py` runs it, `_03_clean.py`'s own gap_maximum_width
-escalation (see above) has already validated `{name}_03` has no invalid
-edges -- or raised before returning. This check is now a defensive
+the time `_04_outputs.py` runs it, `_03_clean.py`'s own validation (see
+above) has already confirmed `{name}_03` has no invalid edges -- or raised
+before returning. This check is now a defensive
 double-check, not the primary safety net: any survivor here would mean
 `_03_clean.py`'s own validation had a bug, not that `ST_CoverageClean`
 itself misbehaved.
@@ -399,12 +376,11 @@ consistent with `match`'s "failed group is logged and dropped, not fatal"
 precedent, applied per-detection-kind here instead of per-group.
 
 A precision-reduction retry (via `ST_ReducePrecision`) is not used as a
-fallback here or in the fix stage. The confirmed driver of `ST_CoverageClean`
-instability is `gap_maximum_width` (see "gap_maximum_width escalation on a
-coverage-clean instability" above), not floating-point precision --
-escalating that value is the validated lever, so a second, unvalidated one
-that silently perturbs input geometry adds risk without addressing the
-actual cause.
+fallback here or in the fix stage -- the actual driver of the
+coverage-clean instabilities once observed here was `coverage_clean()`'s
+own named-argument bug (see "Naming" above), not floating-point precision,
+so there's no remaining case for a second, unvalidated retry lever that
+silently perturbs input geometry.
 
 ## Portolan-scale profiling
 

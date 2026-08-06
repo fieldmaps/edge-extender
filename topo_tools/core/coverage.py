@@ -60,9 +60,9 @@ def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input,
     """Write table_out from table_in with ST_CoverageClean applied to a subset (or all).
 
     ``fids=None`` runs the clean over the entire table. ``gap_maximum_width``
-    and ``snapping_distance`` are passed as named SQL arguments (DuckDB's own
-    spelling); ``None`` omits the argument, which is GEOS's own default for
-    each.
+    and ``snapping_distance`` are passed positionally, both defaulting to
+    GEOS's own ``-1`` sentinel when ``None`` -- named args (`:=`) bind by
+    position, not name, for compiled scalar functions (duckdb/duckdb#24574).
 
     Mapping back to source rows: ST_CoverageClean returns a GeometryCollection
     whose i-th element corresponds to input i. ST_Dump recursively unnests
@@ -72,12 +72,9 @@ def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input,
     via ST_Collect.
     """
     where = "" if fids is None else f"WHERE fid IN ({','.join(str(f) for f in fids)})"
-    cc_args = ["list(geom ORDER BY fid)"]
-    if snapping_distance is not None:
-        cc_args.append(f"snapping_distance := {snapping_distance}")
-    if gap_maximum_width is not None:
-        cc_args.append(f"gap_maximum_width := {gap_maximum_width}")
-    cc = f"ST_CoverageClean({', '.join(cc_args)})"
+    snap_arg = -1 if snapping_distance is None else snapping_distance
+    gap_arg = -1 if gap_maximum_width is None else gap_maximum_width
+    cc = f"ST_CoverageClean(list(geom ORDER BY fid), {snap_arg}, {gap_arg})"
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{table_out}" AS
         WITH ord AS (

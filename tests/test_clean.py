@@ -13,7 +13,6 @@ from click.testing import CliRunner
 import topo_tools.core.clean._03_clean as clean_stage
 from topo_tools.api.clean import clean
 from topo_tools.cli.main import cli
-from topo_tools.core.clean._constants import GAP_WIDTH_ESCALATION_FACTORS
 
 # Two independent groups, spatially separated so each exercises exactly one
 # defect kind without interference:
@@ -382,53 +381,18 @@ def _overlapping_pair_conn():
     return conn
 
 
-def test_clean_gap_width_escalation_recovers_after_transient_failures(monkeypatch):
-    """The escalation loop moves past a rung that fails outright and succeeds later.
+def test_clean_raises_immediately_on_coverage_clean_failure(monkeypatch):
+    """A coverage_clean() failure propagates directly -- there is no retry."""
 
-    The first rung fails here, so recovery lands on the second rung -- the
-    second `coverage_clean` call overall.
-    """
-    expected_row_count = 2
-    recovery_call_count = 2
-    calls = []
-    real_coverage_clean = clean_stage.coverage_clean
-
-    def flaky_coverage_clean(conn, table_in, table_out, **kwargs):
-        calls.append(kwargs["gap_maximum_width"])
-        if len(calls) < recovery_call_count:
-            msg = "simulated GEOS instability at this width"
-            raise RuntimeError(msg)
-        real_coverage_clean(conn, table_in, table_out, **kwargs)
-
-    monkeypatch.setattr(clean_stage, "coverage_clean", flaky_coverage_clean)
-
-    with _overlapping_pair_conn() as conn:
-        clean_stage.main(
-            conn,
-            "stage",
-            gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
-        )
-        row_count = conn.execute("SELECT COUNT(*) FROM stage_03").fetchone()[0]
-
-    assert row_count == expected_row_count
-    assert len(calls) == recovery_call_count
-
-
-def test_clean_gap_width_escalation_exhausted_raises(monkeypatch):
-    """Every rung failing raises a clear error instead of silently degrading."""
-    calls = []
-
-    def always_fails(*_args, **kwargs):
-        calls.append(kwargs["gap_maximum_width"])
-        msg = "simulated persistent GEOS instability"
+    def always_fails(*_args, **_kwargs):
+        msg = "simulated GEOS failure"
         raise RuntimeError(msg)
 
     monkeypatch.setattr(clean_stage, "coverage_clean", always_fails)
 
     with (
         _overlapping_pair_conn() as conn,
-        pytest.raises(RuntimeError, match="escalation exhausted"),
+        pytest.raises(RuntimeError, match="simulated GEOS failure"),
     ):
         clean_stage.main(
             conn,
@@ -437,18 +401,12 @@ def test_clean_gap_width_escalation_exhausted_raises(monkeypatch):
             snapping_distance=("auto", None),
         )
 
-    assert len(calls) == len(GAP_WIDTH_ESCALATION_FACTORS)
 
-
-def test_clean_gap_width_escalation_rejects_eroded_output(monkeypatch):
+def test_clean_rejects_eroded_output(monkeypatch):
     """A totally empty coverage_clean() result must not be accepted as success.
 
     Regression: has_coverage_violations() alone passes an empty result as
-    "no violations" -- confirmed directly against a real ST_CoverageClean
-    call at a large gap_maximum_width that silently erased all polygon
-    area. The escalation loop must also reject on the area-sanity check,
-    not just the invalid-edges check, so a call that "succeeds" by
-    returning nothing still counts as this rung failing.
+    "no violations" -- the area-sanity check must catch it too.
     """
 
     def empties_output(conn, table_in, table_out, **_kwargs):
@@ -462,7 +420,7 @@ def test_clean_gap_width_escalation_rejects_eroded_output(monkeypatch):
 
     with (
         _overlapping_pair_conn() as conn,
-        pytest.raises(RuntimeError, match="escalation exhausted"),
+        pytest.raises(RuntimeError, match="invalid or collapsed"),
     ):
         clean_stage.main(
             conn,
@@ -472,15 +430,13 @@ def test_clean_gap_width_escalation_rejects_eroded_output(monkeypatch):
         )
 
 
-def test_clean_gap_width_escalation_rejects_collapsed_fid(monkeypatch):
+def test_clean_rejects_collapsed_fid(monkeypatch):
     """A fid collapsing to zero area must not be accepted, even if the total survives.
 
     Regression: the area-sanity floor only checks the summed total, so a
     small feature vanishing entirely inside a much larger dataset clears it
-    while still being a real defect -- confirmed separately from the
-    total-collapse case above (unrelated polygons can collapse to zero area
-    within an otherwise-successful call). Neither fid here touches a gap or
-    an overlap, so both are held to the strict no-change bound.
+    while still being a real defect. Neither fid here touches a gap or an
+    overlap, so both are held to the strict no-change bound.
     """
 
     def collapses_one_fid(conn, table_in, table_out, **_kwargs):
@@ -505,7 +461,7 @@ def test_clean_gap_width_escalation_rejects_collapsed_fid(monkeypatch):
     """)
     conn.execute(_empty_issues_table_sql("stage_02"))
 
-    with conn, pytest.raises(RuntimeError, match="escalation exhausted"):
+    with conn, pytest.raises(RuntimeError, match="invalid or collapsed"):
         clean_stage.main(
             conn,
             "stage",
@@ -514,7 +470,7 @@ def test_clean_gap_width_escalation_rejects_collapsed_fid(monkeypatch):
         )
 
 
-def test_clean_gap_width_escalation_rejects_bad_geometry_type(monkeypatch):
+def test_clean_rejects_bad_geometry_type(monkeypatch):
     """A fid degenerating into a mixed-type GeometryCollection must be rejected.
 
     Regression: ST_Area() on a GeometryCollection only sums its polygonal
@@ -550,7 +506,7 @@ def test_clean_gap_width_escalation_rejects_bad_geometry_type(monkeypatch):
     """)
     conn.execute(_empty_issues_table_sql("stage_02"))
 
-    with conn, pytest.raises(RuntimeError, match="escalation exhausted"):
+    with conn, pytest.raises(RuntimeError, match="invalid or collapsed"):
         clean_stage.main(
             conn,
             "stage",

@@ -1,4 +1,4 @@
-"""Fixes gap/overlap defects with ST_CoverageClean, escalating gap_maximum_width."""
+"""Fixes gap/overlap defects in a single ST_CoverageClean call."""
 
 from logging import getLogger
 
@@ -7,10 +7,10 @@ from duckdb import DuckDBPyConnection
 from topo_tools.core.coverage import coverage_clean, has_coverage_violations
 
 from ._constants import (
-    ALL_GAP_WIDTH_EPSILON_FACTOR,
     AREA_SANITY_FACTOR,
+    AUTO_GAP_WIDTH_EPSILON_FACTOR,
     DEFAULT_THINNESS_RATIO,
-    GAP_WIDTH_ESCALATION_FACTORS,
+    GAP_MAXIMUM_WIDTH_ALL_DEG,
 )
 
 logger = getLogger(__name__)
@@ -22,17 +22,20 @@ def _resolve_gap_maximum_width_deg(
     gap_maximum_width: tuple[str, float | None],
 ) -> float | None:
     mode, value = gap_maximum_width
-    if mode in ("auto", "all"):
-        where = "kind = 'gap'"
-        if mode == "auto":
-            where += f" AND thinness_ratio <= {DEFAULT_THINNESS_RATIO}"
+    if mode == "all":
+        has_gap = conn.execute(f"""--sql
+            SELECT EXISTS (SELECT 1 FROM "{name}_02" WHERE kind = 'gap')
+        """).fetchall()[0][0]
+        return GAP_MAXIMUM_WIDTH_ALL_DEG if has_gap else None
+    if mode == "auto":
         widest_deg = conn.execute(f"""--sql
             SELECT MAX((ST_MaximumInscribedCircle(geom)).radius * 2)
-            FROM "{name}_02" WHERE {where}
+            FROM "{name}_02"
+            WHERE kind = 'gap' AND thinness_ratio <= {DEFAULT_THINNESS_RATIO}
         """).fetchall()[0][0]
         if widest_deg is None:
             return None
-        return widest_deg * ALL_GAP_WIDTH_EPSILON_FACTOR
+        return widest_deg * AUTO_GAP_WIDTH_EPSILON_FACTOR
     return value
 
 
@@ -103,82 +106,45 @@ def main(
     input_area = _total_area(conn, table)
     min_area = input_area * AREA_SANITY_FACTOR
 
-    factors = (
-        (1.0,) if base_gap_maximum_width_deg is None else GAP_WIDTH_ESCALATION_FACTORS
+    coverage_clean(
+        conn,
+        table,
+        out_table,
+        fids=None,
+        gap_maximum_width=base_gap_maximum_width_deg,
+        snapping_distance=snapping_distance_deg,
     )
 
-    last_error: Exception | None = None
-    for factor in factors:
-        candidate_width = (
-            None
-            if base_gap_maximum_width_deg is None
-            else base_gap_maximum_width_deg * factor
+    output_area = _total_area(conn, out_table)
+    collapsed, drifted = _defect_unrelated_fid_outcomes(conn, name, table, out_table)
+    bad_types = _bad_geometry_type_count(conn, out_table)
+    if (
+        has_coverage_violations(conn, out_table)
+        or output_area < min_area
+        or collapsed
+        or bad_types
+    ):
+        msg = (
+            f"invalid or collapsed coverage-clean output (area {output_area} vs "
+            f"input {input_area}, {collapsed} fid(s) with no detected defect "
+            f"collapsed to empty, {bad_types} fid(s) with a non-polygon geometry "
+            f"type) at gap_maximum_width={base_gap_maximum_width_deg} on {table}"
         )
-        try:
-            coverage_clean(
-                conn,
-                table,
-                out_table,
-                fids=None,
-                gap_maximum_width=candidate_width,
-                snapping_distance=snapping_distance_deg,
-            )
-        except Exception as e:  # noqa: BLE001 -- this rung failed, try the next one
-            last_error = e
-            continue
-        output_area = _total_area(conn, out_table)
-        collapsed, drifted = _defect_unrelated_fid_outcomes(
-            conn, name, table, out_table
-        )
-        bad_types = _bad_geometry_type_count(conn, out_table)
-        if (
-            not has_coverage_violations(conn, out_table)
-            and output_area >= min_area
-            and collapsed == 0
-            and bad_types == 0
-        ):
-            if drifted:
-                logger.warning(
-                    "clean: %d fid(s) with no connection to any detected gap/overlap "
-                    "shifted area anyway (ST_CoverageClean's global renoding) on %s",
-                    drifted,
-                    table,
-                )
-            pct_change = (
-                (output_area - input_area) / input_area * 100 if input_area else 0.0
-            )
-            logger.info(
-                "clean: total area %s %.4f%% (%.6f -> %.6f) on %s",
-                "gained" if pct_change >= 0 else "lost",
-                abs(pct_change),
-                input_area,
-                output_area,
-                table,
-            )
-            if factor != factors[0]:
-                logger.warning(
-                    "coverage_clean needed gap_maximum_width escalated x%.3f "
-                    "(%s -> %s) to resolve a coverage instability on %s",
-                    factor,
-                    base_gap_maximum_width_deg,
-                    candidate_width,
-                    table,
-                )
-            return
-        last_error = RuntimeError(
-            f"invalid or collapsed output (area {output_area} vs input {input_area}, "
-            f"{collapsed} fid(s) with no detected defect collapsed to empty, "
-            f"{bad_types} fid(s) with a non-polygon geometry type) at "
-            f"gap_maximum_width={candidate_width}"
-        )
+        raise RuntimeError(msg)
 
-    widest_tried = candidate_width
-    msg = (
-        f"gap_maximum_width escalation exhausted {len(factors)} attempts "
-        f"({base_gap_maximum_width_deg} to {widest_tried}) without resolving a "
-        f"coverage-clean instability on {table}. This is a dataset-specific "
-        f"GEOS numerical edge case, not a parameter you can tune around -- "
-        f"inspect with --debug, or consider filing it as a duckdb-spatial/GEOS "
-        f"bug report."
+    if drifted:
+        logger.warning(
+            "clean: %d fid(s) with no connection to any detected gap/overlap "
+            "shifted area anyway (ST_CoverageClean's global renoding) on %s",
+            drifted,
+            table,
+        )
+    pct_change = (output_area - input_area) / input_area * 100 if input_area else 0.0
+    logger.info(
+        "clean: total area %s %.4f%% (%.6f -> %.6f) on %s",
+        "gained" if pct_change >= 0 else "lost",
+        abs(pct_change),
+        input_area,
+        output_area,
+        table,
     )
-    raise RuntimeError(msg) from last_error
