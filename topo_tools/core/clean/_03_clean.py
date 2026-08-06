@@ -1,44 +1,4 @@
-"""Fixes gap/overlap defects with ST_CoverageClean.
-
-Overlaps are always fixed unconditionally by ST_CoverageClean itself -- no
-flag controls that. gap_maximum_width and snapping_distance are the only
-tunables, both taken directly in decimal degrees (the units `_01` is
-already stored in, EPSG:4326) -- no meters conversion, matching GDAL/OGR's
-convention that a distance parameter on an unprojected layer is in the
-layer's native units, not meters. See `docs/clean.md`.
-
-gap_maximum_width additionally has two confirmed real failure modes:
-
-1. ST_CoverageClean can leave residual invalid edges (or raise a
-   TopologyException outright) at certain widths, entirely unrelated to
-   snapping_distance, in a narrow and non-monotonic way -- verified against
-   a real admin-boundary defect.
-2. At single-digit-degrees-and-up widths, ST_CoverageClean can silently
-   erode or entirely erase real polygon area, not just close gaps -- also
-   verified against real data. A large "just make it big enough to fill
-   everything" constant is therefore not a safe design; there is no width
-   that's both "definitely wide enough" and "definitely safe."
-
-`main()` retries the resolved target width through
-`GAP_WIDTH_ESCALATION_FACTORS`, validating each attempt against
-has_coverage_violations(), a total-area sanity floor (AREA_SANITY_FACTOR --
-has_coverage_violations() alone passes a totally empty result as "no
-violations"), a per-fid erosion check, and a geometry-type check. The per-fid check
-exempts any fid touching a filled gap or party to a detected overlap --
-ST_CoverageClean can legitimately redraw that fid's whole neighborhood, not
-just the immediate defect -- and requires every other fid (no connection to
-any detected defect) to come out essentially unchanged. This catches a
-small, otherwise-uninvolved feature collapsing even when the dataset's
-total area still clears the sanity floor. The geometry-type check rejects any fid whose
-fixed geometry is not a Polygon/MultiPolygon, since ST_Area() silently sums
-only the polygonal parts of a mixed GeometryCollection and would otherwise
-let a fid partly reduced to a stray line or point pass as area-preserving.
-Both are confirmed real failure shapes, distinct from the total-collapse
-case: several unrelated polygons collapsed to zero area in one combined
-call even though each was fine processed alone. Escalation only ever widens
-(never narrows) the target, so auto/all/explicit semantics are preserved.
-See docs/clean.md.
-"""
+"""Fixes gap/overlap defects with ST_CoverageClean, escalating gap_maximum_width."""
 
 from logging import getLogger
 
@@ -83,53 +43,34 @@ def _total_area(conn: DuckDBPyConnection, table: str) -> float:
     )
 
 
-def _eroded_fid_count(
+def _defect_unrelated_fid_outcomes(
     conn: DuckDBPyConnection, name: str, table_in: str, table_out: str
-) -> int:
-    """Count fids that shrank with no detected defect of their own to explain it.
+) -> tuple[int, int]:
+    """Return (collapsed, drifted) counts for fids untouched by any detected defect.
 
-    A fid touching a gap that gets filled, or a party to a detected overlap,
-    can legitimately lose (or gain) a large share of its own area --
-    ST_CoverageClean redraws the whole neighborhood around a fix, not just
-    the two features directly in conflict (confirmed: filling a gap can
-    fully reassign an adjacent fid's area into a neighbor even though that
-    fid was never itself part of any overlap). A fid with no connection to
-    either kind of detected defect should come out essentially unchanged;
-    any real loss there is erosion, not a side effect of a legitimate fix.
+    Defect-adjacent fids are exempt from both checks.
     """
     return conn.execute(f"""--sql
-        WITH overlap_budget AS (
-            SELECT fid, SUM(area) AS allowed_shrink
-            FROM (
-                SELECT unit_a AS fid, ST_Area(geom) AS area
-                FROM "{name}_02" WHERE kind = 'overlap'
-                UNION ALL
-                SELECT unit_b AS fid, ST_Area(geom) AS area
-                FROM "{name}_02" WHERE kind = 'overlap'
-            )
-            GROUP BY fid
-        ),
-        gap_adjacent AS (
+        WITH defect_adjacent AS (
+            SELECT unit_a AS fid FROM "{name}_02" WHERE kind = 'overlap'
+            UNION
+            SELECT unit_b AS fid FROM "{name}_02" WHERE kind = 'overlap'
+            UNION
             SELECT DISTINCT i.fid
             FROM "{table_in}" i, "{name}_02" g
             WHERE g.kind = 'gap' AND ST_Intersects(i.geom, g.geom)
         )
-        SELECT COUNT(*)
+        SELECT
+            COUNT(*) FILTER (WHERE ST_IsEmpty(o.geom) AND i.area > 0),
+            COUNT(*) FILTER (WHERE NOT ST_IsEmpty(o.geom) AND o.area != i.area)
         FROM (SELECT fid, ST_Area(geom) AS area FROM "{table_in}") i
-        JOIN (SELECT fid, ST_Area(geom) AS area FROM "{table_out}") o USING (fid)
-        LEFT JOIN overlap_budget b USING (fid)
-        WHERE o.area < i.area - COALESCE(b.allowed_shrink, 0) - i.area * 1e-9
-          AND i.fid NOT IN (SELECT fid FROM gap_adjacent)
-    """).fetchall()[0][0]
+        JOIN (SELECT fid, geom, ST_Area(geom) AS area FROM "{table_out}") o USING (fid)
+        WHERE i.fid NOT IN (SELECT fid FROM defect_adjacent)
+    """).fetchall()[0]
 
 
 def _bad_geometry_type_count(conn: DuckDBPyConnection, table: str) -> int:
-    """Count rows whose geometry is not a Polygon or MultiPolygon.
-
-    ST_Area() sums only the polygonal members of a mixed GeometryCollection,
-    so a fid partly reduced to a stray line or point during the fix can
-    still measure as area-preserving while being invalid output.
-    """
+    """Count fids whose fixed geometry isn't Polygon/MultiPolygon."""
     return conn.execute(f"""--sql
         SELECT COUNT(*) FROM "{table}"
         WHERE ST_GeometryType(geom) NOT IN ('POLYGON', 'MULTIPOLYGON')
@@ -150,11 +91,7 @@ def main(
     base_gap_maximum_width_deg = _resolve_gap_maximum_width_deg(
         conn, name, gap_maximum_width
     )
-    # has_coverage_violations() only catches overlaps/mismatched edges, never
-    # gaps (confirmed empirically: a valid edge-matched ring fully surrounding
-    # a real hole returns False -- see docs/clean.md). A gap-only input with
-    # nothing to escalate (base width is None, i.e. no gap qualifies to fill
-    # under the resolved mode) is the only case with truly nothing to fix.
+    # has_coverage_violations() never detects gaps.
     if not has_coverage_violations(conn, table) and base_gap_maximum_width_deg is None:
         conn.execute(
             f'CREATE OR REPLACE TABLE "{out_table}" AS SELECT * FROM "{table}"'
@@ -166,8 +103,6 @@ def main(
     input_area = _total_area(conn, table)
     min_area = input_area * AREA_SANITY_FACTOR
 
-    # Nothing to escalate when no gap qualifies for filling at all -- there's
-    # no target width to widen.
     factors = (
         (1.0,) if base_gap_maximum_width_deg is None else GAP_WIDTH_ESCALATION_FACTORS
     )
@@ -192,14 +127,23 @@ def main(
             last_error = e
             continue
         output_area = _total_area(conn, out_table)
-        eroded = _eroded_fid_count(conn, name, table, out_table)
+        collapsed, drifted = _defect_unrelated_fid_outcomes(
+            conn, name, table, out_table
+        )
         bad_types = _bad_geometry_type_count(conn, out_table)
         if (
             not has_coverage_violations(conn, out_table)
             and output_area >= min_area
-            and eroded == 0
+            and collapsed == 0
             and bad_types == 0
         ):
+            if drifted:
+                logger.warning(
+                    "clean: %d fid(s) with no connection to any detected gap/overlap "
+                    "shifted area anyway (ST_CoverageClean's global renoding) on %s",
+                    drifted,
+                    table,
+                )
             pct_change = (
                 (output_area - input_area) / input_area * 100 if input_area else 0.0
             )
@@ -222,8 +166,8 @@ def main(
                 )
             return
         last_error = RuntimeError(
-            f"invalid or eroded output (area {output_area} vs input {input_area}, "
-            f"{eroded} fid(s) eroded beyond their measured overlap exposure, "
+            f"invalid or collapsed output (area {output_area} vs input {input_area}, "
+            f"{collapsed} fid(s) with no detected defect collapsed to empty, "
             f"{bad_types} fid(s) with a non-polygon geometry type) at "
             f"gap_maximum_width={candidate_width}"
         )

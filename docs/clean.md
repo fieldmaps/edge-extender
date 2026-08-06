@@ -278,15 +278,15 @@ what they asked for.
 small feature collapsing entirely can hide inside it if the rest of the
 dataset is much larger. Each escalation attempt is also checked per fid:
 
-- **Erosion budget.** A fid touching a gap that gets filled, or a party to
-  a detected overlap, is exempt -- `ST_CoverageClean` can legitimately
-  redraw that fid's whole neighborhood, not just the two features directly
-  in conflict. Confirmed directly: filling a gap can fully reassign an
-  adjacent fid's entire area into a neighbor even though that fid was never
-  itself part of any overlap (two small connector strips bordering a filled
-  sliver gap were fully absorbed into a third fid in testing). Any other
-  fid -- no connection to either kind of detected defect -- is expected to
-  come out essentially unchanged; any real loss there fails this rung.
+- **Defect-adjacent exemption.** A fid touching a gap that gets filled, or
+  party to a detected overlap, is exempt from both checks below, by any
+  amount -- `ST_CoverageClean` can redraw that fid's whole neighborhood, not
+  just the immediate defect.
+- **Collapse vs. drift, for everything else.** A defect-unrelated fid
+  collapsing to empty fails this rung outright. A defect-unrelated fid that
+  merely shifts area (nonzero, nonempty) only logs a warning --
+  `ST_CoverageClean`'s whole-table renoding measurably shifts even fully
+  unrelated boundaries on defect-dense real data.
 - **Geometry type.** `ST_Area()` sums only the polygonal members of a mixed
   `GEOMETRYCOLLECTION`, so a fid partly reduced to a stray line or point
   during the fix could otherwise still measure as area-preserving. Any fid

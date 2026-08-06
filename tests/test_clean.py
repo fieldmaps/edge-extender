@@ -368,9 +368,8 @@ def _overlapping_pair_conn():
             (2, ST_GeomFromText('POLYGON((1 1, 3 1, 3 3, 1 3, 1 1))'))
         ) AS t(fid, geom)
     """)
-    # The two squares above overlap on (1 1, 2 2) -- area 1 -- so the
-    # erosion-budget check must see that exposure or it would reject the
-    # legitimate shrink coverage_clean() applies to resolve it.
+    # The two squares above overlap on (1 1, 2 2) -- area 1 -- so both fids
+    # are exempt from the defect-unrelated collapse/drift check.
     conn.execute("""
         CREATE TABLE stage_02 AS
         SELECT 'overlap-1' AS key, 'overlap' AS kind,
@@ -521,7 +520,7 @@ def test_clean_gap_width_escalation_rejects_bad_geometry_type(monkeypatch):
     Regression: ST_Area() on a GeometryCollection only sums its polygonal
     members, so a fix that fuses a stray line into a fid's geometry via
     ST_Collect can preserve that fid's measured area exactly while still
-    being invalid output -- the erosion-budget check alone would miss this.
+    being invalid output -- the collapse/drift check alone would miss this.
     """
 
     def degenerates_one_fid(conn, table_in, table_out, **_kwargs):
@@ -573,6 +572,95 @@ def test_clean_logs_area_change_on_success(caplog):
     messages = [r.message for r in caplog.records if "total area" in r.message]
     assert len(messages) == 1
     assert "lost" in messages[0]
+
+
+def test_clean_overlap_exemption_is_unconditional(monkeypatch):
+    """A fid party to a detected overlap may shrink by more than the overlap's own area.
+
+    Regression: an earlier version of this check only exempted overlap
+    participants up to the overlap's own footprint (here, area 1). Real
+    data showed that bound was wrong -- ST_CoverageClean can redraw a fid's
+    boundary far beyond the immediate overlap it's resolving. fid 1 here
+    shrinks and relocates from area 4 to area 2.5, a loss of 1.5 that the
+    old budget would have rejected (moved clear of fid 2 so the reshaped
+    output itself has no remaining overlap to report).
+    """
+
+    def shrinks_beyond_overlap_budget(conn, table_in, table_out, **_kwargs):
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{table_out}" AS
+            SELECT fid,
+                   CASE WHEN fid = 1
+                        THEN ST_GeomFromText(
+                            'POLYGON((0 -2, 2 -2, 2 -0.75, 0 -0.75, 0 -2))'
+                        )
+                        ELSE geom END AS geom
+            FROM "{table_in}"
+        """)
+
+    monkeypatch.setattr(clean_stage, "coverage_clean", shrinks_beyond_overlap_budget)
+
+    expected_row_count = 2
+    with _overlapping_pair_conn() as conn:
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
+        )
+        row_count = conn.execute("SELECT COUNT(*) FROM stage_03").fetchone()[0]
+
+    assert row_count == expected_row_count
+
+
+def test_clean_logs_defect_unrelated_drift_without_rejecting(monkeypatch, caplog):
+    """A fid untouched by any defect may drift slightly without failing the rung.
+
+    Regression: on real, defect-dense data ST_CoverageClean's whole-table
+    renoding pass measurably shifts even fully unrelated boundaries
+    (confirmed up to ~1% per fid on a real 194-fid, 8k+-gap layer) -- this
+    must be logged for visibility, not treated as a rejection. Neither fid
+    here touches a gap or overlap (empty issues table).
+    """
+
+    def drifts_one_fid(conn, table_in, table_out, **_kwargs):
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{table_out}" AS
+            SELECT fid,
+                   CASE WHEN fid = 2
+                        THEN ST_GeomFromText(
+                            'POLYGON((10 10, 19.9 10, 19.9 20, 10 20, 10 10))'
+                        )
+                        ELSE geom END AS geom
+            FROM "{table_in}"
+        """)
+
+    monkeypatch.setattr(clean_stage, "coverage_clean", drifts_one_fid)
+
+    expected_row_count = 2
+    conn = duckdb.connect()
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    conn.execute("""
+        CREATE TABLE stage_01 AS
+        SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
+            (2, ST_GeomFromText('POLYGON((10 10, 20 10, 20 20, 10 20, 10 10))'))
+        ) AS t(fid, geom)
+    """)
+    conn.execute(_empty_issues_table_sql("stage_02"))
+
+    with conn, caplog.at_level("WARNING"):
+        clean_stage.main(
+            conn,
+            "stage",
+            gap_maximum_width=("value", 0.5),
+            snapping_distance=("auto", None),
+        )
+        row_count = conn.execute("SELECT COUNT(*) FROM stage_03").fetchone()[0]
+
+    assert row_count == expected_row_count
+    messages = [r.message for r in caplog.records if "shifted area anyway" in r.message]
+    assert len(messages) == 1
 
 
 def test_cli_positional_args(synthetic_input, tmp_path):
