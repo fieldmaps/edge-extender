@@ -7,6 +7,12 @@ interactive Topology Cleaner tool
 changed in the port and why, and the `ST_CoverageClean` parameter semantics
 the design depends on.
 
+Unlike `match`/`change`, `clean` reuses none of `extend`'s stage functions --
+`_01_inputs` calls the shared `core.io.read_and_reproject()` directly (minus
+`extend`'s own auto-clean pre-check, see "Pipeline" below) and `_03_clean`
+calls the shared `core.coverage.coverage_clean()`. Both are tool-independent
+leaf modules, so `core.clean` never imports `core.extend`.
+
 ## Usage
 
 ```sh
