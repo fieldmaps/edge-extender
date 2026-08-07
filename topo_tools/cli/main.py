@@ -363,6 +363,12 @@ def change(  # noqa: PLR0913, PLR0917
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
+    "--issues-file",
+    envvar="ISSUES_FILE",
+    default=None,
+    help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
+)
+@click.option(
     "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
 )
 @click.option(
@@ -391,6 +397,7 @@ def match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
+    issues_file: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
@@ -416,6 +423,7 @@ def match(  # noqa: PLR0913, PLR0917
             Path(input_file),
             Path(clip_file),
             Path(output_file) if output_file is not None else None,
+            Path(issues_file) if issues_file is not None else None,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,

@@ -34,6 +34,7 @@ def match(  # noqa: C901, PLR0913
     input_path: str | Path,
     clip_path: str | Path,
     output_path: str | Path | None = None,
+    issues_path: str | Path | None = None,
     *,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
@@ -49,7 +50,10 @@ def match(  # noqa: C901, PLR0913
     an isolated subprocess per group), clipped to that group's own parent,
     reassembled, and coverage-cleaned once as a whole. If output_path is
     omitted, it defaults to input_path with a "_matched" suffix in the same
-    directory.
+    directory. Always writes a second file, the issues report (issues_path,
+    "_issues" suffix off output_path if omitted), listing every unassigned
+    child and every child belonging to a dropped group, so a human can audit
+    what didn't make it into the output.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
@@ -62,8 +66,16 @@ def match(  # noqa: C901, PLR0913
         if output_path is not None
         else input_path.with_stem(input_path.stem + "_matched")
     )
+    issues_path = (
+        Path(issues_path)
+        if issues_path is not None
+        else output_path.with_stem(output_path.stem + "_issues")
+    )
     if output_path.exists() and not overwrite:
         msg = f"output already exists: {output_path}"
+        raise FileExistsError(msg)
+    if issues_path.exists() and not overwrite:
+        msg = f"output already exists: {issues_path}"
         raise FileExistsError(msg)
 
     # "_match" keeps every table/file this call creates distinct from an
@@ -100,7 +112,7 @@ def match(  # noqa: C901, PLR0913
             elif s == "merge":
                 merge.main(conn, name, debug=debug)
             elif s == "outputs":
-                outputs.main(conn, name, output_path, debug=debug)
+                outputs.main(conn, name, output_path, issues_path, debug=debug)
         maybe_export_debug_tables(
             conn, tmp_dir_path, name, step, _STEP_TABLES, debug=debug
         )

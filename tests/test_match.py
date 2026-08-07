@@ -13,6 +13,7 @@ from click.testing import CliRunner
 
 from topo_tools.api.match import match
 from topo_tools.cli.main import cli
+from topo_tools.core.match._03_groups import _record_dropped_group
 
 # Parent A (large square) contains children 1 & 2 with a gap between them --
 # exercises multi-child grouping, within-group Voronoi fill, and clip-to-
@@ -92,6 +93,97 @@ def test_match_drops_unassigned_and_warns(
     assert any("dropping" in r.message and "4" in r.message for r in caplog.records)
 
 
+def test_match_issues_file_default_path(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    output_path = tmp_path / "out.parquet"
+    match(synthetic_children, synthetic_parents, output_path, overwrite=True)
+
+    expected_issues_path = output_path.with_stem(output_path.stem + "_issues")
+    assert expected_issues_path.exists()
+
+
+def test_match_issues_file_records_unassigned_child(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(
+        synthetic_children,
+        synthetic_parents,
+        output_path,
+        issues_path,
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(f"SELECT * FROM '{issues_path}'").fetchall()
+        cols = [
+            d[0] for d in conn.execute(f"SELECT * FROM '{issues_path}'").description
+        ]
+
+    unassigned_child_fid = 4
+    assert len(rows) == 1
+    row = dict(zip(cols, rows[0], strict=True))
+    assert row["kind"] == "unassigned"
+    assert row["child_fid"] == unassigned_child_fid
+    assert row["parent_fid"] is None
+    assert row["reason"] is None
+    assert row["geometry"] is not None
+
+
+def test_match_issues_file_empty_when_nothing_dropped(tmp_path):
+    """Parent B's single-child group succeeds cleanly, so the issues file is empty."""
+    children_path = tmp_path / "children_single.parquet"
+    parents_path = tmp_path / "parents_single.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[2]])  # fid 3 only
+    _write_synthetic(parents_path, [_PARENT_WKT[1]])  # Parent B only
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(children_path, parents_path, output_path, issues_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        count = conn.execute(f"SELECT COUNT(*) FROM '{issues_path}'").fetchone()[0]
+    assert count == 0
+
+
+def test_record_dropped_group():
+    """Exercises the group-failure recording helper directly, no subprocess involved."""
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute("""--sql
+            CREATE TABLE t_child_01 AS
+            SELECT * FROM (VALUES
+                (1, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
+                (2, ST_GeomFromText('POLYGON((1 0, 2 0, 2 1, 1 1, 1 0))'))
+            ) AS v(fid, geom)
+        """)
+        conn.execute("""--sql
+            CREATE TABLE t_02_assign AS
+            SELECT * FROM (VALUES (1, 10), (2, 10)) AS v(child_fid, parent_fid)
+        """)
+        conn.execute("""--sql
+            CREATE TABLE t_03b AS
+            SELECT NULL::BIGINT AS child_fid, NULL::BIGINT AS parent_fid,
+                   NULL::VARCHAR AS reason, NULL::GEOMETRY AS geom
+            WHERE FALSE
+        """)
+
+        _record_dropped_group(conn, "t", 10, "boom: something failed")
+
+        rows = conn.execute(
+            "SELECT child_fid, parent_fid, reason FROM t_03b ORDER BY child_fid"
+        ).fetchall()
+
+    assert rows == [
+        (1, 10, "boom: something failed"),
+        (2, 10, "boom: something failed"),
+    ]
+
+
 def test_match_single_parent_group(tmp_path):
     """Parent B has exactly one assigned child.
 
@@ -128,6 +220,24 @@ def test_cli_positional_args(synthetic_children, synthetic_parents, tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert output_path.exists()
+
+
+def test_cli_issues_file_option(synthetic_children, synthetic_parents, tmp_path):
+    output_path = tmp_path / "cli_out.parquet"
+    issues_path = tmp_path / "cli_issues.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "match",
+            str(synthetic_children),
+            str(synthetic_parents),
+            str(output_path),
+            "--issues-file",
+            str(issues_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert issues_path.exists()
 
 
 def test_cli_clip_file_required(synthetic_children):

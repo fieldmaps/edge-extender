@@ -18,7 +18,7 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     bugs. Do not reintroduce it here.
     """
     coverage_clean(
-        conn, f"{name}_03", f"{name}_04", fids=None, gap_maximum_width=SNAP_TOLERANCE
+        conn, f"{name}_03a", f"{name}_04", fids=None, gap_maximum_width=SNAP_TOLERANCE
     )
     if not debug:
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_03"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_03a"')

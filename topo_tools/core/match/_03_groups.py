@@ -46,6 +46,13 @@ def main(
     """Loop over all groups sequentially, each isolated in its own subprocess."""
     ctx = multiprocessing.get_context("spawn")
 
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{name}_03b" AS
+        SELECT NULL::BIGINT AS child_fid, NULL::BIGINT AS parent_fid,
+               NULL::VARCHAR AS reason, NULL::GEOMETRY AS geom
+        WHERE FALSE
+    """)
+
     for parent_fid in list_groups(conn, name):
         gname = f"{name}_g{parent_fid}"
         group_dir = tmp_dir / gname
@@ -97,6 +104,10 @@ def main(
                 err,
                 group_dir,
             )
+            reason = (
+                err or f"worker exited with no output (exitcode={process.exitcode})"
+            )
+            _record_dropped_group(conn, name, parent_fid, reason)
             continue
 
         _append_to_reassembly(conn, name, output_path)
@@ -105,7 +116,7 @@ def main(
             shutil.rmtree(group_dir, ignore_errors=True)
 
     exists = conn.execute(
-        "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [f"{name}_03"]
+        "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [f"{name}_03a"]
     ).fetchone()
     if exists is None:
         msg = f"match: no group produced any output for {name}"
@@ -116,16 +127,33 @@ def _append_to_reassembly(
     conn: DuckDBPyConnection, name: str, output_path: Path
 ) -> None:
     exists = conn.execute(
-        "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [f"{name}_03"]
+        "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [f"{name}_03a"]
     ).fetchone()
     if exists is None:
         conn.execute(f"""--sql
-            CREATE TABLE "{name}_03" AS SELECT * FROM read_parquet('{output_path}')
+            CREATE TABLE "{name}_03a" AS SELECT * FROM read_parquet('{output_path}')
         """)
     else:
         conn.execute(f"""--sql
-            INSERT INTO "{name}_03" SELECT * FROM read_parquet('{output_path}')
+            INSERT INTO "{name}_03a" SELECT * FROM read_parquet('{output_path}')
         """)
+
+
+def _record_dropped_group(
+    conn: DuckDBPyConnection, name: str, parent_fid: int, reason: str
+) -> None:
+    """Record every child of a failed group into `{name}_03b` for the issues report."""
+    conn.execute(
+        f"""--sql
+            INSERT INTO "{name}_03b"
+            SELECT fid AS child_fid, ? AS parent_fid, ? AS reason, geom
+            FROM "{name}_child_01"
+            WHERE fid IN (
+                SELECT child_fid FROM "{name}_02_assign" WHERE parent_fid = ?
+            )
+        """,
+        [parent_fid, reason, parent_fid],
+    )
 
 
 def _group_worker(

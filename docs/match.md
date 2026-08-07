@@ -50,14 +50,17 @@ Run `topo-tools match --help` for the full, always-current option list.
    twice to `extend`'s own loader (`{name}_child_01`, `{name}_parent_01`).
 2. **`_02_assign`** — assigns each child to the parent it shares the largest
    area with (plurality, not majority); drops and logs children with zero
-   overlap with any parent.
+   overlap with any parent, keeping their geometry for the issues report.
 3. **`_03_groups`** — groups children by their assigned parent (always, even
    a group of exactly one parent), runs `extend`'s pipeline within each group
    in an isolated subprocess, clips each group's result to its own parent,
-   reassembles the survivors.
+   reassembles the survivors. A failed group's children are recorded, with
+   the parent id and failure reason, for the issues report.
 4. **`_04_merge`** — a single whole-table `ST_CoverageClean` pass over the
    reassembled output to close cross-group seams.
-5. **`_05_outputs`** — validates topology and exports.
+5. **`_05_outputs`** — validates topology, builds the issues report from the
+   dropped children collected in stages 2/3, and exports both the final
+   layer and the issues report.
 
 ## Largest-overlap assignment
 
@@ -239,7 +242,8 @@ should silently paper over.
 
 `--step=groups --debug` exports everything currently in the connection
 (`{name}_child_01`, `{name}_parent_01`, `{name}_02_pairs`, `{name}_02_assign`,
-`{name}_02_unassigned`, `{name}_03`), the same as a full run — group ids
+`{name}_02_unassigned`, `{name}_03a`, `{name}_03b`), the same as a full run
+— group ids
 aren't known ahead of time, so there's no static table list to filter to for
 that step. Per-group internal detail (the group's own `group.duckdb`,
 `group.log`, `child.parquet`, `parent.parquet`, `output.parquet`) is

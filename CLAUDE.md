@@ -163,20 +163,24 @@ exception — see `docs/match.md`). Three layers, each with a specific job
    (`{name}_child_01`, `{name}_parent_01`).
 2. **`_02_assign.main`** — Assigns each child to the parent it shares the
    largest area with (bbox-prefiltered, part-exploded, ranked in EPSG:8857);
-   drops and logs children with zero overlap with any parent
+   drops and logs children with zero overlap with any parent, keeping their
+   geometry in `{name}_02_unassigned` for the issues report
    (`{name}_02_pairs`, `{name}_02_assign`, `{name}_02_unassigned`).
 3. **`_03_groups.main`** — Groups children by assigned parent (always, even a
    group of one); for each group, exports its children + parent geometry to
    Parquet, runs `extend`'s `_02_lines`/`attempt`/`_05_merge` stage functions
    in an isolated `multiprocessing` (`spawn`) subprocess, clips the result to
-   that group's parent, appends survivors into `{name}_03`. A failed group is
+   that group's parent, appends survivors into `{name}_03a`. A failed group is
    logged and dropped, not fatal — `match()` only raises if no group produces
-   any output at all. See `docs/match.md` for the full rationale.
+   any output at all; its children are recorded, with the parent id and
+   failure reason, into `{name}_03b` for the issues report. See
+   `docs/match.md` for the full rationale.
 4. **`_04_merge.main`** — Single whole-table `ST_CoverageClean` pass over
-   `{name}_03` to close cross-group seams (`{name}_04`).
+   `{name}_03a` to close cross-group seams (`{name}_04`).
 5. **`_05_outputs.main`** — Validates topology (reusing `check_overlaps`/
-   `check_gaps` from the shared `core/coverage.py`) and exports via DuckDB
-   COPY.
+   `check_gaps` from the shared `core/coverage.py`), builds the issues report
+   from `{name}_02_unassigned`/`{name}_03b` (`{name}_05`), and exports both
+   the final layer and the issues report via DuckDB COPY.
 
 ### Clean Pipeline Stages
 
@@ -266,8 +270,10 @@ as a side effect of importing). Settings now flow in two ways:
 
 `topo_tools.api.match.match()` takes the same settings plus a required
 `clip_path` (the parent/clip layer, positional between `input_path` and
-`output_path`); `output_path` defaults to an `_matched` suffix instead of
-`_extended`, and `step` chooses among `inputs/assign/groups/merge/outputs`.
+`output_path`) and an optional `issues_path`; `output_path` defaults to an
+`_matched` suffix instead of `_extended`, `issues_path` defaults to
+`output_path` with an `_issues` suffix, and `step` chooses among
+`inputs/assign/groups/merge/outputs`.
 
 `topo_tools.api.clean.clean()` takes `input_path`, optional `output_path`
 (`_cleaned` suffix) and optional `issues_path` (`_issues` suffix, derived
@@ -303,8 +309,10 @@ The current sequence: `_01` → `_02` → `_03a/_03b` → `_04` → `_05`. `inpu
 `{input}` so the two tools' tables/files never collide when run against the
 same input path and `tmp_dir`) and its own numbering: `{name}_child_01` /
 `{name}_parent_01` → `{name}_02_pairs`/`{name}_02_assign`/`{name}_02_unassigned`
-→ `{name}_03` (reassembled groups) → `{name}_04` (final coverage-clean). Each
-group's own `extend`-pipeline tables (`group_01` … `group_05`, `group_clip`)
+→ `{name}_03a` (reassembled groups) / `{name}_03b` (dropped-group children,
+carried forward to outputs) → `{name}_04` (final coverage-clean) →
+`{name}_05` (issues report, unioning `{name}_02_unassigned`/`{name}_03b`).
+Each group's own `extend`-pipeline tables (`group_01` … `group_05`, `group_clip`)
 live in a private, per-group DuckDB file (`group.duckdb`, one at a time,
 reused sequentially) inside `{tmp_dir}/{name}_g{parent_fid}/`, never in
 `match`'s own connection — see `docs/match.md`.
