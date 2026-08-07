@@ -2,7 +2,7 @@
 
 # Headroom over the widest qualifying gap's width for --maximum-gap-width=auto,
 # so it reliably clears ST_CoverageClean's <= comparison.
-AUTO_GAP_WIDTH_EPSILON_FACTOR = 1.001
+AUTO_GAP_WIDTH_EPSILON_FACTOR = 1.01
 
 # gap_maximum_width for --maximum-gap-width=all: larger than any real
 # geographic extent, so every detected gap qualifies without scanning.
