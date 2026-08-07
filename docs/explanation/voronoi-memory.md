@@ -1,260 +1,48 @@
-# Voronoi outlier investigation — RESOLVED
+# Voronoi resampling distance and memory ceilings
 
-## Resolution summary
+`attempt.py` picks a per-file starting resampling distance rather than
+always using a fixed default, and `_03_points.py` caps how many
+interpolated points any single real line segment can produce. Together
+these avoid a Voronoi-algorithm degeneracy and let files with finer native
+detail keep it. See `docs/adr/0012-voronoi-collinearity-degeneracy-fixed.md`
+and `docs/adr/0013-memory-gb-budget-removed.md` for why these specific
+designs were chosen over the alternatives that were tried first.
 
-The collinearity degeneracy described below is fixed. `app/_03_points.py` now
-decomposes each real boundary line into its own real vertex-to-vertex
-segments (no geometry alteration) and caps interpolation on any segment
-longer than `DISTANCE * MAX_POINTS_PER_SEGMENT` (config.py,
-`MAX_POINTS_PER_SEGMENT = 100`) — this bounds the size of the largest
-exactly-collinear point cluster fed to `ST_VoronoiDiagram`, independent of
-that segment's raw length. Confirmed: Chad's `ST_VoronoiDiagram` step
-296–387s → ~1s; full pipeline 1115s → ~20s. Algeria (previously only assumed
-to share Chad's mechanism) confirmed and fixed the same way; full pipeline →
-~30s. Chile, Indonesia, and Philippines all confirmed unaffected/working.
+## Per-segment interpolation cap
 
-`100` was chosen as the smallest of several tested values — `ST_VoronoiDiagram`
-time on `tcd_admin2.parquet` scales worse than linearly with this constant
-(100→1s, 250→3.9s, 500→7.7s, 1000→13.9s, 2000→32.1s), so lower is strictly
-better, with zero measured downside on files that don't hit the cap at all
-(`chl`/`idn`/`phl_admin3` are byte-for-byte unaffected, since none of their
-real segments exceed the cap threshold).
+`_03_points.py` decomposes each boundary line into its own real
+vertex-to-vertex segments and caps interpolation at
+`MAX_POINTS_PER_SEGMENT = 100` points per segment (`_constants.py`),
+bounding the largest exactly-collinear point cluster fed to
+`ST_VoronoiDiagram` independent of that segment's raw length. Segments
+shorter than the cap threshold fall back to the original whole-line
+resampling formula, unaffected.
 
-`app/attempt.py` additionally now computes a per-file starting `DISTANCE`:
-`effective_distance = MAX(MIN(DISTANCE, natural_res), total_exterior_length /
-target_point_budget)`. `natural_res` (median real segment length) lets files
-with genuinely finer source detail than the default (e.g. Philippines) start
-sharper instead of losing that detail to a coarser default. This is fully
-independent of the segment cap above — `MAX_POINTS_PER_SEGMENT` still
-protects against collinearity degeneracy no matter what this formula picks.
+## Per-file starting distance
 
-Three real bugs were found and fixed during implementation, not just the
-core algorithm: (1) `ST_PointN`-based segment decomposition is O(n²) and
-OOMs almost instantly at scale — fixed via `ST_Points`/`ST_Dump`/`LAG()`;
-(2) differencing generated points against the shared-boundary zone per
-segment instead of per fid caused a ~240x call-count blowup that OOM'd
-Indonesia — fixed by aggregating to one multipoint per fid first; (3)
-unconditionally guaranteeing one point per real segment created a floor
-equal to the file's raw vertex count, which broke Philippines (13M real
-vertices in its exterior boundary alone) — fixed by only capping segments
-that are actually long, and letting normal segments fall back to the
-original whole-line resampling formula.
+`attempt.py` computes `effective_distance = MIN(DEFAULT_DISTANCE,
+natural_res)`, where `natural_res` is the median real segment length across
+the file. This lets files with genuinely finer source detail than
+`DEFAULT_DISTANCE` (e.g. Philippines) start at their own native resolution
+instead of losing that detail to a coarser default; it can never coarsen
+an already-detailed file, since `natural_res` only wins when it's finer.
+If the effective distance still fails or produces too many points
+(`MAX_POINTS`), `attempt.py` retries by doubling it, up to 10 times.
 
-## Memory ceiling: `--memory-gb` was tried, then removed
+## Known memory floors with no runtime gate
 
-An earlier version derived `effective_distance`'s starting point from a
-`--memory-gb`-parameterized point budget instead of just `min(DEFAULT_DISTANCE,
-natural_res)`. Full history, for context on why that path was explored and
-then abandoned:
+Two bottlenecks are `DISTANCE`-independent — no resampling lever shrinks
+either — and have no runtime memory check:
 
-An even earlier version used a single hardcoded value
-(`TARGET_POINT_BUDGET = 5_500_000`) calibrated once against `chl_admin3`'s
-RSS-peak behavior on an unconstrained dev machine. That calibration point was
-never actually safe: tested inside a real `--memory=4g --memory-swap=4g` (no
-swap) Docker container — the real deployment constraint, not RSS inference —
-Chile OOM'd at exactly that "known-good" distance. `docker inspect`'s
-`.State.OOMKilled` confirmed this is a hard kernel SIGKILL, not a catchable
-`DuckDBError` — `attempt.py`'s retry-doubling loop never runs in that case,
-so a budget-based approach has to avoid the ceiling in the first place, not
-retry after crossing it.
+- `phl_admin3` OOMs in `_01_inputs.py`'s `ST_CoverageClean` pass (triggered
+  by invalid-edge detection in the source data) before `lines` or `attempt`
+  ever run; needs ~5.9GB.
+- `idn_admin3` needs ~5.4GB in `_02_lines.py`'s neighbor-union bbox
+  self-join, which uses whole-fid (not per-part) bboxes deliberately — see
+  `docs/adr/0001-avoid-global-union-agg-operand.md` for why per-part bboxes
+  regress Chile instead.
 
-The `--memory-gb` model that replaced it had two DISTANCE-independent terms
-plus one DISTANCE-dependent term, fitted from probes run inside the real
-container (segment decompose+remerge cost, fixed startup overhead, and a
-per-point cost for the `ST_VoronoiDiagram` → join → union sequence), and
-did fix the immediate problem: verified in the real 4GB container, Chad and
-Algeria stayed unaffected and Chile succeeded (previously OOM'd even at the
-old "calibrated" default).
-
-It was removed anyway. `attempt.py`'s budget only ever controlled the
-Voronoi resampling distance in one stage — but `_01_inputs.py`,
-`_02_lines.py`, and `_05_merge.py` (the whole-table `ST_CoverageClean` pass)
-have no DISTANCE lever at all and routinely exceed 4GB regardless (see "Two
-more bottlenecks" below: `phl_admin3` needs ~5.9GB, `idn_admin3` ~5.4GB; a
-real Colombia `match()` run peaked at 5.26GB during its merge stage, `docs/
-match.md`). A container genuinely constrained to 4GB was never actually
-achievable pipeline-wide, so a budget that only shaved this one stage was
-mostly theater — real headroom has to come from swap or a larger container
-regardless of what `attempt.py` picks. `--memory-gb` was never wired into
-DuckDB's own `memory_limit` either; it only ever chose a starting distance
-for a retry loop that already existed and already escalates on failure. The
-one real, non-SIGKILL failure mode it also protected against (raw vertex
-count alone exceeding the budget before any resampling) already degrades
-gracefully without it: `attempt.py` just starts at `DEFAULT_DISTANCE` and
-lets the doubling-retry loop run, same fallback path it always had for a
-too-many-points failure.
-
-## Two more bottlenecks, investigated and documented (no runtime gate added)
-
-Two more pre-existing, out-of-scope-at-the-time bottlenecks turned up while
-verifying the fix above under a real container. Both are DISTANCE-independent
-(no resampling lever shrinks either) — but unlike `_03_points.py`'s raw-vertex
-floor (which sits inside `attempt.py`'s retry loop and needs to pick a sane
-fallback DISTANCE to avoid a nonsensical calculation), these two run in
-`_01_inputs.py`/`_02_lines.py`, which have no DISTANCE at all to fall back to.
-A runtime memory-budget check was built for both, then deliberately removed
-(and `--memory-gb` itself was later removed entirely — see above): a real
-deployment may have swap headroom beyond any stated ceiling, and a check
-that can't do anything but log a line isn't worth the upkeep of the
-probe-fitted constants it needs. Findings are recorded here instead so a
-future OOM on one of these files points back to a known, already-diagnosed
-cause.
-
-**Docker Desktop VM memory cap gotcha, discovered mid-investigation.** Every
-container test in this whole document up to this point was silently running
-under Docker Desktop's VM total memory (`docker info` → `Total Memory`), not
-the `--memory` flag passed to `docker run` — the flag can only ever be a
-ceiling *within* whatever the VM itself has. The VM had drifted to ~3.83GB
-(Docker Desktop's settings file already said 12GB; it just wasn't running
-with that config — a restart picked it up with no file edits needed). This
-had been silently under-testing every `--memory=4g` container in this
-investigation by ~200MB, and it fully invalidated the first `idn_admin3`
-"OOM" finding below — see that entry for what changed once corrected.
-**Always check `docker info`'s `Total Memory` against the `--memory` flag
-you're actually passing before trusting a container test.**
-
-- **`phl_admin3` OOMs in `_01_inputs.py`'s `ST_CoverageClean` pass**
-  (triggered by invalid-edge detection in the source data) — fails before
-  `lines` or `attempt.py` ever run. Measured via a standalone probe against
-  growing fractions of `phl_admin3`'s real 13.85M-vertex `_01` table, inside
-  a real container: `peak_MB ≈ 499 + 395 × vertices_millions` (fitted over 5
-  points spanning 10–100% of the real file, so this is interpolation, not
-  extrapolation) — i.e. this file alone needs ~5.9GB, genuinely over a 4GB
-  ceiling, with no DISTANCE-style lever able to shrink it.
-- **`idn_admin3` in `_02_lines.py`'s neighbor-union bbox self-join.** The
-  *first* pass at this (exploding into per-part bboxes to tighten the join,
-  mirroring `_05_merge.py`'s `_05_tmp1` pattern) looked like the obvious fix
-  and helped Indonesia, but **badly regressed Chile** — Chile has one
-  `admin3` fid made of 3,796 tightly-clustered island parts; exploding it
-  into per-part bboxes multiplies the self-join's row count far more than
-  the tighter bboxes save (Chile: 3.3GB peak with the original whole-fid
-  bbox vs. OOM at 10GB+ with per-part bboxes). Indonesia's own pathology is
-  the opposite shape — many fids, each with a *few* parts spread *far
-  apart* (one fid has 300 parts across a 2°×1.2° bbox) — so a whole-fid
-  bbox there matches far more false candidates than a tight per-part one
-  would. No single bbox granularity serves both shapes without materially
-  more complexity (e.g. per-fid spatial clustering of parts), which was
-  explicitly decided against — reverted to the original whole-fid bbox,
-  unchanged from `ce7fc0f` (proven safe for Chile, zero regression risk).
-  Once the Docker Desktop VM cap above was fixed, re-measurement showed
-  Indonesia's original code was never algorithmically broken — it just
-  genuinely needs ~5.4GB (`idn_admin3`: 7.48M vertices), confirmed via
-  `chl_admin3` (3.94M vertices → 3.57GB, fits) and `idn_admin3` (7.48M
-  vertices → 5.43GB, does not fit) directly bracketing the real 4GB
-  pass/fail boundary.
-
-The rest of this document is the original investigation history, kept for
-context on how the root cause was diagnosed.
-
-## Context
-Ran the full 147-file `inputs/` corpus through the DuckDB pipeline (duckdb-migration
-branch). Found large per-file duration outliers unrelated to file size. This doc
-picks up mid-investigation into *why*.
-
-## Already fixed and committed (not part of this investigation)
-Commit `4047ae7` on `duckdb-migration`: `app/__main__.py` now isolates each file in
-`input_dir` into its own subprocess (`_run_isolated`) instead of looping in one
-process — fixed unbounded RSS growth (~2GB → ~19.85GB observed) across a multi-file
-batch. That subprocess-isolation/batch-mode machinery was later removed entirely
-when the CLI dropped multi-file support in favor of single-file-only processing
-(each invocation now handles exactly one file, so there's nothing left to isolate
-between). This section remains as investigation history — don't re-investigate
-memory accumulation, that thread is closed.
-
-## Outlier durations from the full clean run (subprocess-isolated, trustworthy)
-| file | duration | features | exterior boundary (deg) |
-|---|---|---|---|
-| dza_admin2 (Algeria) | ~24min (from contaminated single-process era, NOT re-verified clean) | 1,541 | 81.2 |
-| tcd_admin2 (Chad) | 1115s / ~18.6min (CLEAN, isolated, verified) | 70 | 52.9 |
-| mli_admin3_v01/v02 (Mali) | 729s/814s | 701 | 71.8 |
-| sau_admin1 (Saudi Arabia) | 791s | 13 | 128.8 |
-| ner_admin2/v03 (Niger) | 551s/481s | 63/266 | 52.6/52.8 |
-| lby_admin2 (Libya) | 481s | 22 | 59.3 |
-| chl_admin3 (Chile, the "canonical" stress test) | 325s (comparatively FAST) | 345 | 1106.8 |
-| idn_admin3 (Indonesia) | 459s (comparatively FAST) | 7,069 | 910.3 |
-| are_admin1 (fast baseline) | 53s / 54s clean-reconfirmed | 7 | 42.3 |
-| bdi_admin2 (fast baseline) | 4s clean-reconfirmed | 119 | 10.5 |
-
-## Hypotheses tested and FALSIFIED (don't re-test these)
-1. **Coastline/international-border length drives duration.** Falsified: Chile
-   (1106.8° exterior boundary, the largest in the set) and Indonesia (910.3°) are
-   both comparatively FAST. The slowest files (Chad, Mali, Niger, Algeria — several
-   landlocked) have small exterior boundaries (52-82°), same range as the fast
-   baseline files.
-2. **Raw total boundary length (interior + exterior) drives duration.** Partially
-   correlates but confounded: `col_admin3` and `idn_admin3` have the largest raw
-   boundary lengths (6538°, 5129°) yet aren't the slowest, because their predicted
-   point count (`boundary_len / DISTANCE`, DISTANCE=0.0002) exceeds
-   `MAX_POINTS=10,000,000` in `app/config.py`, which almost certainly trips
-   `attempt.py`'s doubling-distance retry and reprocesses them at a coarser,
-   cheaper spacing. Files landing just BELOW that cap (dza_admin2, chl_admin3,
-   eth_admin3_v03, ~7.7-8.5M predicted points) run at full density with no
-   mitigation.
-3. **Bbox-overlap false-positives in `_02_lines.py`'s neighbor-union self-join
-   cause the slowdown** (hypothesis: sprawling admin polygons in Chad have
-   overlapping bboxes despite not truly touching, bloating `ST_Union_Agg` /
-   `ST_Difference` cost). Falsified directly for Chad: profiled with `--debug`,
-   the `_02_tmp2` neighbor-union query (the exact bbox self-join in question) ran
-   in **0.022s at 83MB** — trivially cheap, not the bottleneck.
-
-## The actual finding (confirmed for Chad, NOT yet confirmed for others)
-Profiled `tcd_admin2` with `--debug` in a clean isolated process. The cost is
-concentrated entirely in `_04_tmp1` (`app/_04_voronoi.py`'s `ST_VoronoiDiagram`
-call): **296.349 seconds at only 636MB RSS peak.**
-
-This is the key signature: LOW memory + HIGH time. Every other slow file profiled
-so far (Chile, Mexico) showed high time correlating with high memory (multi-GB).
-Chad's profile is different — it's not a volume problem (only ~264K predicted
-points, tiny compared to Chile's ~5.5M or Algeria's ~8M), it's an **algorithmic
-degeneracy** in GEOS's Voronoi diagram computation.
-
-**Working theory (plausible, not yet directly verified):** Chad's admin2
-boundaries are likely long, straight desert lines cutting across largely featureless
-terrain (common for interior administrative divisions in sparse, arid countries).
-The points interpolated along these lines (`_03_points.py`, fixed spacing) would be
-heavily collinear. Collinear/near-degenerate point configurations are a known
-pathological case for Voronoi-diagram algorithms (can degrade toward worse-than-
-O(n log n) behavior), independent of point count or memory.
-
-The user (informed guess, not verified) believes `dza_admin2` (Algeria — also a
-large, sparse, desert country with a similar administrative-boundary profile) shares
-this same mechanism. Plausible but not independently confirmed — Algeria has far
-more features (1,541 vs Chad's 70) and a much higher predicted point count, so it's
-also possible Algeria's cost is a genuine volume story rather than a pure
-degeneracy story. Worth a clean `--debug` profile of `dza_admin2` alone if this
-needs to be nailed down rather than assumed.
-
-## Suggested next steps for the Voronoi fix
-1. **Verify the collinearity theory concretely** rather than assume it — e.g. check
-   point configurations along `tcd_admin2`'s `_03b` table for collinearity/duplicate
-   coordinates, or test whether jittering/perturbing points before
-   `ST_VoronoiDiagram` avoids the pathology (would confirm root cause but isn't
-   necessarily production-safe by itself).
-2. **Check DuckDB/GEOS version + `ST_VoronoiDiagram` docs** for any documented
-   tolerance/precision parameters that affect degenerate-input handling — per this
-   repo's `CLAUDE.md` rule, verify against installed version, don't rely on
-   recalled GEOS behavior.
-3. Consider whether a small, targeted perturbation (e.g., tiny random jitter on
-   interpolated points before Voronoi, or snapping to avoid exact collinearity)
-   is an acceptable fix given the project's stated constraint: "Original geometry
-   must not be touched" — but note that constraint (per existing memory
-   `feedback_original_geometry_untouched`) applies to `_01`/original polygon
-   boundaries, NOT to the synthetic interpolated Voronoi-generator points in
-   `_03b`, so jittering generator points is likely in-bounds — confirm this
-   distinction before implementing.
-4. Reproduce the pathology minimally (small synthetic collinear point set) to
-   confirm it's really collinearity and not something else about Chad's data
-   before investing in a fix.
-
-## How to reproduce the Chad profile
-```
-uv run -m app --input-file=tcd_admin2.parquet \
-  --output-dir=<scratch>/clean_out --tmp-dir=<scratch>/clean_tmp \
-  --debug --overwrite
-```
-Watch for the `_04_tmp1` query line in the log — that's the `ST_VoronoiDiagram` call.
-
-## Repo state
-Branch `duckdb-migration`, HEAD at commit `4047ae7` ("isolate multi-file batch runs
-into per-file subprocesses"), 4 commits ahead of `origin/duckdb-migration`, not yet
-pushed. Full 147-file batch output sits in `outputs/` (gitignored, not committed).
+A future OOM on either file at a given memory ceiling is an expected,
+already-diagnosed cost, not a regression — see
+`docs/adr/0013-memory-gb-budget-removed.md` for why no runtime budget check
+was kept.

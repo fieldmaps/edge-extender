@@ -12,14 +12,12 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
 
     Bbox-prefiltered join on ST_Dump-exploded parts of both layers -- never a
     bare spatial predicate in the JOIN condition, which would trigger DuckDB's
-    SPATIAL_JOIN operator and its ~1x-RAM virtual reservation (see
-    docs/explanation/topology.md) -- same pattern as core/match/_02_assign.py.
-    Unlike that assign stage (top-1 parent per child), every pair with
-    shared_area > 0 is kept: classification needs the full pair graph, not
-    just the best match per fid. Native DuckDB always uses exact
-    ST_Intersection here -- no point-sampling fallback (see
-    docs/explanation/change.md for why the JS version's WASM-only fallback
-    doesn't apply).
+    SPATIAL_JOIN operator and its ~1x-RAM virtual reservation -- same pattern
+    as core/match/_02_assign.py. Unlike that assign stage (top-1 parent per
+    child), every pair with shared_area > 0 is kept: classification needs the
+    full pair graph, not just the best match per fid. Native DuckDB always
+    uses exact ST_Intersection here -- no point-sampling fallback, unlike the
+    JS version's WASM-only workaround.
     """
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS

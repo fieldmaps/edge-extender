@@ -15,6 +15,5 @@ DEFAULT_DISTANCE = Decimal("0.0002")
 # Cap on points generated per real (untouched) line segment; bounds the size
 # of the largest exactly-collinear point cluster fed to ST_VoronoiDiagram,
 # independent of that segment's raw length. 100 was the smallest of several
-# tested values, with zero downside on files that don't hit the cap. See
-# docs/explanation/voronoi-memory.md for the full timing comparison and rationale.
+# tested values, with zero downside on files that don't hit the cap.
 MAX_POINTS_PER_SEGMENT = 100

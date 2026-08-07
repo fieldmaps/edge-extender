@@ -14,11 +14,10 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
 
     Bbox-prefiltered self-join across the two layers, not ST_Within/
     ST_Intersects in the JOIN condition -- that triggers DuckDB's SPATIAL_JOIN
-    operator and its ~1x-RAM virtual reservation (see
-    docs/explanation/topology.md). Both layers are exploded into parts first
-    so a multi-part parent (e.g. a
-    country with offshore islands) doesn't get one whole-fid bbox spanning
-    everything and defeat the prefilter, same as _05_merge.py's _05_tmp1.
+    operator and its ~1x-RAM virtual reservation. Both layers are exploded
+    into parts first so a multi-part parent (e.g. a country with offshore
+    islands) doesn't get one whole-fid bbox spanning everything and defeat
+    the prefilter, same as _05_merge.py's _05_tmp1.
     """
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS
