@@ -232,10 +232,9 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
 `_03_clean.py`'s `main()` makes a single `ST_CoverageClean` call at the
 resolved target width (from `auto`/`all`/an explicit value) and validates
 it against **both** `has_coverage_violations()` *and* a total-area sanity
-floor (`AREA_SANITY_FACTOR = 0.8`) -- the invalid-edges check alone passes
-a totally empty result as "no violations," confirmed directly, so it can't
-catch a collapsed output on its own. `main()` raises immediately if either
-check fails.
+floor -- the invalid-edges check alone passes a totally empty result as
+"no violations," confirmed directly, so it can't catch a collapsed output
+on its own. `main()` raises immediately if either check fails.
 
 An earlier version retried the resolved width through an escalation
 ladder, believing `ST_CoverageClean` had two real failure modes tied to
@@ -249,9 +248,47 @@ admin-boundary layer that originally exhibited both symptoms, with the
 fixed positional call: flat, monotonic area and zero invalid edges at
 every width tested. The escalation ladder was removed accordingly.
 
+### The total-area floor is anchored to detected overlap area, not dataset size
+
+An earlier version of the floor was a flat fraction of the whole input
+area (`output_area >= input_area * AREA_SANITY_FACTOR`, `0.8`). Tightening
+that fraction to `0.95` broke real, intentional tests: resolving a single
+overlap that's a large fraction of a *small* dataset's total area can
+legitimately cost 12-19% of the total -- indistinguishable, as a flat
+fraction, from real corruption on a *large* dataset where the same kind of
+defect is a tiny fraction of total (confirmed near-zero net area change on
+several real portolan admin-boundary files with genuine, if tiny,
+overlaps). A flat fraction of total dataset size can't tell those two
+cases apart because it isn't looking at the defect at all.
+
+The floor now scales with what was actually detected:
+
+```
+min_area = input_area * (1 - AREA_NOISE_FACTOR) - overlap_area * OVERLAP_LOSS_HEADROOM
+```
+
+- `AREA_NOISE_FACTOR = 0.02` bounds baseline loss when **no** overlaps are
+  detected -- double the ~1% per-fid renoding drift confirmed on real
+  defect-dense data (see "Collapse vs. drift" below), so a
+  defect-unrelated fid drifting by its normal amount can't tip a small,
+  overlap-free dataset below the floor.
+- `overlap_area` is `SUM(ST_Area(geom))` over `{name}_02`'s `kind =
+  'overlap'` rows, in the same degree² units as `input_area`/`output_area`.
+- `OVERLAP_LOSS_HEADROOM = 3.0` allows resolving an overlap to cost up to
+  3x its own detected footprint -- `ST_CoverageClean` can redraw a fid's
+  boundary well beyond the immediate overlap it's resolving, confirmed up
+  to ~1.5x on a real regression case (see "Defect-adjacent exemption"
+  below).
+
+Verified against real portolan admin-boundary files spanning zero, tiny,
+and moderate overlap counts (`mex/adm2`, `egy/adm3`, `khm/adm3`,
+`cod/adm2`) -- no false rejections, and the small-dataset tests that
+originally motivated a loose floor still pass with real headroom to
+spare.
+
 ### The total-area floor alone misses a small, localized collapse
 
-`AREA_SANITY_FACTOR` only bounds the *summed* output area, so a single
+The total-area floor only bounds the *summed* output area, so a single
 small feature collapsing entirely can hide inside it if the rest of the
 dataset is much larger. The result is also checked per fid:
 
@@ -270,10 +307,10 @@ dataset is much larger. The result is also checked per fid:
   whose fixed geometry isn't a `POLYGON`/`MULTIPOLYGON` fails validation.
 
 Both checks compare against exact, defect-derived bounds rather than a
-guessed percentage floor -- a percentage floor on a per-fid basis was tried
-and rejected, since full containment (one fid entirely absorbed by another)
-and gap-neighborhood redistribution are both legitimate 100%-loss outcomes
-for the fid actually involved.
+fraction of the whole dataset -- a percentage floor on a per-fid basis was
+tried and rejected, since full containment (one fid entirely absorbed by
+another) and gap-neighborhood redistribution are both legitimate
+100%-loss outcomes for the fid actually involved.
 
 ## `--snapping-distance auto|<degrees>`
 

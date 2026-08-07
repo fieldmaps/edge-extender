@@ -7,10 +7,11 @@ from duckdb import DuckDBPyConnection
 from topo_tools.core.coverage import coverage_clean, has_coverage_violations
 
 from ._constants import (
-    AREA_SANITY_FACTOR,
+    AREA_NOISE_FACTOR,
     AUTO_GAP_WIDTH_EPSILON_FACTOR,
     DEFAULT_THINNESS_RATIO,
     GAP_MAXIMUM_WIDTH_ALL_DEG,
+    OVERLAP_LOSS_HEADROOM,
 )
 
 logger = getLogger(__name__)
@@ -42,6 +43,15 @@ def _resolve_gap_maximum_width_deg(
 def _total_area(conn: DuckDBPyConnection, table: str) -> float:
     return (
         conn.execute(f'SELECT SUM(ST_Area(geom)) FROM "{table}"').fetchall()[0][0]
+        or 0.0
+    )
+
+
+def _overlap_area(conn: DuckDBPyConnection, name: str) -> float:
+    return (
+        conn.execute(f"""--sql
+            SELECT SUM(ST_Area(geom)) FROM "{name}_02" WHERE kind = 'overlap'
+        """).fetchall()[0][0]
         or 0.0
     )
 
@@ -91,11 +101,11 @@ def main(
     table = f"{name}_01"
     out_table = f"{name}_03"
 
-    base_gap_maximum_width_deg = _resolve_gap_maximum_width_deg(
+    gap_maximum_width_deg = _resolve_gap_maximum_width_deg(
         conn, name, gap_maximum_width
     )
     # has_coverage_violations() never detects gaps.
-    if not has_coverage_violations(conn, table) and base_gap_maximum_width_deg is None:
+    if not has_coverage_violations(conn, table) and gap_maximum_width_deg is None:
         conn.execute(
             f'CREATE OR REPLACE TABLE "{out_table}" AS SELECT * FROM "{table}"'
         )
@@ -104,14 +114,17 @@ def main(
     snap_mode, snap_value = snapping_distance
     snapping_distance_deg = None if snap_mode == "auto" else snap_value
     input_area = _total_area(conn, table)
-    min_area = input_area * AREA_SANITY_FACTOR
+    overlap_area = _overlap_area(conn, name)
+    min_area = (
+        input_area * (1 - AREA_NOISE_FACTOR) - overlap_area * OVERLAP_LOSS_HEADROOM
+    )
 
     coverage_clean(
         conn,
         table,
         out_table,
         fids=None,
-        gap_maximum_width=base_gap_maximum_width_deg,
+        gap_maximum_width=gap_maximum_width_deg,
         snapping_distance=snapping_distance_deg,
     )
 
@@ -128,7 +141,7 @@ def main(
             f"invalid or collapsed coverage-clean output (area {output_area} vs "
             f"input {input_area}, {collapsed} fid(s) with no detected defect "
             f"collapsed to empty, {bad_types} fid(s) with a non-polygon geometry "
-            f"type) at gap_maximum_width={base_gap_maximum_width_deg} on {table}"
+            f"type) at gap_maximum_width={gap_maximum_width_deg} on {table}"
         )
         raise RuntimeError(msg)
 
