@@ -1,14 +1,14 @@
 # match
 
-See `specs/README.md` for the MUST/SHOULD/MAY convention, and
-`specs/shared.md`/`specs/extend.md` for rules `match` shares with other
+See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
+`docs/reference/shared.md`/`docs/reference/extend.md` for rules `match` shares with other
 tools.
 
 ## Inputs
 
 - `match` MUST load and coverage-clean both the child layer and the
   parent/clip layer, the same way `extend`'s own inputs stage does (see
-  `specs/extend.md`).
+  `docs/reference/extend.md`).
 
 ## Assigning children to parents
 
@@ -27,7 +27,7 @@ tools.
   of exactly one child.
 - For each group, `match` MUST extend that group's children alone
   (boundary extraction, point/Voronoi generation, merging -- see
-  `specs/extend.md`), then clip the result to that group's own parent
+  `docs/reference/extend.md`), then clip the result to that group's own parent
   polygon.
 - A feature whose clipped result is empty MUST be dropped from that
   group's output.
@@ -44,11 +44,11 @@ tools.
 
 - `match` MUST run one whole-layer coverage-clean pass over the
   reassembled output, using the same fixed gap-closing width as `extend`'s
-  own merge stage (see `specs/extend.md`), not a per-feature-scoped pass.
+  own merge stage (see `docs/reference/extend.md`), not a per-feature-scoped pass.
 
 ## Outputs
 
-- `match`'s final output MUST pass the hard gate in `specs/shared.md` (no
+- `match`'s final output MUST pass the hard gate in `docs/reference/shared.md` (no
   overlap, no gap) before export.
 - `match` MUST export the final merged layer.
 - `match` MUST also export an issues report alongside it, listing every

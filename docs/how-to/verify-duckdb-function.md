@@ -1,7 +1,4 @@
----
-name: verify-duckdb-function
-description: Look up a DuckDB or spatial-extension function's real signature/behavior against the installed version instead of relying on recalled knowledge. Use before writing code or making claims about any DuckDB/ST_* function.
----
+# Verify a DuckDB function
 
 Do not rely on recalled knowledge about DuckDB or spatial extension functions — verify against the installed version before making claims or writing code.
 

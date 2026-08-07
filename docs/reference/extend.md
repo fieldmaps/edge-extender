@@ -1,7 +1,7 @@
 # extend
 
-See `specs/README.md` for the MUST/SHOULD/MAY convention, and
-`specs/shared.md` for rules `extend` shares with other tools.
+See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
+`docs/reference/shared.md` for rules `extend` shares with other tools.
 
 ## Inputs
 
@@ -50,7 +50,7 @@ See `specs/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Outputs
 
-- `extend`'s final output MUST pass the hard gate in `specs/shared.md` (no
+- `extend`'s final output MUST pass the hard gate in `docs/reference/shared.md` (no
   overlap, no gap) before export.
 - `extend` MUST export the final merged layer.
 

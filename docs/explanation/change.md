@@ -93,7 +93,7 @@ spanning everything and defeat the prefilter. The join uses scalar
 `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` predicates, not `ST_Within`/
 `ST_Intersects` alone in the `JOIN` condition — that triggers DuckDB's
 `SPATIAL_JOIN` operator and its ~1x-RAM virtual reservation (see
-`docs/topology.md`). Unlike `_02_assign.py` (which keeps only the top-1
+`docs/explanation/topology.md`). Unlike `_02_assign.py` (which keeps only the top-1
 parent per child), every pair with `shared_area > 0` is kept: classification
 needs the full pair graph, not just the best match per fid.
 
@@ -241,7 +241,7 @@ Silicon/10 logical cores:
 | Ukraine admin3 v01→v05         | 10,375 / 1,769 | 46s       | 957 MB   | 9,860 merge (finer v01 consolidated into v05) |
 
 All three ran clean on the first attempt -- no correctness or scale issues
-found, unlike `clean`'s overlap-detection bugs (see `docs/clean.md`). The
+found, unlike `clean`'s overlap-detection bugs (see `docs/explanation/clean.md`). The
 Ethiopia and Ukraine runs are good coverage of the classification taxonomy:
 Ethiopia's real federal-boundary splits exercise `split`/`complex`/`merge`/
 `removed` together, and Ukraine's 10,375→1,769 fid collapse stress-tests

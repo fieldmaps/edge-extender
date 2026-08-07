@@ -91,8 +91,9 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
 
     # Single whole-table coverage clean closes floating-point-scale seams left
     # by the independent per-fid ST_Difference calls above (GEOS recomputes
-    # crossing points slightly differently each time — see docs/topology.md).
-    # gap_maximum_width is tied to SNAP_TOLERANCE, not a sliver-vs-real-hole
+    # crossing points slightly differently each time — see
+    # docs/explanation/topology.md). gap_maximum_width is tied to
+    # SNAP_TOLERANCE, not a sliver-vs-real-hole
     # heuristic: by construction every point of the extent belongs to exactly
     # one fid here, so there's no real feature left to protect from swallowing
     # — anything CoverageClean finds to close is seam noise, not a real gap.

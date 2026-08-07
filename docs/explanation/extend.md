@@ -37,7 +37,7 @@ to total perimeter length rather than area. The spacing between points on a
 line is chosen automatically per file: the source data's own level of
 detail (via each file's median real segment length) sets a finer starting
 point when it's naturally detailed, never coarser than the fixed default
-otherwise. See `docs/voronoi-memory.md` for why this no longer depends on a
+otherwise. See `docs/explanation/voronoi-memory.md` for why this no longer depends on a
 memory budget.
 
 Run `topo-tools extend --help` for the full, always-current option list.

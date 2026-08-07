@@ -79,17 +79,17 @@ final polygons — the most expensive single query in the outputs phase.
 
 ## Portolan-scale profiling (post-restructure)
 
-The 147-file batch run recorded in `docs/voronoi-memory.md` predates the
+The 147-file batch run recorded in `docs/explanation/voronoi-memory.md` predates the
 `app/` → `topo_tools` package restructure (commit `76f4426`); `clean` and
 `change` both got fresh post-restructure real-data tables (see
-`docs/clean.md`, `docs/change.md`) but `extend` itself hadn't been re-run
+`docs/explanation/clean.md`, `docs/explanation/change.md`) but `extend` itself hadn't been re-run
 against real portolan data under the current code until now.
 
 `phl_admin3` (portolan `phl/latest/adm3`, 1,642 fids, 13.85M vertices —
-the same file `docs/voronoi-memory.md` documents as needing ~5.9GB in
+the same file `docs/explanation/voronoi-memory.md` documents as needing ~5.9GB in
 `_01_inputs.py`'s coverage-clean fallback path), `--debug`, Apple Silicon/10
 logical cores. This run predates `--memory-gb`'s removal (see
-`docs/voronoi-memory.md`); the `attempt` note below reflects that
+`docs/explanation/voronoi-memory.md`); the `attempt` note below reflects that
 since-removed budget model, kept for the real measured numbers:
 
 | Stage   | Wall time | Notes                                                    |
@@ -135,7 +135,7 @@ Key thread-sensitivity breakdown:
 
 For memory-constrained deployments: `--threads=1` gives a similar peak (~7.2 GB) to
 default threads. Both are above a 4 GB WASM/Docker target — reducing below that would
-require pipeline changes (e.g. chunking); see `docs/voronoi-memory.md` for why a
+require pipeline changes (e.g. chunking); see `docs/explanation/voronoi-memory.md` for why a
 resampling-distance budget isn't that lever anymore.
 
 ---
@@ -223,7 +223,7 @@ at Chile scale (`failed to allocate data of size 16.0 MiB (12.7 GiB/12.7 GiB use
 observed during development) — the union itself is cheap to compute, but using a
 multi-million-vertex geometry as a per-row `ST_Difference` argument against thousands of
 fids is a different, much more expensive access pattern. The bbox-prefiltered per-part
-neighbor union above is the fix; see `docs/topology.md`, "Why not a single global union."
+neighbor union above is the fix; see `docs/explanation/topology.md`, "Why not a single global union."
 
 ---
 

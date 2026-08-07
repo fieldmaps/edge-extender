@@ -98,6 +98,6 @@ def spatial_join_memory(conn):
         conn.execute(f"SET memory_limit = '{orig}'")
 ```
 
-Don't reach for an explicit RTREE index instead — it was profiled as providing no measurable benefit once DuckDB's own `SPATIAL_JOIN` rewrite already builds its own temporary index (see `docs/performance.md`, "RTREE index experiment").
+Don't reach for an explicit RTREE index instead — it was profiled as providing no measurable benefit once DuckDB's own `SPATIAL_JOIN` rewrite already builds its own temporary index (see `docs/explanation/performance.md`, "RTREE index experiment").
 
 **Note**: May be fixed in DuckDB versions after 1.5.2 — re-test if upgrading.

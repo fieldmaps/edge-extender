@@ -71,74 +71,33 @@ Run `topo-tools clean --help` for the full, always-current option list.
 
 ## Skipping overlap detection when the coverage is already valid
 
-`_02_issues.py`'s `_build_overlaps` (bbox-prefiltered O(n^2) self-join) was
-the dominant cost of a `clean` run on an already-clean dataset -- confirmed
-on a real 9,658-fid admin4 layer: the full `clean` CLI run took ~20 minutes
-even though the input had zero defects, because overlap detection ran
-unconditionally regardless of whether anything was actually wrong.
+`main()` checks `has_coverage_violations()` (`ST_CoverageInvalidEdges_Agg`,
+the shared `core/coverage.py`) before running `_build_overlaps`
+(`_02_issues.py`'s bbox-prefiltered O(n^2) self-join), and writes an empty
+overlaps table directly when it's already `False` -- a coverage with no
+invalid edges cannot contain an overlapping or nested pair either. Gap
+detection (`_build_gaps`) always runs regardless: unlike overlaps, no
+cheaper GEOS primitive answers "are there any gaps" without doing the same
+whole-table union `_build_gaps` itself needs to extract them. See
+`docs/adr/0007-skip-overlap-detection-when-valid.md`.
 
-`main()` now checks `has_coverage_violations()` (`ST_CoverageInvalidEdges_Agg`,
-the shared `core/coverage.py`) before running `_build_overlaps`, and writes an
-empty overlaps table directly when it's already False -- ~5s on the
-9,658-fid layer, versus minutes for the equivalent self-join, since a
-coverage with no invalid edges cannot contain an overlapping or nested pair
-either.
-
-Gap detection (`_build_gaps`) always runs regardless -- unlike overlaps,
-there's no cheaper GEOS primitive that answers "are there any gaps" without
-doing the same whole-table union `_build_gaps` itself needs to actually
-extract them, so there's nothing to gate it on. An earlier version of this
-optimization added a separate `has_gaps()` pre-check ahead of `_build_gaps`
-to decide whether to skip it too; that pre-check computed its own
-whole-table union just to return a boolean, which `_build_gaps` then
-recomputed from scratch whenever gaps actually existed -- paying for the
-union twice with no benefit. Letting `_build_gaps` run unconditionally
-avoids that duplication and costs the same as the union alone: ~18s on the
-9,658-fid layer, giving the same ~23s total (5s + 18s) for a fully clean
-dataset as the discarded approach, but without the wasted extra union on a
-dataset that actually has gaps.
-
-**`has_coverage_violations()` alone cannot stand in for gap detection** --
-verified empirically with a synthetic fixture (a pinwheel of 4 valid,
-edge-matched polygons fully surrounding a real 1x1 hole): it returned
-`False` even though a genuine fully-enclosed gap existed. It only detects
-overlaps/mismatched edges, never gaps. `_03_clean.py`'s fix-stage gate used
-to rely on this check alone to decide whether `ST_CoverageClean` was worth
-running at all, which meant a gap-only input (no overlaps) was silently
-never fixed despite being correctly reported in the issues file -- the gate
-now also checks whether any detected gap qualifies to fill under the
-resolved `gap_maximum_width` (see "Pipeline" above).
+`has_coverage_violations()` alone cannot stand in for gap detection -- it
+only detects overlaps/mismatched edges, never gaps (see
+`docs/reference/shared.md`). `_03_clean.py`'s fix-stage gate also checks
+whether any detected gap qualifies to fill under the resolved
+`gap_maximum_width`, not `has_coverage_violations()` alone (see "Pipeline"
+above). See `docs/adr/0008-has-coverage-violations-misses-gaps.md`.
 
 ## Sliver detection/fixing was removed
 
-Earlier versions of this tool also detected (but never auto-fixed) slivers
--- near-miss boundary mismatches, via
-`ST_CoverageInvalidEdges_Agg(geom, tolerance)`. It was dropped entirely:
-
-- **Never fixable in the first place.** Auto-snapping a near-miss sliver
-  closed requires widening `ST_CoverageClean`'s `snapping_distance`
-  parameter, which re-nodes the **whole** coverage, not just the defect
-  site -- silently perturbing unrelated, already-correct geometry elsewhere
-  in the file. That's an unacceptable side effect for something running
-  unattended in a batch pipeline, so sliver "fixing" was never on the table;
-  the JS sister app reversed the same way early in its own history (commit
-  `9e57932`, "slivers detection-only; remove snap and Changes feature").
-- **Detection itself was not reliable enough to keep as report-only,
-  either.** The gap/overlap-subtraction step in the detection query (buffer
-  + cross join + `ST_Difference` against unioned blobs) reproducibly
-  triggered a DuckDB out-of-memory error on real data -- confirmed on Angola
-  admin1 (`hdx-cod-ab-ai`'s `ago_admin1.parquet`, only 21 fids / 490K
-  vertices, nowhere near the scale where `extend`'s known memory ceilings
-  kick in). It was disabled by default (`--sliver-tolerance 0`) for this
-  reason before removal. Given detection alone couldn't be trusted at even
-  tiny real-world scale, and there was no fix path to justify the risk, the
-  whole feature (flag, detection query, issues-file `kind='sliver'` rows)
-  was removed rather than kept behind an opt-in flag.
-
-Any near-miss boundary mismatch is now an upstream data-quality issue,
-outside this tool's scope -- fixing it (re-digitizing the source, or manual
-editing in QGIS/ArcGIS) remains a human decision, same as before, just
-without an automated detector flagging candidates.
+Earlier versions also detected (but never auto-fixed) slivers -- near-miss
+boundary mismatches. Dropped entirely: never fixable without re-noding the
+whole coverage (an unacceptable side effect for unattended batch use), and
+detection itself reproducibly OOM'd on real data even at small scale. Any
+near-miss boundary mismatch is now an upstream data-quality issue outside
+this tool's scope -- fixing it remains a human decision (re-digitizing,
+manual QGIS/ArcGIS editing), just without an automated detector flagging
+candidates. See `docs/adr/0006-sliver-detection-removed.md`.
 
 ## `ST_CoverageClean` parameter semantics -- verified against upstream source
 
@@ -167,20 +126,18 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
 - **Naming**: `coverage_clean()` (the shared `core/coverage.py`) calls
   `ST_CoverageClean` positionally (`geoms, snapping_distance,
   gap_maximum_width`), passing `-1` for either argument a Python `None`
-  omits. DuckDB's `:=` named-argument syntax binds by position, not name,
-  for compiled scalar functions (duckdb/duckdb#24574) -- conditionally
-  omitting one named argument silently shifted the other into the wrong
-  slot; see "Validating a coverage-clean result" below for what that broke.
-  The CLI/API layer (`--maximum-gap-width`, `--snapping-distance`, and the
-  matching `api.clean.clean()` kwargs) follows GDAL's `gdal vector
-  clean-coverage` word order for the gap one, since that's what a human
-  actually types; `api.clean.clean()` is the one place the two namings
-  meet.
+  omits -- DuckDB binds named arguments to compiled scalar functions by
+  position, not name, so a conditional named-arg call is unsafe here (see
+  `docs/adr/0003-st-coverageclean-positional-args.md`). The CLI/API layer
+  (`--maximum-gap-width`, `--snapping-distance`, and the matching
+  `api.clean.clean()` kwargs) follows GDAL's `gdal vector clean-coverage`
+  word order for the gap one, since that's what a human actually types;
+  `api.clean.clean()` is the one place the two namings meet.
 - `ST_CoverageClean`'s gap-merge only fills **fully-enclosed** holes -- a
   ring of polygons surrounding missing area (a lake, a missing admin unit).
   An open "inlet" gap between two side-by-side, non-enclosing polygons is
-  left untouched regardless of `gap_maximum_width` (confirmed empirically
-  with an isolated 2-polygon fixture: identical output whether
+  left untouched regardless of `gap_maximum_width` (demonstrated with an
+  isolated 2-polygon fixture: identical output whether
   `gap_maximum_width` was `-1`, a tiny value, or 1 full degree). GEOS's own
   class doc says as much: "gaps which are not fully enclosed ... are not
   removed." This is also why `_02_issues.py`'s gap-detection query (interior
@@ -214,16 +171,9 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   When no gap qualifies as thin, the argument is omitted entirely (no
   gap-filling).
 - `all` -- fills every gap the detection stage found, using a fixed
-  `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` (`_constants.py`) rather than computing
-  the widest detected gap. An earlier version computed the widest gap's own
-  width plus a small epsilon instead, after a large fixed constant appeared
-  to make `ST_CoverageClean` erode or erase real polygon area on a real
-  admin-boundary layer (164 fids, 190km² down to 50km² at 10 degrees, fully
-  empty at 20+). That erosion turned out to be `coverage_clean()`'s
-  named-argument bug (see "Naming" above) corrupting `snapping_distance`,
-  not a genuine `gap_maximum_width` effect -- confirmed by sweeping
-  `gap_maximum_width` from `0` to `360` degrees against the same layer with
-  the fixed positional call: flat area, zero invalid edges throughout.
+  `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` (`_constants.py`), confirmed safe across
+  the full `0`-`360°` range once `coverage_clean()`'s named-argument bug was
+  fixed (see `docs/adr/0003-st-coverageclean-positional-args.md`).
 - A bare number is an explicit cap in decimal degrees, passed straight
   through to `ST_CoverageClean` with no conversion.
 
@@ -236,32 +186,18 @@ floor -- the invalid-edges check alone passes a totally empty result as
 "no violations," confirmed directly, so it can't catch a collapsed output
 on its own. `main()` raises immediately if either check fails.
 
-An earlier version retried the resolved width through an escalation
-ladder, believing `ST_CoverageClean` had two real failure modes tied to
-`gap_maximum_width`: residual invalid edges/`TopologyException` at narrow,
-non-monotonic widths, and silent area erosion at wide ones. Both turned
-out to be `coverage_clean()`'s named-argument bug (see "Naming" above)
-corrupting `snapping_distance` in step with `gap_maximum_width`, not
-independent `ST_CoverageClean` instability -- confirmed by sweeping
-`gap_maximum_width` from `1e-6` to `360` degrees against the real
-admin-boundary layer that originally exhibited both symptoms, with the
-fixed positional call: flat, monotonic area and zero invalid edges at
-every width tested. The escalation ladder was removed accordingly.
+An earlier escalation-ladder retry approach was removed after the two
+failure modes it worked around both turned out to be
+`coverage_clean()`'s named-argument bug (see "Naming" above), not
+independent `ST_CoverageClean` instability. See
+`docs/adr/0003-st-coverageclean-positional-args.md`.
 
 ### The total-area floor is anchored to detected overlap area, not dataset size
 
-An earlier version of the floor was a flat fraction of the whole input
-area (`output_area >= input_area * AREA_SANITY_FACTOR`, `0.8`). Tightening
-that fraction to `0.95` broke real, intentional tests: resolving a single
-overlap that's a large fraction of a *small* dataset's total area can
-legitimately cost 12-19% of the total -- indistinguishable, as a flat
-fraction, from real corruption on a *large* dataset where the same kind of
-defect is a tiny fraction of total (confirmed near-zero net area change on
-several real portolan admin-boundary files with genuine, if tiny,
-overlaps). A flat fraction of total dataset size can't tell those two
-cases apart because it isn't looking at the defect at all.
-
-The floor now scales with what was actually detected:
+The floor scales with what was actually detected, not a flat fraction of
+dataset size (which can't distinguish a large, legitimate overlap-resolution
+cost on a small dataset from real corruption -- see
+`docs/adr/0009-area-floor-anchored-to-overlap-area.md`):
 
 ```
 min_area = input_area * (1 - AREA_NOISE_FACTOR) - overlap_area * OVERLAP_LOSS_HEADROOM
@@ -279,12 +215,6 @@ min_area = input_area * (1 - AREA_NOISE_FACTOR) - overlap_area * OVERLAP_LOSS_HE
   boundary well beyond the immediate overlap it's resolving, confirmed up
   to ~1.5x on a real regression case (see "Defect-adjacent exemption"
   below).
-
-Verified against real portolan admin-boundary files spanning zero, tiny,
-and moderate overlap counts (`mex/adm2`, `egy/adm3`, `khm/adm3`,
-`cod/adm2`) -- no false rejections, and the small-dataset tests that
-originally motivated a loose floor still pass with real headroom to
-spare.
 
 ### The total-area floor alone misses a small, localized collapse
 
@@ -357,27 +287,9 @@ conversion factor would mean the number on the CLI and the number GEOS
 actually sees are never quite the same thing.
 
 `clean` reports every detected gap and overlap regardless of size -- no
-floating-point noise floor is applied. An earlier version discarded
-anything below `MIN_ISSUE_AREA_M2` (`1e-4 m^2`, ~1cm^2), ported directly
-from topo-tools-js's own noise floor -- itself sized to a float-jitter
-magnitude (up to `1.6e-7 m^2`) observed in that app's WASM-compiled GEOS
-build, never independently measured against this native pipeline.
-
-Verified directly: running this pipeline's exact gap- and
-overlap-detection queries with the floor removed against five real/
-synthetic already-clean inputs -- two hand-built synthetic fixtures, a
-real 9,658-fid COD admin4 layer, and Chile/Philippines/Indonesia admin3's
-`extended.parquet` (full-pipeline output -- `ST_MakeValid` ->
-`ST_Transform` -> Voronoi merge -> whole-table `ST_CoverageClean`, each
-confirmed `has_coverage_violations() == False`) -- found zero
-floating-point artifacts on either detection path. The overlap join
-predicate itself (`ST_Overlaps`/`ST_Contains`) never matched a candidate
-pair on any of these valid coverages, since it requires true interior
-intersection, not mere boundary-touching, so `ST_Intersection` never even
-ran on a real candidate. Consistent with `docs/change.md`'s documented
-WASM-only GEOS `OverlayNG` bug that doesn't reproduce natively: constants
-tuned against topo-tools-js's WASM-compiled GEOS build don't necessarily
-carry over to this native pipeline without independent verification.
+floating-point noise floor is applied, after testing found no native GEOS
+jitter to guard against. See
+`docs/adr/0010-noise-floor-removed-no-jitter-found.md`.
 
 The *output* side still reports in meters for human readability: the
 issues file's `area_m2`/`max_width_m` columns are computed from raw
@@ -414,10 +326,11 @@ precedent, applied per-detection-kind here instead of per-group.
 
 A precision-reduction retry (via `ST_ReducePrecision`) is not used as a
 fallback here or in the fix stage -- the actual driver of the
-coverage-clean instabilities once observed here was `coverage_clean()`'s
-own named-argument bug (see "Naming" above), not floating-point precision,
-so there's no remaining case for a second, unvalidated retry lever that
-silently perturbs input geometry.
+coverage-clean instabilities once observed here was
+`coverage_clean()`'s named-argument bug (see
+`docs/adr/0003-st-coverageclean-positional-args.md`), not floating-point
+precision, so there's no remaining case for a second, unvalidated retry
+lever that silently perturbs input geometry.
 
 ## Portolan-scale profiling
 
@@ -433,32 +346,15 @@ expensive part of `_02_issues` at scale -- expect faster/lighter runs now):
 | Indonesia admin3   | 7,069 | 503s      | 1.58 GB    | 8 gap                       |
 | Philippines admin3 | 1,642 | 396s      | **5.15 GB**| 16 gap                      |
 
-Two real bugs surfaced and fixed by this run (`_02_issues.py`'s
-`_build_overlaps`), both only visible past a few thousand fids:
-
-1. **Overlap join predicate was `ST_Intersects`, not `ST_Overlaps`/
-   `ST_Contains`.** `ST_Intersects` is true for any pair of polygons that
-   merely share a boundary edge -- the normal case for every adjacent pair in
-   a coverage layer, not a defect. On Indonesia admin3 (7,069 fids) this
-   matched 18,457 candidate pairs, each still paying for `ST_Intersection` +
-   `ST_MakeValid` + `ST_CollectionExtract`, and the stage did not finish in
-   6+ minutes. Switched the join predicate to `ST_Overlaps(a, b) OR
-   ST_Contains(a, b) OR ST_Contains(b, a)` -- `ST_Overlaps` alone would miss
-   a fully-duplicated or nested polygon pair (OGC: its intersection equals
-   one/both inputs, so `ST_Overlaps` is false by definition), hence the
-   `ST_Contains` half. Regression test:
-   `test_clean_detects_full_containment_overlap` in `tests/test_clean.py`.
-2. **Self-joining the wide `_01` table (36 columns for real admin data)
-   instead of a narrow `(fid, geom)` projection made DuckDB fall back to
-   near-single-threaded execution**, even though the join only references
-   `fid`/`geom`. Confirmed on Indonesia admin3: the join against `_01` ran at
-   ~99% CPU; the identical join against a narrow projection of the same rows
-   ran at ~420% CPU. `_build_overlaps` now always projects to
-   `{table}_narrow` before joining.
+This run surfaced and fixed two scale bugs in `_02_issues.py`'s
+`_build_overlaps`, both only visible past a few thousand fids: the overlap
+join predicate was too permissive, and the self-join ran against a wide
+table instead of a narrow projection. See
+`docs/adr/0011-overlap-detection-scale-bugs.md`.
 
 **Philippines admin3 exceeded the 4 GB container target** (5.15 GB peak) on
 this run, driven mostly by the (since-removed) sliver-detection pass in the
 `issues` stage; gap/overlap detection alone is expected to be substantially
 lighter. `clean` has no resampling knob to fall back on (nor does `extend`
-anymore — see `docs/voronoi-memory.md`), so per this repo's "document, don't
+anymore — see `docs/explanation/voronoi-memory.md`), so per this repo's "document, don't
 gate" policy this is noted here rather than runtime-checked.

@@ -1,6 +1,6 @@
 # shared
 
-See `specs/README.md` for the MUST/SHOULD/MAY convention. Rules here apply
+See `docs/reference/README.md` for the MUST/SHOULD/MAY convention. Rules here apply
 across more than one tool; a tool's own file references this one by name
 instead of repeating them.
 
@@ -23,6 +23,26 @@ instead of repeating them.
   exists with no overlaps, and when the data has collapsed to nothing.
 - The shared gap check MUST detect fully-enclosed interior holes only, in
   the union of a layer's geometries.
+
+## Common settings
+
+Every tool's public API function takes these in addition to its own
+tool-specific settings (see the tool's own file for those):
+
+- `tmp_dir` -- intermediate DuckDB + Parquet location; MUST default to a
+  fresh temporary directory when unset, and MUST be cleaned up after the
+  call unless `debug` is set.
+- `threads` -- DuckDB thread count; unset MUST defer to DuckDB's own
+  default.
+- `overwrite` -- whether to overwrite an existing output path.
+- `debug` -- MUST keep intermediate tables, export all of them to Parquet,
+  and log timing + memory delta per query.
+- `step` -- if given, MUST run only the one named stage; any value outside
+  that tool's own stage names MUST raise `ValueError`.
+
+No module-level `argparse`/env parsing exists anywhere -- settings flow in
+as plain keyword arguments on each tool's own `api.*()` function, and the
+CLI maps flags/env vars onto those same kwargs 1:1.
 
 ## Hard gates at each tool's output stage
 

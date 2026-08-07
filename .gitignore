@@ -1,6 +1,5 @@
 __pycache__
-.claude/*
-!.claude/skills
+.claude/
 .env
 .import_linter_cache
 .pytest_cache

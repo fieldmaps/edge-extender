@@ -1,6 +1,6 @@
 # clean
 
-See `specs/README.md` for the MUST/SHOULD/MAY convention.
+See `docs/reference/README.md` for the MUST/SHOULD/MAY convention.
 
 ## Inputs
 

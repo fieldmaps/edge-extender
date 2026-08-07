@@ -4,7 +4,7 @@
 (e.g. admin4 into admin0), reusing `extend`'s Voronoi gap-filling pipeline
 under the hood. This doc covers the parts that are specific to `match`: the
 overlap/assignment algorithm, the per-group subprocess design, and the
-constraints it inherits from `extend`. See `docs/topology.md` for the
+constraints it inherits from `extend`. See `docs/explanation/topology.md` for the
 coverage-clean/`SPATIAL_JOIN` background both tools share.
 
 ## Usage
@@ -75,7 +75,7 @@ bbox spanning everything and defeat the prefilter. The join uses scalar
 `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` predicates, not `ST_Within`/
 `ST_Intersects` in the `JOIN` condition — that triggers DuckDB's
 `SPATIAL_JOIN` operator and its ~1x-RAM virtual reservation (see
-`docs/topology.md`).
+`docs/explanation/topology.md`).
 
 Shared area per `(child, parent)` fid pair is summed across every part-pair
 (a multi-part child can overlap a multi-part parent in more than one place),
@@ -149,7 +149,7 @@ had zero overlapping children — not a failure, no adm3 unit fell inside
 them). All 1,120 spawned subprocesses succeeded — zero dropped children,
 zero failed groups. Wall time 35m44s, peak RSS 5.26 GB (during the final
 whole-table `_04_merge` coverage-clean pass — this run predates `--memory-gb`'s
-removal, see `docs/voronoi-memory.md`; a real 5.26 GB peak against a
+removal, see `docs/explanation/voronoi-memory.md`; a real 5.26 GB peak against a
 supposed 4 GB target is exactly the kind of soft-target result that made the
 flag not worth keeping). Stage breakdown:
 
@@ -174,7 +174,7 @@ this scale.
 `_05_merge.py`). **Do not scope this to a subset of fids for performance**,
 even though `coverage_clean()` technically accepts a `fids` list — per-fid
 violator scoping was deliberately removed from `extend`'s own merge stage
-once already because it reintroduced seam-gap bugs (see `docs/topology.md`).
+once already because it reintroduced seam-gap bugs (see `docs/explanation/topology.md`).
 By construction, every point of the reassembled extent belongs to exactly
 one surviving child fid, so anything `ST_CoverageClean` finds to close here
 is seam noise at group-to-group boundaries, not a real feature to protect
@@ -184,7 +184,7 @@ geometric gap between two independently-computed Voronoi extensions.
 ## Rejected: `ST_Snap` around `_clip.py`'s `ST_Intersection`
 
 `_05_merge.py` snapping the Voronoi cell onto its neighbor union before
-`ST_Difference` (see `docs/topology.md`) measurably reduces how many
+`ST_Difference` (see `docs/explanation/topology.md`) measurably reduces how many
 untouched fids the final whole-table `ST_CoverageClean` pass has to touch,
 because many *independent* per-fid `ST_Difference` calls against
 *independently computed* neighbor unions invent slightly different
