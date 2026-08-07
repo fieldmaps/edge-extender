@@ -2,14 +2,20 @@
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.duckdb_utils import bbox_columns_sql
+
 
 def main(conn: DuckDBPyConnection, name: str) -> None:
     """Create boundary lines from polygons."""
-    # Per-polygon boundary lines
+    # Per-polygon boundary lines, with bbox columns precomputed -- DuckDB
+    # re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS
-        SELECT fid, ST_Boundary(geom) AS geom
-        FROM "{name}_01"
+        WITH boundary AS (
+            SELECT fid, ST_Boundary(geom) AS geom FROM "{name}_01"
+        )
+        SELECT fid, geom, {bbox_columns_sql("geom")}
+        FROM boundary
     """)
 
     # Per-polygon neighbor union, self-join with scalar bbox predicates plus
@@ -21,10 +27,10 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
         FROM "{name}_02_tmp1" AS a
         JOIN "{name}_02_tmp1" AS b
           ON a.fid != b.fid
-         AND ST_XMax(b.geom) >= ST_XMin(a.geom)
-         AND ST_XMin(b.geom) <= ST_XMax(a.geom)
-         AND ST_YMax(b.geom) >= ST_YMin(a.geom)
-         AND ST_YMin(b.geom) <= ST_YMax(a.geom)
+         AND b.xmax >= a.xmin
+         AND b.xmin <= a.xmax
+         AND b.ymax >= a.ymin
+         AND b.ymin <= a.ymax
          AND ST_Intersects(a.geom, b.geom)
         GROUP BY a.fid
     """)

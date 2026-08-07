@@ -5,6 +5,7 @@ from logging import getLogger
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import EQUAL_AREA_CRS
+from topo_tools.core.duckdb_utils import bbox_columns_sql
 
 logger = getLogger(__name__)
 
@@ -19,13 +20,23 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
     islands) doesn't get one whole-fid bbox spanning everything and defeat
     the prefilter, same as _05_merge.py's _05_tmp1.
     """
+    # Bbox columns precomputed here, not called inline in the join below --
+    # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS
-        SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_child_01"
+        WITH parts AS (
+            SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_child_01"
+        )
+        SELECT fid, part_geom, {bbox_columns_sql("part_geom")}
+        FROM parts
     """)
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp2" AS
-        SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_parent_01"
+        WITH parts AS (
+            SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_parent_01"
+        )
+        SELECT fid, part_geom, {bbox_columns_sql("part_geom")}
+        FROM parts
     """)
 
     # Shared area per (child, parent) fid pair, summed across all part-pairs --
@@ -41,10 +52,10 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
                ))) AS shared_area
         FROM "{name}_02_tmp1" c
         JOIN "{name}_02_tmp2" p
-          ON ST_XMax(p.part_geom) >= ST_XMin(c.part_geom)
-         AND ST_XMin(p.part_geom) <= ST_XMax(c.part_geom)
-         AND ST_YMax(p.part_geom) >= ST_YMin(c.part_geom)
-         AND ST_YMin(p.part_geom) <= ST_YMax(c.part_geom)
+          ON p.xmax >= c.xmin
+         AND p.xmin <= c.xmax
+         AND p.ymax >= c.ymin
+         AND p.ymin <= c.ymax
          AND ST_Intersects(c.part_geom, p.part_geom)
         GROUP BY c.fid, p.fid
     """)

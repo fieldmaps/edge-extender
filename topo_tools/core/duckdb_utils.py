@@ -135,6 +135,14 @@ def get_connection(
     return ProfiledConnection(conn, debug=debug)
 
 
+def bbox_columns_sql(geom_expr: str) -> str:
+    """Build a bbox column list, to precompute once rather than inline in a JOIN."""
+    return (
+        f"ST_XMin({geom_expr}) AS xmin, ST_XMax({geom_expr}) AS xmax, "
+        f"ST_YMin({geom_expr}) AS ymin, ST_YMax({geom_expr}) AS ymax"
+    )
+
+
 def cleanup_tmp(name: str, tmp_dir: Path, *, parquet: bool = False) -> None:
     """Remove tmp files for a named pipeline run."""
     for p in tmp_dir.glob(f"{name}.duckdb*"):

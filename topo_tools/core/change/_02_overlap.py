@@ -3,6 +3,7 @@
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import EQUAL_AREA_CRS
+from topo_tools.core.duckdb_utils import bbox_columns_sql
 
 from ._constants import INTERSECTION_SLIVER_DEG2
 
@@ -19,13 +20,23 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
     uses exact ST_Intersection here -- no point-sampling fallback, unlike the
     JS version's WASM-only workaround.
     """
+    # Bbox columns precomputed here, not called inline in the join below --
+    # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS
-        SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_a_01"
+        WITH parts AS (
+            SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_a_01"
+        )
+        SELECT fid, part_geom, {bbox_columns_sql("part_geom")}
+        FROM parts
     """)
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp2" AS
-        SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_b_01"
+        WITH parts AS (
+            SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_b_01"
+        )
+        SELECT fid, part_geom, {bbox_columns_sql("part_geom")}
+        FROM parts
     """)
 
     # Sliver crumbs are dropped by raw (untransformed) degree^2 area, matching
@@ -40,10 +51,10 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
                    ) AS geom
             FROM "{name}_02_tmp1" a
             JOIN "{name}_02_tmp2" b
-              ON ST_XMax(b.part_geom) >= ST_XMin(a.part_geom)
-             AND ST_XMin(b.part_geom) <= ST_XMax(a.part_geom)
-             AND ST_YMax(b.part_geom) >= ST_YMin(a.part_geom)
-             AND ST_YMin(b.part_geom) <= ST_YMax(a.part_geom)
+              ON b.xmax >= a.xmin
+             AND b.xmin <= a.xmax
+             AND b.ymax >= a.ymin
+             AND b.ymin <= a.ymax
              AND ST_Intersects(a.part_geom, b.part_geom)
         ),
         filtered AS (

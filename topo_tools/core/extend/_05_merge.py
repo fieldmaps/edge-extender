@@ -4,6 +4,7 @@ from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import SNAP_TOLERANCE
 from topo_tools.core.coverage import coverage_clean
+from topo_tools.core.duckdb_utils import bbox_columns_sql
 
 
 def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
@@ -16,9 +17,7 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         WITH parts AS (
             SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_01"
         )
-        SELECT fid, part_geom,
-            ST_XMin(part_geom) AS xmin, ST_XMax(part_geom) AS xmax,
-            ST_YMin(part_geom) AS ymin, ST_YMax(part_geom) AS ymax
+        SELECT fid, part_geom, {bbox_columns_sql("part_geom")}
         FROM parts
     """)
 
@@ -32,9 +31,7 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         CREATE OR REPLACE TABLE "{name}_05_tmp2" AS
         WITH
         v AS (
-            SELECT fid, geom,
-                ST_XMin(geom) AS xmin, ST_XMax(geom) AS xmax,
-                ST_YMin(geom) AS ymin, ST_YMax(geom) AS ymax
+            SELECT fid, geom, {bbox_columns_sql("geom")}
             FROM "{name}_04"
         ),
         neighbor_union AS (

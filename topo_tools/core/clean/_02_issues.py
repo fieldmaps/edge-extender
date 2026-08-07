@@ -18,6 +18,7 @@ from logging import getLogger
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.coverage import has_coverage_violations
+from topo_tools.core.duckdb_utils import bbox_columns_sql
 
 from ._units import METERS_PER_DEGREE, m2_per_deg2_factor
 
@@ -72,10 +73,14 @@ def _build_overlaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
     # adjacent pairs; ST_Contains alone catches full containment.
     #
     # Projecting to (fid, geom) before the self-join avoids DuckDB's
-    # single-threaded fallback on a wide table.
+    # single-threaded fallback on a wide table. Bbox columns are precomputed
+    # here, not called inline in the join -- DuckDB re-evaluates an inline
+    # envelope call per comparison, not once per row.
     narrow = f"{table}_narrow"
     conn.execute(f"""--sql
-        CREATE OR REPLACE TABLE "{narrow}" AS SELECT fid, geom FROM "{table}"
+        CREATE OR REPLACE TABLE "{narrow}" AS
+        SELECT fid, geom, {bbox_columns_sql("geom")}
+        FROM "{table}"
     """)
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{tmp}" AS
@@ -86,10 +91,10 @@ def _build_overlaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
                    ) AS geom
             FROM "{narrow}" a JOIN "{narrow}" b
               ON a.fid < b.fid
-              AND ST_XMax(b.geom) >= ST_XMin(a.geom)
-              AND ST_XMin(b.geom) <= ST_XMax(a.geom)
-              AND ST_YMax(b.geom) >= ST_YMin(a.geom)
-              AND ST_YMin(b.geom) <= ST_YMax(a.geom)
+              AND b.xmax >= a.xmin
+              AND b.xmin <= a.xmax
+              AND b.ymax >= a.ymin
+              AND b.ymin <= a.ymax
               AND (
                   ST_Overlaps(a.geom, b.geom)
                   OR ST_Contains(a.geom, b.geom)

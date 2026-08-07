@@ -87,6 +87,13 @@ cheaper GEOS primitive answers "are there any gaps" without doing the same
 whole-table union `_build_gaps` itself needs to extract them. See
 `docs/adr/0007-skip-overlap-detection-when-valid.md`.
 
+`_build_overlaps`'s bbox columns are precomputed once on `{table}_narrow`,
+not called inline per pairwise comparison in the join's `ON` clause --
+the latter makes DuckDB recompute the envelope per comparison instead of
+once per row, which hangs indefinitely on a table with even a few
+very-high-vertex-count polygons. See
+`docs/adr/0014-bbox-inline-recompute-in-join.md`.
+
 `has_coverage_violations()` alone cannot stand in for gap detection -- it
 only detects overlaps/mismatched edges, never gaps (see
 `docs/reference/shared.md`). `_03_clean.py`'s fix-stage gate also checks
@@ -351,12 +358,20 @@ expensive part of `_02_issues` at scale -- expect faster/lighter runs now):
 | Chile admin3       | 345   | 132s      | 1.07 GB    | 0                           |
 | Indonesia admin3   | 7,069 | 503s      | 1.58 GB    | 8 gap                       |
 | Philippines admin3 | 1,642 | 396s      | **5.15 GB**| 16 gap                      |
+| Colombia admin3    | 31,880| 322s      | 4.87 GB    | 1,440 gap, 30 overlap       |
 
 This run surfaced and fixed two scale bugs in `_02_issues.py`'s
 `_build_overlaps`, both only visible past a few thousand fids: the overlap
 join predicate was too permissive, and the self-join ran against a wide
 table instead of a narrow projection. See
 `docs/adr/0011-overlap-detection-scale-bugs.md`.
+
+A later run against Colombia admin3 surfaced a third scale bug in the same
+function: inline `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` calls in the
+overlap self-join's `ON` clause, which never finished (57+ min, killed) on
+a table with a few 20k-54k-vertex polygons, fixed by precomputing bbox
+columns instead of calling the envelope functions inline. See
+`docs/adr/0014-bbox-inline-recompute-in-join.md`.
 
 **Philippines admin3 exceeded the 4 GB container target** (5.15 GB peak) on
 this run, driven mostly by the (since-removed) sliver-detection pass in the
