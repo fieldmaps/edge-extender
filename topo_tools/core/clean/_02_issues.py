@@ -1,32 +1,15 @@
 """Detects gap and overlap defects in a single polygon layer.
 
-Detection only -- no geometry is modified here. Ported from
-topo-tools-js/src/lib/tools/topology-cleaner/pipeline/issues.ts:
+Detection only -- no geometry is modified here.
 
-- Gaps: interior rings of the whole-table union. Only catches fully-enclosed
-  holes (a ring of polygons surrounding missing area) -- an open "inlet"
-  between two non-enclosing polygons is not a gap by this definition (GEOS's
-  own CoverageCleaner doc: "gaps which are not fully enclosed are not
-  removed").
-- Overlaps: bbox-prefiltered pairwise ST_Intersection, whole-fid bboxes (not
-  per-part -- see core/extend/_02_lines.py's neighbor self-join for why
-  per-part explosion regresses single-fid-many-parts datasets like Chile).
-  The join predicate is ST_Overlaps/ST_Contains, not ST_Intersects -- see the
-  note on `_build_overlaps` below.
+- Gaps: fully-enclosed holes in the whole-table union only; open inlets
+  between non-enclosing polygons don't count.
+- Overlaps: bbox-prefiltered pairwise join, whole-fid bboxes. Skipped
+  entirely when `has_coverage_violations()` is already False.
 
-Gap rows also carry a Polsby-Popper thinness ratio (4*pi*Area/Perimeter^2,
-NULL on overlap rows) used by the clean stage's auto gap-fill mode.
-
-Each of the two detection queries falls back to an empty result (logged) on
-failure rather than raising -- one kind failing shouldn't block the other,
-matching match's "failed group is logged and dropped, not fatal" precedent.
-
-Gap detection always runs -- the whole-table union it needs is also the
-only way to answer "are there any gaps at all," so there's no cheaper
-substitute check to skip it with. Overlap detection is skipped (an empty
-result written directly) when `has_coverage_violations()` is already False,
-since that's equivalent to "the overlap self-join would find nothing" and
-is far cheaper than actually running the O(n^2) self-join to confirm it.
+Gap rows carry a Polsby-Popper thinness_ratio (NULL on overlap rows), used
+by the clean stage's auto gap-fill mode. Each detection kind falls back to
+an empty result (logged) on failure instead of raising.
 """
 
 from collections.abc import Callable
@@ -36,16 +19,9 @@ from duckdb import DuckDBPyConnection
 
 from topo_tools.core.coverage import has_coverage_violations
 
-from ._units import METERS_PER_DEGREE, cos_lat_factor
+from ._units import METERS_PER_DEGREE, m2_per_deg2_factor
 
 logger = getLogger(__name__)
-
-
-def centroid_lat_of(conn: DuckDBPyConnection, table: str) -> float:
-    lat = conn.execute(f"""--sql
-        SELECT ST_Y(ST_Centroid(ST_Extent_Agg(geom))) FROM "{table}"
-    """).fetchall()[0][0]
-    return lat if lat is not None else 0.0
 
 
 def _detect_or_empty(
@@ -55,11 +31,10 @@ def _detect_or_empty(
     empty_sql: str,
     build: Callable[[DuckDBPyConnection, str], None],
 ) -> None:
-    """Call build(conn, source); on failure, log and fall back to an empty result.
+    """Call build(conn, source); on failure, log and run empty_sql instead.
 
-    Executes `empty_sql` on failure so the target table this `build` call was
-    supposed to create always exists afterward, instead of crashing the
-    downstream UNION ALL in `main()` with a binder/catalog error.
+    Ensures the target table always exists, so a failed kind doesn't crash
+    main()'s UNION ALL with a missing table.
     """
     try:
         build(conn, source)
@@ -93,25 +68,11 @@ def _build_gaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
 
 
 def _build_overlaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
-    # ST_Intersects is true for any pair of polygons that merely share a
-    # boundary edge -- the normal case for every adjacent pair in a coverage
-    # layer, not a defect. At real admin-boundary scale (thousands of fids,
-    # e.g. archipelago admin3 layers) that floods the join with candidates
-    # whose ST_Intersection is a degenerate line/point, each still paying for
-    # ST_Intersection + ST_MakeValid + ST_CollectionExtract. Confirmed on IDN
-    # admin3 (7,069 fids): ST_Intersects matched 18,457 pairs and the stage
-    # didn't finish in 6+ minutes. ST_Overlaps alone would miss a fully-
-    # duplicated or nested polygon pair (its intersection equals both/one
-    # input, so ST_Overlaps is false by OGC definition) -- ST_Contains in
-    # both directions covers that case.
+    # ST_Overlaps/ST_Contains, not ST_Intersects -- skips merely-touching
+    # adjacent pairs; ST_Contains alone catches full containment.
     #
-    # Second, unrelated fix on the same query: self-joining `table` directly
-    # (the real `_01` table, ~36 columns for real admin-boundary data) makes
-    # DuckDB fall back to near-single-threaded execution even though only
-    # fid/geom are referenced -- confirmed on IDN admin3: the join against
-    # `_01` ran at ~99% CPU (7 min), the identical join against a `(fid,
-    # geom)`-only projection of the same rows ran at ~420% CPU (102s). Always
-    # project to a narrow staging table before the self-join.
+    # Projecting to (fid, geom) before the self-join avoids DuckDB's
+    # single-threaded fallback on a wide table.
     narrow = f"{table}_narrow"
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{narrow}" AS SELECT fid, geom FROM "{table}"
@@ -150,8 +111,6 @@ def main(
 ) -> None:
     """Detect gap/overlap issues in `{name}_01`, writing `{name}_02`."""
     table = f"{name}_01"
-    centroid_lat = centroid_lat_of(conn, table)
-    cos_lat = cos_lat_factor(centroid_lat)
 
     gaps_tmp = f"{name}_02_tmp1"
     overlaps_tmp = f"{name}_02_tmp2"
@@ -179,10 +138,8 @@ def main(
         )
     else:
         conn.execute(empty_overlaps_sql)
-    # area_m2/max_width_m: area_deg2 * METERS_PER_DEGREE^2 * cos(centroid_lat) for
-    # area; MIC diameter (deg) * METERS_PER_DEGREE (no cos factor -- matches
-    # units.ts's degToM, exact for N-S widths, display-only approximation for E-W).
-    m2_per_deg2 = METERS_PER_DEGREE**2 * cos_lat
+    # max_width_m skips the cos(lat) factor -- exact N-S, approximate E-W.
+    m2_per_deg2 = m2_per_deg2_factor(conn, table)
     width_m = f"(ST_MaximumInscribedCircle(geom)).radius * 2 * {METERS_PER_DEGREE}"
     # Polsby-Popper thinness ratio, computed directly in raw degree-space.
     thinness_ratio = "4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2)"
