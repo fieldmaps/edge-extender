@@ -16,8 +16,10 @@ See `specs/README.md` for the MUST/SHOULD/MAY convention.
   be reported as a gap.
 - `clean` MUST report every case where two polygons' interiors genuinely
   overlap, or one fully contains the other, as an overlap, regardless of
-  its size. Two polygons that only share a boundary edge MUST NOT be
-  reported as an overlap.
+  its size, whenever the input has any coverage violation at all. If the
+  input has no coverage violations, `clean` MUST report zero overlaps
+  without running the overlap check. Two polygons that only share a
+  boundary edge MUST NOT be reported as an overlap.
 - If detecting one kind of defect fails, `clean` MUST still report the
   other kind rather than failing entirely.
 - The issues report MUST list, for every defect: a unique key, whether it
@@ -44,17 +46,20 @@ See `specs/README.md` for the MUST/SHOULD/MAY convention.
   a user-supplied numeric distance, in decimal degrees, MUST be honored
   directly. Requesting any snapping mode other than `auto` or a number
   MUST raise `ValueError`.
-- `clean` MUST reject a fix attempt that leaves any defect, turns any
-  feature's shape into something other than a valid polygon, loses a large
-  share of the input's total area, or loses an unexplained share of a
-  single feature's area (a feature with no defect of its own is expected
-  to come out essentially unchanged; a feature that was itself part of a
-  gap or overlap being resolved may change area substantially, including
-  losing all of it, as a legitimate outcome). On rejection, `clean` MUST
-  retry with progressively wider values, and MUST NOT ever retry with a
-  value narrower than what the requested mode resolved to.
-- If `clean` cannot produce a valid fix at any width it attempts, it MUST
-  raise `RuntimeError` rather than returning invalid or degraded output.
+- `clean` MUST attempt the fix exactly once, at the width resolved from
+  the requested mode. There is no retry and no escalation to a wider
+  value.
+- `clean` MUST reject the fix, raising `RuntimeError` immediately, if any
+  of the following hold: the output still contains an overlap; any
+  feature's fixed shape is not a valid polygon; the output's total area
+  falls below a floor set by a small baseline tolerance plus headroom
+  sized to the total area of the overlaps actually detected; or a feature
+  with no connection to any detected gap or overlap collapses to nothing.
+- A feature that was itself party to a gap or overlap being resolved MAY
+  change area substantially, including losing all of it, without
+  triggering rejection. A feature untouched by any detected defect MAY
+  still drift in area (logged as a warning) without triggering rejection,
+  but MUST NOT collapse to nothing.
 
 ## Outputs
 
