@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from topo_tools.api.extend import extend
 from topo_tools.cli.main import cli
+from topo_tools.core.extend import _04_voronoi as voronoi
 
 # fid 4 is a MULTIPOLYGON (two disjoint parts) to exercise multipolygon
 # handling; fid 1/2 touch exactly (shared edge, valid coverage); fid 3 sits
@@ -21,8 +22,10 @@ _SYNTHETIC_WKT = [
     (3, "POLYGON((3 0, 4 0, 4 1, 3 1, 3 0))"),
     (
         4,
-        "MULTIPOLYGON(((0 3, 0.5 3, 0.5 3.5, 0 3.5, 0 3)), "
-        "((1 3, 1.5 3, 1.5 3.5, 1 3.5, 1 3)))",
+        (
+            "MULTIPOLYGON(((0 3, 0.5 3, 0.5 3.5, 0 3.5, 0 3)), "
+            "((1 3, 1.5 3, 1.5 3.5, 1 3.5, 1 3)))"
+        ),
     ),
 ]
 
@@ -101,6 +104,37 @@ def test_extend_steps(synthetic_input, tmp_path):
             synthetic_input, output_path, tmp_dir=work_dir, step=step, overwrite=True
         )
     assert output_path.exists()
+
+
+# A degenerate near-collinear point cluster found by fuzzing that GEOS's
+# ST_VoronoiDiagram fails to produce a cell for every generator point on --
+# reproduces the silent hole risk that _04_voronoi.py's completeness check
+# guards against.
+_DEGENERATE_POINTS = [
+    (0, -0.95793148, 0.0),
+    (1, -0.95793148, -8.5829e-08),
+    (2, 0.107843045, 0.0),
+    (3, -0.985618322, 0.0),
+    (4, 0.107843045, 7.6477e-08),
+    (5, -0.985618322, 0.0),
+    (6, -0.985618322, -6.1918e-08),
+    (7, -0.95793148, -2.914e-08),
+    (8, -0.985618322, 0.0),
+    (9, -0.95793148, 9.6833e-08),
+]
+
+
+def test_voronoi_raises_on_incomplete_assignment():
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        values = ", ".join(
+            f"({fid}, ST_Point({x}, {y}))" for fid, x, y in _DEGENERATE_POINTS
+        )
+        conn.execute(
+            f"CREATE TABLE synth_03b AS SELECT * FROM (VALUES {values}) AS t(fid, geom)"
+        )
+        with pytest.raises(RuntimeError, match="Voronoi assignment incomplete"):
+            voronoi.main(conn, "synth", debug=True)
 
 
 def test_extend_renames_reserved_source_columns(tmp_path):

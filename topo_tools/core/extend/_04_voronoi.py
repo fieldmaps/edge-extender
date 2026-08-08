@@ -27,6 +27,19 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         ON ST_Intersects(a.geom, b.geom)
     """)
 
+    point_count = conn.execute(
+        f'SELECT count(DISTINCT fid) FROM "{name}_03b"'
+    ).fetchall()[0][0]
+    assigned_count = conn.execute(
+        f'SELECT count(DISTINCT fid) FROM "{name}_04_tmp2"'
+    ).fetchall()[0][0]
+    if assigned_count < point_count:
+        msg = (
+            f"Voronoi assignment incomplete: "
+            f"{assigned_count}/{point_count} points assigned"
+        )
+        raise RuntimeError(msg)
+
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03b"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_04_tmp1"')
