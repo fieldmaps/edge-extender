@@ -1,10 +1,9 @@
 # Run an at-scale test against the portolan catalog
 
 Use the portolan catalog (see `CLAUDE.md`'s Test Datasets section for its
-location and the read-only hard rule) when the two bundled fixtures
-(Burundi, Chile) aren't enough -- e.g. checking a fix at real
-multi-thousand-fid scale, or exercising `change` against a genuine old/new
-version pair.
+location and the read-only hard rule) when the recommended West Africa
+cluster isn't enough, e.g. checking a fix at real multi-thousand-fid
+scale, or exercising `change` against a genuine old/new version pair.
 
 ## Layout
 
@@ -16,13 +15,13 @@ different content; `latest` is whichever `vNN` is newest.
 
 Any single `{iso3}/{vNN}/{adm_level}/original.parquet` works. Point every
 `--output-path`/`--tmp-dir`/`--debug` export outside the catalog (the
-session scratchpad or `/tmp`) -- never back into `portolan/`.
+session scratchpad or `/tmp`), never back into `portolan/`.
 
 ## Picking an old/new pair (`change`)
 
 1. Browse the country's catalog (local path, or fetch `./{iso3}/catalog.json`
    from the STAC root) and list its `vNN` dirs.
-2. Not every country/admin-level has 2+ versions yet -- confirm both `vNN`s
+2. Not every country/admin-level has 2+ versions yet, so confirm both `vNN`s
    you want to compare actually exist before running `change`.
 3. Run `change` with the older version as the first argument, the newer as
    the second; point every output path outside the catalog.

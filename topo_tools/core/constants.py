@@ -14,6 +14,14 @@ EQUAL_AREA_CRS = "EPSG:8857"
 # again.
 RESERVED_COLUMN_NAMES = ("fid", "OGC_FID")
 
+# core.clip skips grid-tiling below this vertex count and clips directly.
+CLIP_TILE_MIN_VERTICES = 5000
+# Target vertices per tile once tiling triggers; cell size is solved from
+# this against each parent's own vertex density (see core.clip._adaptive_cell_size).
+CLIP_TILE_TARGET_VERTICES = 1350
+CLIP_TILE_MIN_CELL = 0.05
+CLIP_TILE_MAX_CELL = 5.0
+
 _PARQUET_EXPORT = (
     "(FORMAT PARQUET, COMPRESSION ZSTD, COMPRESSION_LEVEL 15, GEOPARQUET_VERSION 'V2')"
 )

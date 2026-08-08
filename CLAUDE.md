@@ -4,13 +4,14 @@
 
 `topo-tools` is a Python package of DuckDB-powered geospatial topology utilities,
 `pip install`-able and importable, mirroring the organization of the sister JS app
-at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships four
+at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships five
 tools, all used for improving administrative boundary datasets and matching
 sub-national boundaries to national boundaries (import-linter contracts
 governing which tool may depend on which are in `docs/reference/shared.md`):
 
 - **extend**: extends polygon boundaries outward using Voronoi diagrams, producing a complete coverage layer that fills gaps (coastlines, disputed areas, water bodies).
 - **match**: fits a child polygon layer into a coarser parent/clip layer (e.g. admin4 into admin0) by assigning each child to the parent it shares the largest area with, then running `extend`'s pipeline per group and clipping to that group's parent.
+- **mosaic**: fits an already-extended child layer (a prior `extend()` output) into a new/different parent/clip layer, reusing `match`'s assignment logic but skipping Voronoi extension entirely. See `docs/explanation/mosaic.md`.
 - **clean**: detects/fixes coverage defects (gaps, overlaps) in a single polygon layer with `ST_CoverageClean`, reporting them in a separate issues file for manual review. See `docs/explanation/clean.md`.
 - **change**: compares an old/new polygon layer pair and classifies every unit (unchanged/renamed/modified/relocated/split/merge/complex/created/removed) via spatial overlap and optional code/name identity linking; writes a tabular changelog plus a colored spatial overlay layer. See `docs/explanation/change.md`.
 
@@ -33,16 +34,19 @@ mechanism between stages (per-group subprocesses inside `match` are the one
 exception — see `docs/explanation/match.md`). Three layers, each with a specific job
 (mirroring `geoparquet-io`'s `core`/`api`/`cli` split):
 
-- `topo_tools/core/{extend,match,clean,change}/` — stage implementations.
-  `core.match`/`core.change` import from `core.extend` (reusing its
-  Voronoi-pipeline stage functions); all four may import the neutral leaf
-  modules `core.constants`/`core.coverage`/`core.io`/`core.duckdb_utils`.
-- `topo_tools/api/{extend,match,clean,change}.py` — public API functions;
-  each chains its own tool's stages for exactly one file (or file pair) per
-  call.
+- `topo_tools/core/{extend,match,mosaic,clean,change}/` — stage
+  implementations. `core.match`/`core.change` import from `core.extend`
+  (reusing its Voronoi-pipeline stage functions); `core.mosaic` imports from
+  both `core.extend` (loader) and `core.match` (assign); all five may import
+  the neutral leaf modules
+  `core.constants`/`core.coverage`/`core.io`/`core.duckdb_utils`/`core.clip`.
+- `topo_tools/api/{extend,match,mosaic,clean,change}.py` — public API
+  functions; each chains its own tool's stages for exactly one file (or
+  file pair) per call, except `mosaic`'s children role, which MAY span
+  multiple files (see `docs/reference/mosaic.md`).
 - `topo_tools/cli/main.py` — the click CLI, mapping flags/env vars onto one
-  `api.*()` call per invocation, one file (or pair) at a time, no directory
-  batching.
+  `api.*()` call per invocation, one file (or pair) at a time — `mosaic`'s
+  child argument alone MAY be a glob pattern — no directory batching.
 
 Import boundaries between these layers, and between tools, are mechanically
 enforced by `pyproject.toml`'s import-linter contracts — see
@@ -80,6 +84,8 @@ per-tool table names are in `docs/explanation/{tool}.md`.
 - **Never call `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` inline inside a JOIN's `ON` clause** — DuckDB recomputes the envelope per pairwise comparison instead of once per row, which can hang indefinitely on a table with even a few very-high-vertex-count polygons. Precompute bbox columns on the joined table/CTE first, as `_05_merge.py` already does (see `docs/adr/0014-bbox-inline-recompute-in-join.md`).
 - **Byte-exact preservation of original polygon vertices is not a goal.** `ST_CoverageClean` may shift any polygon's boundary, including previously-untouched ones (see `docs/explanation/topology.md`).
 - **`match` reuses `extend`'s stage functions per-group** (so `extend` stays usable standalone) **in an isolated subprocess**, not `match()`'s own process — GEOS's native heap isn't fully released between files even after closing the DuckDB connection. See `docs/explanation/match.md`.
+- **`mosaic` skips Voronoi extension entirely** — it assumes the child layer is already a finished `extend()` output, reuses `match`'s assign step and the shared `core/clip.py` leaf (also used by `match`) for clip+merge, no per-group subprocess for extension itself. See `docs/explanation/mosaic.md`.
+- **`core/clip.py`'s `assign_table` branch clips one parent fid at a time, each in its own spawned subprocess, boundary adaptively grid-tiled before intersecting.** Repeated plain `ST_Intersection` leaks GEOS's native heap the same way `extend()`'s Voronoi machinery does, and a single oversized parent (many children against a highly complex boundary) can itself exceed available memory even fully isolated; tile size is solved from each parent's own vertex density rather than a fixed constant, and small parents skip tiling entirely (see `docs/adr/0015`, `docs/adr/0016`, `docs/adr/0017`).
 - **`core.clean` depends only on the shared leaf modules, not `core.extend`.** See `docs/explanation/clean.md`.
 - **`ST_CoverageClean`'s `gap_maximum_width` has no GEOS-native auto-fill default.** `clean`'s `--gap-width auto` mode computes an explicit width from the widest thin detected gap; `all` mode uses a fixed `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` sentinel (see `docs/adr/0002-gap-maximum-width-no-native-default.md`).
 - **`coverage_clean()` (`core/coverage.py`) must call `ST_CoverageClean` positionally, never via DuckDB's `:=` named-argument syntax.** DuckDB binds named arguments to compiled/extension scalar functions purely by position, silently discarding the name (see `docs/adr/0003-st-coverageclean-positional-args.md`).
@@ -106,6 +112,9 @@ uv run topo-tools extend example.geojson
 # Run the match tool (fits a child layer into a parent/clip layer)
 uv run topo-tools match children.geojson parents.geojson
 
+# Run the mosaic tool (re-clips an already-extended child layer into a new parent layer)
+uv run topo-tools mosaic extended_children.parquet new_parents.geojson
+
 # Run the clean tool (detects/fixes gaps+overlaps, reports issues separately)
 uv run topo-tools clean example.geojson
 
@@ -120,15 +129,13 @@ Pre-commit hooks run `uv-sync`, `ruff-format`, and `ruff-check` automatically.
 
 ## Test Datasets
 
-| Dataset                            | Use                                                                |
-| ---------------------------------- | ------------------------------------------------------------------ |
-| **Burundi** (`bdi_admin2.parquet`) | Small, fast — good for quick iteration                             |
-| **Chile** (`chl_admin3.parquet`)   | Large coastline, most memory-intensive — the canonical stress test |
+| Dataset | Use |
+| --- | --- |
+| **West Africa cluster** (`sen`/`gmb`/`gnb`/`gin`/`civ`/`gha`/`tgo`/`ben`, portolan `adm2`) | Mutually neighboring countries — single-file tool tests (extend/match/clean/change) and mosaic's multi-file combine test |
 
 A full portolan catalog (real, large-scale admin boundary data, multiple
 countries and admin levels, some with multiple historical versions) is
-available for at-scale/real-data stress testing beyond the two fixtures
-above:
+available for at-scale/real-data stress testing beyond the cluster above:
 
 - **Local copy**: `/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan`
 - **Live/canonical source**: [source.coop/hdx/cod-ab](https://source.coop/hdx/cod-ab),
@@ -152,6 +159,7 @@ file (or an old/new comparison pair, for `change`) from the catalog.
 - `docs/explanation/extend.md` — Voronoi-extension algorithm, stage-by-stage detail
 - `docs/explanation/topology.md` — ST_Node/ST_Polygonize approach, spatial function reference, SPATIAL_JOIN memory bug
 - `docs/explanation/match.md` — assignment algorithm, subprocess isolation, `check_gaps` caveat
+- `docs/explanation/mosaic.md` — reuse of match's assign + shared clip leaf, match-vs-mosaic comparison, overshoot/cross-provenance caveats
 - `docs/explanation/clean.md` — defect detection, `ST_CoverageClean` semantics, issues-file schema
 - `docs/explanation/change.md` — overlap/classification algorithm, output schema, two-file design
 - `docs/explanation/performance.md` — thread-scaling benchmarks, phase profiles, RTREE experiment

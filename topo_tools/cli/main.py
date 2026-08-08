@@ -1,5 +1,6 @@
 """topo-tools CLI: click entry point."""
 
+import glob
 from logging import INFO, basicConfig, getLogger
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from topo_tools.api import change as _change
 from topo_tools.api import clean as _clean
 from topo_tools.api import extend as _extend
 from topo_tools.api import match as _match
+from topo_tools.api import mosaic as _mosaic
 from topo_tools.core.change._constants import TAU_MATCH_DEFAULT, TAU_SAME_DEFAULT
 
 basicConfig(level=INFO, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -431,4 +433,89 @@ def match(  # noqa: PLR0913, PLR0917
             step=step,
         )
     except (FileExistsError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command()
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("clip_file", envvar="CLIP_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--issues-file",
+    envvar="ISSUES_FILE",
+    default=None,
+    help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
+)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "assign", "clip", "merge", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def mosaic(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    clip_file: str,
+    output_file: str | None,
+    issues_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Fit an already-extended children layer into a new parent/clip layer.
+
+    OUTPUT_FILE defaults to INPUT_FILE with a "_mosaicked" suffix if omitted;
+    it is required when INPUT_FILE is a glob matching more than one file.
+
+    \b
+    Examples:
+      # Re-clip a pre-extended admin3 layer against a new admin0 boundary
+      topo-tools mosaic adm3_extended.parquet adm0_new.geojson
+
+      \b
+      # Combine every country's pre-extended layer, re-clip against a world admin0
+      topo-tools mosaic "*/latest/adm2/extended.parquet" world_adm0.geojson out.parquet
+    """
+    logger.info("--debug=%s", debug)
+    if any(ch in input_file for ch in "*?["):
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 -- arbitrary pattern, not anchored to one Path
+        if not matches:
+            msg = f"no files matched: {input_file}"
+            raise click.ClickException(msg)
+        resolved_input: Path | list[Path] = [Path(p) for p in matches]
+    else:
+        resolved_input = Path(input_file)
+    try:
+        _mosaic(
+            resolved_input,
+            Path(clip_file),
+            Path(output_file) if output_file is not None else None,
+            Path(issues_file) if issues_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e

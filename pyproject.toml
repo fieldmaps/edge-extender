@@ -79,6 +79,20 @@ source_modules = ["topo_tools.core.extend"]
 forbidden_modules = ["topo_tools.core.change"]
 
 [[tool.importlinter.contracts]]
+id = "mosaic-may-use-extend-not-reverse"
+name = "mosaic may depend on extend; extend must not depend on mosaic"
+type = "forbidden"
+source_modules = ["topo_tools.core.extend"]
+forbidden_modules = ["topo_tools.core.mosaic"]
+
+[[tool.importlinter.contracts]]
+id = "mosaic-may-use-match-not-reverse"
+name = "mosaic may depend on match; match must not depend on mosaic"
+type = "forbidden"
+source_modules = ["topo_tools.core.match"]
+forbidden_modules = ["topo_tools.core.mosaic"]
+
+[[tool.importlinter.contracts]]
 id = "core-constants-is-leaf"
 name = "core.constants must not depend on any tool package"
 type = "forbidden"
@@ -88,6 +102,7 @@ forbidden_modules = [
     "topo_tools.core.match",
     "topo_tools.core.clean",
     "topo_tools.core.change",
+    "topo_tools.core.mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -100,6 +115,7 @@ forbidden_modules = [
     "topo_tools.core.match",
     "topo_tools.core.clean",
     "topo_tools.core.change",
+    "topo_tools.core.mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -112,6 +128,7 @@ forbidden_modules = [
     "topo_tools.core.match",
     "topo_tools.core.clean",
     "topo_tools.core.change",
+    "topo_tools.core.mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -124,4 +141,18 @@ forbidden_modules = [
     "topo_tools.core.match",
     "topo_tools.core.clean",
     "topo_tools.core.change",
+    "topo_tools.core.mosaic",
+]
+
+[[tool.importlinter.contracts]]
+id = "core-clip-is-leaf"
+name = "core.clip must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.clip"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+    "topo_tools.core.mosaic",
 ]

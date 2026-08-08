@@ -12,9 +12,11 @@ instead of repeating them.
   `match`.
 - The `change` tool MAY reuse `extend`'s logic; `extend` MUST NOT depend on
   `change`.
-- The shared constants, coverage-validation, file I/O, and
-  database-connection helpers MUST NOT depend on any of the four tools --
-  they are leaf building blocks usable by all of them.
+- The `mosaic` tool MAY reuse `extend`'s and `match`'s logic; neither
+  `extend` nor `match` MUST depend on `mosaic`.
+- The shared constants, coverage-validation, file I/O,
+  database-connection, and clip helpers MUST NOT depend on any of the five
+  tools -- they are leaf building blocks usable by all of them.
 
 ## Coverage-topology checks
 
@@ -46,8 +48,8 @@ CLI maps flags/env vars onto those same kwargs 1:1.
 
 ## Hard gates at each tool's output stage
 
-- `extend` and `match` MUST raise if their final output has any overlap or
-  any gap.
+- `extend`, `match`, and `mosaic` MUST raise if their final output has any
+  overlap or any gap.
 - `clean` MUST raise if its final output has any overlap. It MUST NOT raise
   over an unfilled gap -- gaps may legitimately remain by design and are
   only logged.

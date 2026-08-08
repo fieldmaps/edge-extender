@@ -18,11 +18,11 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.clip import clip_to_parent
 from topo_tools.core.duckdb_utils import get_connection, log_file
 from topo_tools.core.extend import _02_lines as lines
 from topo_tools.core.extend import _05_merge as merge
 from topo_tools.core.extend import attempt
-from topo_tools.core.match._clip import clip_to_parent_geom
 
 logger = getLogger(__name__)
 
@@ -186,8 +186,11 @@ def _group_worker(
             attempt.main(conn, "group", debug=debug)
             merge.main(conn, "group", debug=debug)  # -> "group_05"
 
-            clip_to_parent_geom(
-                conn, "group_05", group_dir / "parent.parquet", "group_clip"
+            clip_to_parent(
+                conn,
+                "group_05",
+                f"read_parquet('{group_dir / 'parent.parquet'}')",
+                "group_clip",
             )
 
             conn.execute(f"""--sql
