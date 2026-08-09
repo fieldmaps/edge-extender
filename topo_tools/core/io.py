@@ -11,12 +11,7 @@ logger = getLogger(__name__)
 
 
 def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path) -> None:
-    """Read geodata and reproject to EPSG:4326, storing the canonical `{name}_01` table.
-
-    Used directly by core.clean (which needs the *raw* input, uncleaned) and
-    indirectly by extend's own inputs stage, which follows it with a
-    conditional coverage-clean pass.
-    """
+    """Read geodata, reproject to EPSG:4326, store as canonical table `{name}_01`."""
     read_expr = (
         f"SELECT * FROM '{path}'"
         if path.suffix == ".parquet"
@@ -72,12 +67,7 @@ def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path) -> None:
 def export_geometry_table(
     conn: DuckDBPyConnection, table: str, dest: Path, *, exclude_fid: bool = True
 ) -> None:
-    """Export a geometry table to dest, renaming `geom` to `geometry` for output.
-
-    Shared by every outputs stage (extend/match/clean/change) -- exclude_fid
-    drops the internal row-numbering `fid` column for a tool's own polygon
-    output; issues/overlay tables that never had one pass exclude_fid=False.
-    """
+    """Export a geometry table to dest, renaming `geom` to `geometry` for output."""
     dest.parent.mkdir(exist_ok=True, parents=True)
     select = "* EXCLUDE (fid)" if exclude_fid else "*"
     conn.execute(f"""--sql

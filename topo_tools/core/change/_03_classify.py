@@ -1,9 +1,6 @@
 """Classifies old/new polygon pairs into relationship classes.
 
-Ported from topo-tools-js's polygon-changelog/pipeline/classify.ts, run in
-Python rather than SQL -- union-find and cardinality classification scale
-with feature count, not vertex count, so an in-memory pass is safe under
-this repo's memory model even for a large admin layer.
+Ported from topo-tools-js's polygon-changelog/pipeline/classify.ts.
 """
 
 from dataclasses import dataclass
@@ -32,12 +29,7 @@ class _Pair:
 
 
 def _unique_values(rows: list[tuple], col_idx: int) -> set[str]:
-    """Values appearing exactly once in rows[:, col_idx] -- excludes duplicates.
-
-    Duplicate values (e.g. a shared "No_Pcode" placeholder) can't reliably
-    identify a single unit; matching on them would union every polygon
-    sharing that value into one cluster.
-    """
+    """Values appearing exactly once in rows[:, col_idx] -- excludes duplicates."""
     counts: dict[str, int] = {}
     for row in rows:
         v = row[col_idx]
@@ -57,11 +49,7 @@ def _identity_match(  # noqa: PLR0913 -- each param is a distinct required input
     unique_names_a: set[str],
     unique_names_b: set[str],
 ) -> bool:
-    """Return True if pair's code and/or name match across versions, per link settings.
-
-    A value only qualifies when it is unique on each side. NULL-safe: a NULL
-    code/name on either side never counts as a match.
-    """
+    """Return True if pair's code/name match across versions, per link settings."""
     if not link_by_code and not link_by_name:
         return False
     code_match = (

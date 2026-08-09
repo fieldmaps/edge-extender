@@ -66,10 +66,7 @@ def clean(  # noqa: C901, PLR0913
 ) -> None:
     """Detect and fix gap/overlap defects in a single polygon layer.
 
-    Processes exactly one file per call. Always writes two files: the
-    cleaned dataset (output_path, "_cleaned" suffix if omitted) and an
-    issues report (issues_path, "_issues" suffix if omitted) so a human can
-    review any gaps left unfilled before deciding what to do with them.
+    Processes exactly one file per call.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"

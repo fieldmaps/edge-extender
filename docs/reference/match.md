@@ -27,10 +27,8 @@ tools.
   of exactly one child.
 - For each group, `match` MUST extend that group's children alone
   (boundary extraction, point/Voronoi generation, merging -- see
-  `docs/reference/extend.md`), then clip the result to that group's own parent
-  polygon.
-- A feature whose clipped result is empty MUST be dropped from that
-  group's output.
+  `docs/reference/extend.md`). Clipping to the group's parent happens later,
+  batched across all groups (see Clipping below), not inside this step.
 - Each group's extension MUST run in an isolated process, separate from
   every other group and from `match`'s own process.
 - A group whose extension fails MUST be dropped from the output, not
@@ -40,11 +38,21 @@ tools.
   child belonging to a failed group MUST be recorded in the issues report
   described under Outputs.
 
-## Merging
+## Clipping
 
-- `match` MUST run one whole-layer coverage-clean pass over the
-  reassembled output, using the same fixed gap-closing width as `extend`'s
-  own merge stage (see `docs/reference/extend.md`), not a per-feature-scoped pass.
+- `match` MUST clip every group's reassembled, extended output to its own
+  `parent_fid`'s geometry, per `docs/reference/clip.md`, one distinct
+  `parent_fid` at a time, each in its own spawned OS subprocess.
+- Unlike a failed group's extension, `match` MUST raise immediately if any
+  `parent_fid`'s clip subprocess fails, aborting the whole run rather than
+  dropping just that group.
+
+## Stitching
+
+- `match` MUST run one whole-layer coverage-clean pass over the clipped
+  output, per `docs/reference/stitch.md`, using the same fixed gap-closing
+  width as `extend`'s own merge stage (see `docs/reference/extend.md`), not
+  a per-feature-scoped pass.
 
 ## Outputs
 
@@ -71,5 +79,5 @@ tools.
   `_issues` suffix.
 - `match` MUST raise `FileExistsError` if either output path already
   exists and overwriting wasn't requested.
-- `step`, if given, MUST be one of `inputs`, `assign`, `groups`, `merge`,
-  `outputs`; any other value MUST raise `ValueError`.
+- `step`, if given, MUST be one of `inputs`, `assign`, `groups`, `clip`,
+  `stitch`, `outputs`; any other value MUST raise `ValueError`.

@@ -33,7 +33,7 @@ _PARENT_WKT = [
 
 _PARENT_A_AREA = 9.0
 
-_STEPS = ["inputs", "assign", "clip", "merge", "outputs"]
+_STEPS = ["inputs", "assign", "clip", "stitch", "outputs"]
 
 
 def _write_synthetic(path, wkt_rows):

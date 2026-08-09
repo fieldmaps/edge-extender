@@ -59,17 +59,8 @@ def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input,
 ) -> None:
     """Write table_out from table_in with ST_CoverageClean applied to a subset (or all).
 
-    ``fids=None`` runs the clean over the entire table. ``gap_maximum_width``
-    and ``snapping_distance`` are passed positionally, both defaulting to
-    GEOS's own ``-1`` sentinel when ``None`` -- named args (`:=`) bind by
-    position, not name, for compiled scalar functions (duckdb/duckdb#24574).
-
-    Mapping back to source rows: ST_CoverageClean returns a GeometryCollection
-    whose i-th element corresponds to input i. ST_Dump recursively unnests
-    sub-polygons of MultiPolygon elements, so we group by ``path[1]`` (the
-    top-level index) and re-aggregate. A group of size 1 keeps the original
-    Polygon type; a group of size >1 (MultiPolygon input/output) is re-wrapped
-    via ST_Collect.
+    ST_CoverageClean returns a GeometryCollection whose i-th element
+    corresponds to input i, so rows are mapped back via ST_Dump's path[1].
     """
     where = "" if fids is None else f"WHERE fid IN ({','.join(str(f) for f in fids)})"
     snap_arg = -1 if snapping_distance is None else snapping_distance

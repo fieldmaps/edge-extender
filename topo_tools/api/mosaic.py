@@ -3,26 +3,26 @@
 from logging import getLogger
 from pathlib import Path
 
+from topo_tools.core.assign import _02_one as assign
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
     resolve_tmp_dir,
 )
 from topo_tools.core.mosaic import _01_inputs as inputs
-from topo_tools.core.mosaic import _02_assign as assign
 from topo_tools.core.mosaic import _03_clip as clip
-from topo_tools.core.mosaic import _04_merge as merge
+from topo_tools.core.mosaic import _04_stitch as stitch
 from topo_tools.core.mosaic import _05_outputs as outputs
 
 logger = getLogger(__name__)
 
-_STEP_ORDER = ["inputs", "assign", "clip", "merge", "outputs"]
+_STEP_ORDER = ["inputs", "assign", "clip", "stitch", "outputs"]
 
 _STEP_TABLES = {
     "inputs": ["{n}_child_01", "{n}_parent_01"],
     "assign": ["{n}_02_pairs", "{n}_02_assign", "{n}_02_unassigned"],
     "clip": ["{n}_03"],
-    "merge": ["{n}_04"],
+    "stitch": ["{n}_04"],
     "outputs": [],
 }
 
@@ -101,8 +101,8 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
                 assign.main(conn, name)
             elif s == "clip":
                 clip.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
-            elif s == "merge":
-                merge.main(conn, name, debug=debug)
+            elif s == "stitch":
+                stitch.main(conn, name, debug=debug)
             elif s == "outputs":
                 outputs.main(conn, name, output_path, issues_path, debug=debug)
         maybe_export_debug_tables(

@@ -79,18 +79,16 @@ source_modules = ["topo_tools.core.extend"]
 forbidden_modules = ["topo_tools.core.change"]
 
 [[tool.importlinter.contracts]]
-id = "mosaic-may-use-extend-not-reverse"
-name = "mosaic may depend on extend; extend must not depend on mosaic"
-type = "forbidden"
-source_modules = ["topo_tools.core.extend"]
-forbidden_modules = ["topo_tools.core.mosaic"]
+id = "mosaic-independent-of-extend"
+name = "mosaic and extend must not depend on each other"
+type = "independence"
+modules = ["topo_tools.core.mosaic", "topo_tools.core.extend"]
 
 [[tool.importlinter.contracts]]
-id = "mosaic-may-use-match-not-reverse"
-name = "mosaic may depend on match; match must not depend on mosaic"
-type = "forbidden"
-source_modules = ["topo_tools.core.match"]
-forbidden_modules = ["topo_tools.core.mosaic"]
+id = "mosaic-independent-of-match"
+name = "mosaic and match must not depend on each other"
+type = "independence"
+modules = ["topo_tools.core.mosaic", "topo_tools.core.match"]
 
 [[tool.importlinter.contracts]]
 id = "core-constants-is-leaf"
@@ -145,10 +143,36 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "core-assign-is-leaf"
+name = "core.assign must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.assign"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+    "topo_tools.core.mosaic",
+]
+
+[[tool.importlinter.contracts]]
 id = "core-clip-is-leaf"
 name = "core.clip must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.clip"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+    "topo_tools.core.mosaic",
+]
+
+[[tool.importlinter.contracts]]
+id = "core-stitch-is-leaf"
+name = "core.stitch must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.stitch"]
 forbidden_modules = [
     "topo_tools.core.extend",
     "topo_tools.core.match",

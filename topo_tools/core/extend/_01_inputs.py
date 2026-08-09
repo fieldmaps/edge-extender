@@ -12,16 +12,7 @@ logger = getLogger(__name__)
 
 
 def main(conn: DuckDBPyConnection, name: str, path: Path) -> None:
-    """Import geodata into DuckDB tables, then clean coverage topology violations.
-
-    ST_CoverageInvalidEdges_Agg gates whether ST_CoverageClean runs at all —
-    no-op when the input coverage has no invalid edges. Otherwise every
-    polygon's coordinates may shift, not just the violating ones. Does not
-    distinguish real holes from digitization slivers: inputs are expected to
-    be pre-cleaned upstream, and any narrow gap that slips through is treated
-    the same as a real hole (lake, enclave) — both are legitimate work for
-    the Voronoi-extension stage to divide across bordering polygons.
-    """
+    """Import geodata into DuckDB tables, then clean coverage topology violations."""
     read_and_reproject(conn, name, path)
 
     if has_coverage_violations(conn, f"{name}_01"):

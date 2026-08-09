@@ -6,10 +6,11 @@ tools.
 
 ## Inputs
 
-- `mosaic` MUST load and coverage-clean the child layer and the parent/clip
-  layer, the same way `extend`'s own inputs stage does (see
-  `docs/reference/extend.md`). The child layer is expected to already be a
-  finished `extend()` output, but `mosaic` does not verify this.
+- `mosaic` MUST load the child layer and the parent/clip layer raw,
+  unlike `extend`'s own inputs stage: neither is coverage-checked or
+  -cleaned before assign/clip. The child layer is expected to already be a
+  finished `extend()` output, but `mosaic` does not verify this (see
+  `docs/explanation/mosaic.md`).
 - Unlike every other tool here, the child role MAY span multiple files
   (e.g. one `extend()` output per country), combined internally. The
   parent/clip layer MUST remain a single file.
@@ -50,11 +51,12 @@ tools.
 - A child whose clipped result is empty MUST be dropped from the output.
 - `mosaic` MUST raise if zero children were ever assigned to any parent.
 
-## Merging
+## Stitching
 
 - `mosaic` MUST run one whole-layer coverage-clean pass over the clipped
-  output, using the same fixed gap-closing width as `extend`'s own merge
-  stage (see `docs/reference/extend.md`), not a per-feature-scoped pass.
+  output, per `docs/reference/stitch.md`, using the same fixed gap-closing
+  width as `extend`'s own merge stage (see `docs/reference/extend.md`), not
+  a per-feature-scoped pass.
 
 ## Outputs
 
@@ -81,5 +83,5 @@ tools.
   output path with an `_issues` suffix.
 - `mosaic` MUST raise `FileExistsError` if either output path already
   exists and overwriting wasn't requested.
-- `step`, if given, MUST be one of `inputs`, `assign`, `clip`, `merge`,
+- `step`, if given, MUST be one of `inputs`, `assign`, `clip`, `stitch`,
   `outputs`; any other value MUST raise `ValueError`.

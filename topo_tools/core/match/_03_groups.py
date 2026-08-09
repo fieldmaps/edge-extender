@@ -1,13 +1,8 @@
 """Runs extend's pipeline once per parent group, in an isolated subprocess.
 
-Each group's lines/attempt/merge run in a fresh, spawned OS process, not the
-parent's shared connection -- CLAUDE.md documents a real, previously-confirmed
-finding that GEOS's native heap isn't fully released between files even after
-closing the DuckDB connection, which is exactly why extend() processes one
-file per OS process today. A many-parent-group match() run would otherwise
-hit the same failure mode in-process, just with groups substituting for
-files. Data crosses the process boundary as small Parquet files, never a
-shared connection (DuckDB files are single-writer).
+Data crosses the process boundary as small Parquet files, never a shared
+connection (DuckDB files are single-writer). Clipping to each group's
+parent happens later, batched, in `_04_clip.py` -- not here.
 """
 
 import contextlib
@@ -18,7 +13,6 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.clip import clip_to_parent
 from topo_tools.core.duckdb_utils import get_connection, log_file
 from topo_tools.core.extend import _02_lines as lines
 from topo_tools.core.extend import _05_merge as merge
@@ -67,10 +61,6 @@ def main(
                 )
             ) TO '{group_dir / "child.parquet"}' (FORMAT PARQUET)
         """)
-        conn.execute(f"""--sql
-            COPY (SELECT geom FROM "{name}_parent_01" WHERE fid = {parent_fid})
-            TO '{group_dir / "parent.parquet"}' (FORMAT PARQUET)
-        """)
 
         result_queue = ctx.Queue()
         process = ctx.Process(
@@ -110,7 +100,7 @@ def main(
             _record_dropped_group(conn, name, parent_fid, reason)
             continue
 
-        _append_to_reassembly(conn, name, output_path)
+        _append_to_reassembly(conn, name, parent_fid, output_path)
 
         if not debug:
             shutil.rmtree(group_dir, ignore_errors=True)
@@ -124,18 +114,27 @@ def main(
 
 
 def _append_to_reassembly(
-    conn: DuckDBPyConnection, name: str, output_path: Path
+    conn: DuckDBPyConnection, name: str, parent_fid: int, output_path: Path
 ) -> None:
     exists = conn.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [f"{name}_03a"]
     ).fetchone()
+    # Parquet round-trips an untagged geom column as 'OGC:CRS84', which
+    # core.clip's subprocess output (explicitly tagged 'EPSG:4326') then
+    # can't INSERT INTO without a matching tag on this table's own schema.
     if exists is None:
         conn.execute(f"""--sql
-            CREATE TABLE "{name}_03a" AS SELECT * FROM read_parquet('{output_path}')
+            CREATE TABLE "{name}_03a" AS
+            SELECT * EXCLUDE (geom), ST_SetCRS(geom, 'EPSG:4326') AS geom,
+                   {parent_fid} AS parent_fid
+            FROM read_parquet('{output_path}')
         """)
     else:
         conn.execute(f"""--sql
-            INSERT INTO "{name}_03a" SELECT * FROM read_parquet('{output_path}')
+            INSERT INTO "{name}_03a" BY NAME
+            SELECT * EXCLUDE (geom), ST_SetCRS(geom, 'EPSG:4326') AS geom,
+                   {parent_fid} AS parent_fid
+            FROM read_parquet('{output_path}')
         """)
 
 
@@ -164,11 +163,8 @@ def _group_worker(
 ) -> None:
     """Child-process entry point; must stay module-level for spawn picklability.
 
-    A freshly-spawned process has no logging config of its own -- basicConfig
-    only ever runs in cli/main.py, in the parent -- so under --debug this sets
-    it up locally (mirroring cli/main.py's own call) and tees to a per-group
-    log file, otherwise ProfiledConnection's per-query timing/RSS output would
-    be silently dropped instead of landing anywhere inspectable.
+    A freshly-spawned process has no logging config of its own, so under
+    --debug this sets it up locally and tees to a per-group log file.
     """
     if debug:
         basicConfig(
@@ -186,15 +182,8 @@ def _group_worker(
             attempt.main(conn, "group", debug=debug)
             merge.main(conn, "group", debug=debug)  # -> "group_05"
 
-            clip_to_parent(
-                conn,
-                "group_05",
-                f"read_parquet('{group_dir / 'parent.parquet'}')",
-                "group_clip",
-            )
-
             conn.execute(f"""--sql
-                COPY (SELECT * FROM "group_clip")
+                COPY (SELECT * FROM "group_05")
                 TO '{group_dir / "output.parquet"}' (FORMAT PARQUET)
             """)
             conn.close()

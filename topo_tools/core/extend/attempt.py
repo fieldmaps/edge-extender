@@ -14,19 +14,7 @@ logger = getLogger(__name__)
 
 
 def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
-    """Try to generate Voronoi polygons with multiple distance thresholds.
-
-    The starting distance is derived per-file rather than always using
-    DEFAULT_DISTANCE: effective_distance = MIN(DEFAULT_DISTANCE, natural_res).
-    natural_res (the median real segment length) lets files with genuinely
-    finer source detail than DEFAULT_DISTANCE start there instead of losing
-    that detail to a coarser default. This can't affect files whose segments
-    are pathologically long — MAX_POINTS_PER_SEGMENT caps those
-    independently.
-
-    If the effective distance still fails or produces too many points, repeat
-    by doubling it up to 10 times.
-    """
+    """Try to generate Voronoi polygons, doubling the distance threshold on failure."""
     points.build_segments(conn, name)
     natural_res = conn.execute(f"""--sql
         SELECT median(seg_len) FROM "{name}_03_tmp1"

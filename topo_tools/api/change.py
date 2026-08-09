@@ -73,13 +73,7 @@ def change(  # noqa: C901, PLR0912, PLR0913
 ) -> None:
     """Compare two polygon layer versions and classify every unit's relationship.
 
-    Processes exactly one old file + one new file per call. Classifies each
-    unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
-    removed, using spatial overlap (tau_match/tau_same) and, optionally,
-    code/name identity linking. Always writes two files: a tabular changelog
-    (output_path, CSV/Parquet, "_changelog" suffix if omitted) and a spatial
-    overlay layer colored by relationship_class (overlay_path, "_overlay"
-    suffix if omitted).
+    Processes exactly one old file + one new file per call.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"

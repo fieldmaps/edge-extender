@@ -14,13 +14,7 @@ logger = getLogger(__name__)
 
 
 def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
-    """Extend `{name}_02` with what actually happened to each issue during the fix.
-
-    Detection rows only describe the defect as found; this adds the
-    measured outcome -- each named unit's own real area change for an
-    overlap row, how much of the gap's own area ended up covered for a gap
-    row -- in the same square-meters units as `area_m2`.
-    """
+    """Extend `{name}_02` with what actually happened to each issue during the fix."""
     m2_per_deg2 = m2_per_deg2_factor(conn, f"{name}_01")
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02" AS
@@ -46,12 +40,7 @@ def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
 
 
 def _warn_on_unfilled_gaps(conn: DuckDBPyConnection, name: str) -> None:
-    """Log (never raise) how many detected gaps remain uncovered by `{name}_03`.
-
-    Never a failure condition -- clean can legitimately leave gaps unfilled
-    by design. Short-circuits on no gap rows since the union below is
-    expensive and DuckDB won't skip it just because the join is empty.
-    """
+    """Log (never raise) how many detected gaps remain uncovered by `{name}_03`."""
     has_gaps = conn.execute(f"""--sql
         SELECT EXISTS (SELECT 1 FROM "{name}_02" WHERE kind = 'gap')
     """).fetchall()[0][0]

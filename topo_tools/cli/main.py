@@ -6,11 +6,15 @@ from pathlib import Path
 
 import click
 
+from topo_tools.api import assign_many as _assign_many
+from topo_tools.api import assign_one as _assign_one
 from topo_tools.api import change as _change
 from topo_tools.api import clean as _clean
+from topo_tools.api import clip as _clip
 from topo_tools.api import extend as _extend
 from topo_tools.api import match as _match
 from topo_tools.api import mosaic as _mosaic
+from topo_tools.api import stitch as _stitch
 from topo_tools.core.change._constants import TAU_MATCH_DEFAULT, TAU_SAME_DEFAULT
 
 basicConfig(level=INFO, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -391,7 +395,7 @@ def change(  # noqa: PLR0913, PLR0917
 @click.option(
     "--step",
     envvar="STEP",
-    type=click.Choice(["inputs", "assign", "groups", "merge", "outputs"]),
+    type=click.Choice(["inputs", "assign", "groups", "clip", "stitch", "outputs"]),
     default=None,
     help="Run only one named stage.",
 )
@@ -467,7 +471,7 @@ def match(  # noqa: PLR0913, PLR0917
 @click.option(
     "--step",
     envvar="STEP",
-    type=click.Choice(["inputs", "assign", "clip", "merge", "outputs"]),
+    type=click.Choice(["inputs", "assign", "clip", "stitch", "outputs"]),
     default=None,
     help="Run only one named stage.",
 )
@@ -511,6 +515,321 @@ def mosaic(  # noqa: PLR0913, PLR0917
             Path(clip_file),
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command()
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "clean", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def stitch(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    output_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Close seams in an already-tiled polygon layer via coverage-clean.
+
+    OUTPUT_FILE defaults to INPUT_FILE with a "_stitched" suffix if omitted.
+
+    \b
+    Examples:
+      # Basic run, output name chosen automatically
+      topo-tools stitch tiled.geojson
+
+      \b
+      # Explicit output
+      topo-tools stitch tiled.gpkg stitched.gpkg
+
+      \b
+      # Rerun and overwrite a previous output
+      topo-tools stitch tiled.parquet stitched.parquet --overwrite
+    """
+    logger.info("--debug=%s", debug)
+    try:
+        _stitch(
+            Path(input_file),
+            Path(output_file) if output_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command(name="assign-many")
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("clip_file", envvar="CLIP_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--issues-file",
+    envvar="ISSUES_FILE",
+    default=None,
+    help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
+)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "assign", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def assign_many(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    clip_file: str,
+    output_file: str | None,
+    issues_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Crosswalk each child to the parent it shares the largest area with.
+
+    Each child decides independently, so one file's children MAY scatter
+    across many different parents. Correct for raw/unextended geometry.
+    OUTPUT_FILE defaults to INPUT_FILE with an "_assigned" suffix if
+    omitted; it is required when INPUT_FILE is a glob matching more than
+    one file.
+
+    \b
+    Examples:
+      # Crosswalk one country's raw admin2 units to admin1 parents
+      topo-tools assign-many adm2.geojson adm1.geojson
+
+      \b
+      # Crosswalk every country's raw admin2 units to a world admin0 layer
+      topo-tools assign-many "*/latest/adm2.parquet" world_adm0.geojson out.parquet
+    """
+    logger.info("--debug=%s", debug)
+    if any(ch in input_file for ch in "*?["):
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 -- arbitrary pattern, not anchored to one Path
+        if not matches:
+            msg = f"no files matched: {input_file}"
+            raise click.ClickException(msg)
+        resolved_input: Path | list[Path] = [Path(p) for p in matches]
+    else:
+        resolved_input = Path(input_file)
+    try:
+        _assign_many(
+            resolved_input,
+            Path(clip_file),
+            Path(output_file) if output_file is not None else None,
+            Path(issues_file) if issues_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command(name="assign-one")
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("clip_file", envvar="CLIP_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--issues-file",
+    envvar="ISSUES_FILE",
+    default=None,
+    help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
+)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "assign", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def assign_one(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    clip_file: str,
+    output_file: str | None,
+    issues_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Crosswalk a multi-file child set onto one shared majority-vote parent.
+
+    Every child in one source file lands on one shared parent -- guards
+    against already-extended/overshoot geometry crossing borders.
+    OUTPUT_FILE defaults to INPUT_FILE with an "_assigned" suffix if
+    omitted; it is required when INPUT_FILE is a glob matching more than
+    one file.
+
+    \b
+    Examples:
+      # Crosswalk one country's already-extended admin2 layer to admin1 parents
+      topo-tools assign-one adm2_extended.geojson adm1.geojson
+
+      \b
+      # Crosswalk every country's pre-extended layer onto a world admin0
+      topo-tools assign-one "*/latest/adm2/extended.parquet" world.geojson out.parquet
+    """
+    logger.info("--debug=%s", debug)
+    if any(ch in input_file for ch in "*?["):
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 -- arbitrary pattern, not anchored to one Path
+        if not matches:
+            msg = f"no files matched: {input_file}"
+            raise click.ClickException(msg)
+        resolved_input: Path | list[Path] = [Path(p) for p in matches]
+    else:
+        resolved_input = Path(input_file)
+    try:
+        _assign_one(
+            resolved_input,
+            Path(clip_file),
+            Path(output_file) if output_file is not None else None,
+            Path(issues_file) if issues_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command()
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("clip_file", envvar="CLIP_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "clip", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def clip(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    clip_file: str,
+    output_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Clip each child to its own already-assigned parent's geometry.
+
+    INPUT_FILE MUST already carry a parent_fid column (e.g. assign-many's or
+    assign-one's own output). OUTPUT_FILE defaults to INPUT_FILE with a
+    "_clipped" suffix if omitted.
+
+    \b
+    Examples:
+      # Clip an assign-many crosswalk down to its parents
+      topo-tools clip children_assigned.parquet adm1.geojson
+
+      \b
+      # Explicit output
+      topo-tools clip children_assigned.parquet adm1.geojson clipped.parquet
+    """
+    logger.info("--debug=%s", debug)
+    try:
+        _clip(
+            Path(input_file),
+            Path(clip_file),
+            Path(output_file) if output_file is not None else None,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,

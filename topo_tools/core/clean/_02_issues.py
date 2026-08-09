@@ -1,16 +1,4 @@
-"""Detects gap and overlap defects in a single polygon layer.
-
-Detection only -- no geometry is modified here.
-
-- Gaps: fully-enclosed holes in the whole-table union only; open inlets
-  between non-enclosing polygons don't count.
-- Overlaps: bbox-prefiltered pairwise join, whole-fid bboxes. Skipped
-  entirely when `has_coverage_violations()` is already False.
-
-Gap rows carry a Polsby-Popper thinness_ratio (NULL on overlap rows), used
-by the clean stage's auto gap-fill mode. Each detection kind falls back to
-an empty result (logged) on failure instead of raising.
-"""
+"""Detects gap and overlap defects in a single polygon layer. Detection only."""
 
 from collections.abc import Callable
 from logging import getLogger
@@ -32,11 +20,7 @@ def _detect_or_empty(
     empty_sql: str,
     build: Callable[[DuckDBPyConnection, str], None],
 ) -> None:
-    """Call build(conn, source); on failure, log and run empty_sql instead.
-
-    Ensures the target table always exists, so a failed kind doesn't crash
-    main()'s UNION ALL with a missing table.
-    """
+    """Call build(conn, source); on failure, log and run empty_sql instead."""
     try:
         build(conn, source)
     except Exception as e:  # noqa: BLE001 -- GEOS topology failures surface as generic duckdb errors

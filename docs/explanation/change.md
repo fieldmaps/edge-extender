@@ -86,7 +86,7 @@ run (JS's UI-only accommodation for the fallback's lower precision).
 
 ## Overlap computation
 
-`_02_overlap.py` mirrors `core/match/_02_assign.py`'s proven pattern: both
+`_02_overlap.py` mirrors `core/assign/_02_many.py`'s proven pattern: both
 layers are exploded into parts (`UNNEST(ST_Dump(geom))`) before the join, so
 a multi-part fid (a country with offshore islands) doesn't get one bbox
 spanning everything and defeat the prefilter. The join uses scalar

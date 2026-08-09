@@ -2,7 +2,8 @@
 
 `match` fits a **child** polygon layer into a coarser **parent**/clip layer
 (e.g. admin4 into admin0), reusing `extend`'s Voronoi gap-filling pipeline
-under the hood. This doc covers the parts that are specific to `match`: the
+under the hood, then the same `assign`/`clip`/`stitch` primitives `mosaic`
+uses. This doc covers the parts that are specific to `match`: the
 overlap/assignment algorithm, the per-group subprocess design, and the
 constraints it inherits from `extend`. See `docs/explanation/topology.md` for the
 coverage-clean/`SPATIAL_JOIN` background both tools share.
@@ -28,7 +29,7 @@ match("admin4.geojson", "admin0.geojson", "admin4_matched.geojson")
 | `--threads` | DuckDB thread count. |
 | `--debug` | Keep intermediate tables, export to Parquet, log timing/memory per query. |
 | `--tmp-dir` | Intermediate DuckDB + Parquet location. |
-| `--step` | Run only one named stage: `inputs`, `assign`, `groups`, `merge`, `outputs`. |
+| `--step` | Run only one named stage: `inputs`, `assign`, `groups`, `clip`, `stitch`, `outputs`. |
 
 ```sh
 # Fit an admin4 layer into a single country boundary
@@ -48,56 +49,49 @@ Run `topo-tools match --help` for the full, always-current option list.
 
 1. **`_01_inputs`** — loads and coverage-cleans both layers by delegating
    twice to `extend`'s own loader (`{name}_child_01`, `{name}_parent_01`).
-2. **`_02_assign`** — assigns each child to the parent it shares the largest
-   area with (plurality, not majority); drops and logs children with zero
-   overlap with any parent, keeping their geometry for the issues report.
+2. **assign** — calls `core.assign._02_many.main()` directly: assigns each
+   child to the parent it shares the largest area with (plurality, not
+   majority); drops and logs children with zero overlap with any parent,
+   keeping their geometry for the issues report. See
+   `docs/explanation/assign.md` for the algorithm.
 3. **`_03_groups`** — groups children by their assigned parent (always, even
    a group of exactly one parent), runs `extend`'s pipeline within each group
-   in an isolated subprocess, clips each group's result to its own parent,
-   reassembles the survivors. A failed group's children are recorded, with
-   the parent id and failure reason, for the issues report.
-4. **`_04_merge`** — a single whole-table `ST_CoverageClean` pass over the
-   reassembled output to close cross-group seams.
-5. **`_05_outputs`** — validates topology, builds the issues report from the
+   in an isolated subprocess, then reassembles the survivors, tagging each
+   row with its group's own `parent_fid`. No clipping happens here anymore
+   (see "Two subprocess generations" below). A failed group's children are
+   recorded, with the parent id and failure reason, for the issues report.
+4. **`_04_clip`** — one batched call into `core.clip.main()` over the whole
+   reassembled table at once, clipping every row to its own `parent_fid`'s
+   geometry. See `docs/explanation/clip.md` for the algorithm.
+5. **`_05_stitch`** — calls `core.stitch._02_clean.main()` directly: a
+   single whole-table `ST_CoverageClean` pass over the clipped output to
+   close cross-group seams. See `docs/explanation/stitch.md`.
+6. **`_06_outputs`** — validates topology, builds the issues report from the
    dropped children collected in stages 2/3, and exports both the final
    layer and the issues report.
 
-## Largest-overlap assignment
+## Two subprocess generations: extend, then batched clip
 
-Ported from the sister JS app's `match` tool (`overlap.ts`/`assign.ts`), with
-the WASM-only workarounds (point-sampling overlap fallback, precision-retry
-clip) dropped — native DuckDB/GEOS doesn't need them.
+Before the `assign`/`clip`/`stitch` extraction, each group's subprocess ran
+`extend`'s pipeline *and* clipped to that group's parent in the same
+process. `core.clip` now always isolates per distinct `parent_fid` in its
+own spawned subprocess, uniformly for every caller, so `match` moved to two
+subprocess generations per run instead: a per-group `extend`-only
+subprocess (unchanged in count/shape from before), followed by a second,
+later generation of per-`parent_fid` clip subprocesses (`clip`'s own
+mechanism, batched over the whole reassembled table). See
+`docs/adr/0020-match-clip-two-subprocess-generations.md` for the empirical
+re-verification this required and its results.
 
-Both layers are exploded into parts (`UNNEST(ST_Dump(geom))`) before
-computing bbox candidates, exactly like `_05_merge.py`'s `_05_tmp1`: a
-multi-part parent (a country with offshore islands) would otherwise get one
-bbox spanning everything and defeat the prefilter. The join uses scalar
-`ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` predicates, not `ST_Within`/
-`ST_Intersects` in the `JOIN` condition — that triggers DuckDB's
-`SPATIAL_JOIN` operator and its ~1x-RAM virtual reservation (see
-`docs/explanation/topology.md`).
+One consequence: a single bad `parent_fid` in the `clip` step now aborts
+the whole run, rather than match's old per-group continue-past-failure
+behavior for clip failures specifically. Per-group `extend` failures (OOM,
+or exhausting `attempt.py`'s 10 retries) still continue, dropping just that
+group, as before -- only clip's own hard-fail-on-first-bad-`parent_fid`
+semantics are new, and apply uniformly to every `clip` caller including
+`match` (see `docs/explanation/clip.md`).
 
-Shared area per `(child, parent)` fid pair is summed across every part-pair
-(a multi-part child can overlap a multi-part parent in more than one place),
-ranked in an equal-area CRS (`EPSG:8857`, Equal Earth) rather than raw
-EPSG:4326 degree-area — only the intersection geometry is transformed, not
-the whole layer, to bound the cost. Plain degree-area would bias plurality
-assignment toward higher-latitude parents; verified DuckDB resolves the
-`EPSG:4326` → `EPSG:8857` transform offline (no network needed once the
-`spatial` extension itself is cached).
-
-```sql
-ROW_NUMBER() OVER (PARTITION BY child_fid ORDER BY shared_area DESC, parent_fid ASC)
-```
-
-picks the plurality parent per child; ties break on the lowest parent fid.
-Children with zero overlap with any parent are dropped with a logged
-warning (`match: dropping N unmatched child fid(s) with no parent overlap:
-[...]`), not an error — a real dataset (e.g. a national admin4 layer matched
-against a coarser admin0/admin2 clip layer with gaps of its own) can
-legitimately have children outside every parent's territory.
-
-## Per-group subprocess isolation
+## Per-group subprocess isolation (extend)
 
 Each group's `extend` pipeline (`_02_lines` → `attempt` → `_05_merge`) runs in
 its own fresh `multiprocessing` (`spawn` context) subprocess, not the parent
@@ -122,12 +116,9 @@ that a `GEOMETRY` column round-trips correctly through
 version — no `GEOPARQUET_VERSION` option is needed for this internal,
 DuckDB-to-DuckDB round trip.
 
-If a group's subprocess fails (OOM, or exhausts `attempt.py`'s 10 retries),
-`match()` logs an error naming that parent's fid and drops its children from
-the output, then continues with the remaining groups — consistent with the
-existing drop-unmatched-children-with-a-warning behavior, rather than
-aborting an entire multi-country/multi-region run over one bad group.
-`match()` raises only if **no** group produced any output at all.
+`match()` raises only if **no** group produced any output at all (see
+"Two subprocess generations" above for the separate, stricter clip-stage
+failure behavior).
 
 A freshly-spawned process has no logging configuration of its own
 (`basicConfig` only ever runs in `cli/main.py`, in the parent process) — the
@@ -146,42 +137,26 @@ coverage (see verification steps in the project's implementation history).
 `--debug`, Apple Silicon/10 logical cores): 31,880 children against 1,122
 parents, 1,120 of them with at least one assigned child (the other 2 parents
 had zero overlapping children — not a failure, no adm3 unit fell inside
-them). All 1,120 spawned subprocesses succeeded — zero dropped children,
-zero failed groups. Wall time 35m44s, peak RSS 5.26 GB (during the final
-whole-table `_04_merge` coverage-clean pass — this run predates `--memory-gb`'s
-removal, see `docs/explanation/voronoi-memory.md`; a real 5.26 GB peak against a
-supposed 4 GB target is exactly the kind of soft-target result that made the
-flag not worth keeping). Stage breakdown:
+them). All 1,120 groups and all 1,120 clip subprocesses succeeded — zero
+dropped children, zero failed groups. Wall time 38m23s, peak RSS 7.23 GB
+(see `docs/adr/0020` for the full before/after comparison against the
+pre-extraction fused-subprocess design). Stage breakdown:
 
 | Stage    | Wall time | Share |
 | -------- | --------- | ----- |
-| inputs   | 1m06s     | 3%    |
-| assign   | 57s       | 3%    |
-| groups   | 30m45s    | 86%   |
-| merge    | 53s       | 2%    |
-| outputs  | 2m02s     | 6%    |
+| inputs   | 59s       | 3%    |
+| assign   | 10s       | 0%    |
+| groups   | 29m24s    | 77%   |
+| clip     | 5m13s     | 14%   |
+| stitch   | 46s       | 2%    |
+| outputs  | 1m51s     | 4%    |
 
-`groups` dominates as expected (1,120 sequential subprocess spawns, ~1.65s/
-group average including Python/DuckDB startup, the per-group `extend`
-pipeline, and teardown) but shows no cliff or superlinear blowup relative to
-Burundi's 119-group run — per-group spawn overhead is not a bottleneck at
-this scale.
+`groups` still dominates as expected (1,120 sequential subprocess spawns,
+each running the per-group `extend` pipeline) but no longer accounts for
+the clip work it used to do inline -- that now shows up as its own `clip`
+stage, batched over all 1,120 parent fids after every group has finished.
 
-## `fids=None`: whole-table coverage-clean only
-
-`_04_merge.py` calls the shared `coverage_clean()` helper with `fids=None`
-(whole-table), matching `extend`'s own two callers (`_01_inputs.py`,
-`_05_merge.py`). **Do not scope this to a subset of fids for performance**,
-even though `coverage_clean()` technically accepts a `fids` list — per-fid
-violator scoping was deliberately removed from `extend`'s own merge stage
-once already because it reintroduced seam-gap bugs (see `docs/explanation/topology.md`).
-By construction, every point of the reassembled extent belongs to exactly
-one surviving child fid, so anything `ST_CoverageClean` finds to close here
-is seam noise at group-to-group boundaries, not a real feature to protect
--- but that noise is **not** float-precision scale (see below); it's a real
-geometric gap between two independently-computed Voronoi extensions.
-
-## Rejected: `ST_Snap` around `_clip.py`'s `ST_Intersection`
+## Rejected: `ST_Snap` around the clip step's `ST_Intersection`
 
 `_05_merge.py` snapping the Voronoi cell onto its neighbor union before
 `ST_Difference` (see `docs/explanation/topology.md`) measurably reduces how many
@@ -189,11 +164,12 @@ untouched fids the final whole-table `ST_CoverageClean` pass has to touch,
 because many *independent* per-fid `ST_Difference` calls against
 *independently computed* neighbor unions invent slightly different
 floating-point crossing points for what should be the same vertex. Two
-variants of the same idea were tried in `_clip.py`, on the theory that a
-shared, exact parent boundary (parent layer is itself coverage-cleaned in
-`_01_inputs.py`, so two adjacent parents' shared edge is vertex-identical)
-should let two independently-clipped groups tile seamlessly if their output
-vertices land on that same exact reference:
+variants of the same idea were tried in what was then `match`'s own inline
+clip step (now `core.clip`), on the theory that a shared, exact parent
+boundary (parent layer is itself coverage-cleaned in `_01_inputs.py`, so two
+adjacent parents' shared edge is vertex-identical) should let two
+independently-clipped groups tile seamlessly if their output vertices land
+on that same exact reference:
 
 1. Snap each group's pre-clip geometry onto the parent's vertices, *before*
    `ST_Intersection(t.geom, p.geom)`.
@@ -206,14 +182,14 @@ Tested both on Burundi, Sri Lanka, Malawi, Senegal, Haiti, Guatemala, and
 Chile (admin2-into-admin1 for the first six, admin3-into-admin2 for Chile):
 **zero measurable difference**, either direction, on every metric checked
 (pre-clean invalid-edge flag, count of fids the clean pass actually
-touches, `_04_merge` peak RSS, wall time) -- identical or noise-level
+touches, whole-table clean peak RSS, wall time) -- identical or noise-level
 (<10%, no consistent direction) on all seven files, including Chile's
 56-group stress test (213/213 fids touched both ways, ~2550 MB peak all
 three variants).
 
 Root cause, found by extracting the actual invalid-edge geometries on
 Burundi (`ST_CoverageInvalidEdges_Agg`, unnested, joined back to nearby
-fids): all 171 invalid edges border exactly the fid pairs `_02_assign`
+fids): all 171 invalid edges border exactly the fid pairs the assign step
 places in two *different* parent groups, confirming these are genuinely
 cross-group seams -- but their lengths run from slivers up to **0.0058°
 (~645 m)**, averaging **~12 m**. `SNAP_TOLERANCE` is `1e-8°` (~1.1 mm),
@@ -224,19 +200,19 @@ extensions -- built independently, with no knowledge of each other --
 genuinely disagreeing about how far to reach near their shared parent
 border. No vertex-snapping tolerance in a sane range closes a
 meters-to-hundreds-of-meters gap; that's real gap-filling work, which is
-exactly what the whole-table `ST_CoverageClean` pass in `_04_merge.py`
-is for. Reverted both variants; `_clip.py` stays a plain
-`ST_Intersection`.
+exactly what `stitch`'s whole-table `ST_CoverageClean` pass is for (see
+`docs/explanation/stitch.md`). Reverted both variants; the clip step stays
+a plain `ST_Intersection`.
 
 ## `check_gaps` and parent-layer gaps
 
-`_05_outputs.py` reuses `check_overlaps`/`check_gaps` from the shared
-`topo_tools/core/coverage.py` unmodified, on the final `{name}_04` table. This cannot distinguish a gap `match`'s own clip
-step introduced from a gap the parent/clip layer already had between two
-different parents' territories (e.g. a world ADM0 layer with disputed or
-unclaimed areas). This is intentional: a gap here is a real signal that the
-clip layer itself needs `extend` treatment first, not something `match`
-should silently paper over.
+`_06_outputs.py` reuses `check_overlaps`/`check_gaps` from the shared
+`topo_tools/core/coverage.py` unmodified, on the final `{name}_05` table.
+This cannot distinguish a gap `match`'s own clip step introduced from a gap
+the parent/clip layer already had between two different parents' territories
+(e.g. a world ADM0 layer with disputed or unclaimed areas). This is
+intentional: a gap here is a real signal that the clip layer itself needs
+`extend` treatment first, not something `match` should silently paper over.
 
 ## Debug tables
 
@@ -248,4 +224,6 @@ aren't known ahead of time, so there's no static table list to filter to for
 that step. Per-group internal detail (the group's own `group.duckdb`,
 `group.log`, `child.parquet`, `parent.parquet`, `output.parquet`) is
 preserved under `{tmp_dir}/{name}_g{parent_fid}/` when `--debug` is set,
-inspectable independently of the main connection's exports.
+inspectable independently of the main connection's exports. `--step=clip
+--debug` similarly preserves each `parent_fid`'s own
+`{tmp_dir}/{name}_04_p{parent_fid}/` directory.

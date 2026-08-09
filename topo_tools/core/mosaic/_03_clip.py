@@ -4,7 +4,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.clip import clip_to_parent
+from topo_tools.core.clip import main as clip_main
 
 
 def main(
@@ -16,16 +16,24 @@ def main(
     debug: bool = False,
 ) -> None:
     """Clip every assigned child to its parent's geometry, isolated per parent fid."""
-    clip_to_parent(
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{name}_02_clip_in" AS
+        SELECT c.*, a.parent_fid
+        FROM "{name}_child_01" c
+        JOIN "{name}_02_assign" a ON a.child_fid = c.fid
+    """)
+    clip_main(
         conn,
-        f"{name}_child_01",
+        f"{name}_02_clip_in",
         f'"{name}_parent_01"',
         f"{name}_03",
-        assign_table=f"{name}_02_assign",
-        tmp_dir=tmp_dir,
+        tmp_dir,
         threads=threads,
         debug=debug,
     )
+    if not debug:
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_clip_in"')
+
     count = conn.execute(f'SELECT COUNT(*) FROM "{name}_03"').fetchone()[0]
     if count == 0:
         msg = f"mosaic: no child was assigned to any parent for {name}"

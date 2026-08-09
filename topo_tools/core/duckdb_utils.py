@@ -26,12 +26,7 @@ _MEM_Q = "SELECT COALESCE(SUM(memory_usage_bytes), 0) FROM duckdb_memory()"
 
 
 class ProfiledConnection:
-    """Proxy around DuckDBPyConnection; logs RSS peak and duckdb delta per execute().
-
-    RSS peak is the primary metric for Docker/WASM sizing — it captures GEOS working
-    memory (ST_VoronoiDiagram, ST_Node, ST_Polygonize) that duckdb_memory() misses.
-    duckdb delta/total are shown as secondary context for table accumulation.
-    """
+    """Proxy around DuckDBPyConnection; logs RSS peak and duckdb delta per execute()."""
 
     def __init__(self, conn: DuckDBPyConnection, *, debug: bool = False) -> None:  # noqa: D107
         self._conn = conn
@@ -179,11 +174,7 @@ def resolve_tmp_dir(
 ) -> Iterator[Path]:
     """Resolve tmp_dir to a Path, owning a fresh mkdtemp() (and its cleanup) if unset.
 
-    Mirrors every api/*.py entrypoint's tmp_dir lifecycle: a caller-supplied
-    tmp_dir is left untouched on exit; an omitted one gets a private
-    tempfile.mkdtemp() that's removed on a clean exit (preserved under
-    --debug) but deliberately left in place if the run raises, for
-    post-mortem inspection.
+    Left in place if the run raises, for post-mortem inspection.
     """
     owns_tmp_dir = tmp_dir is None
     path = (
@@ -209,14 +200,7 @@ def pipeline_connection(
     debug: bool = False,
     step: str | None = None,
 ) -> Iterator[ProfiledConnection]:
-    """Set up logging, a DuckDB connection, and SIGINT handling for one pipeline run.
-
-    Purges stale same-name tmp tables/files before a full (non-`--step`) run,
-    tees the root logger to a per-run log file, installs a SIGINT handler
-    that interrupts the in-flight query instead of hanging, and always closes
-    the connection (dropping its tmp tables on a full run) on the way out --
-    the shared shutdown contract every api/*.py entrypoint needs.
-    """
+    """Set up logging, a DuckDB connection, and SIGINT handling for one pipeline run."""
     if not step:
         cleanup_tmp(name, tmp_dir, parquet=True)
 

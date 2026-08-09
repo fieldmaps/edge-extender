@@ -12,21 +12,8 @@ from ._constants import MAX_POINTS_PER_SEGMENT
 def build_segments(conn: DuckDBPyConnection, name: str) -> None:
     """Decompose each real boundary line into its own real vertex-to-vertex segments.
 
-    No geometry alteration — every downstream point stays exactly on the
-    true digitized boundary. Independent of DISTANCE, so callers can build
-    this once and reuse it across attempt.py's retry loop instead of
-    recomputing it on every attempt.
-
-    Vertices are extracted once via ST_Points/ST_Dump (path-ordered) and
-    paired with LAG() rather than repeated ST_PointN(geom, i) calls:
-    ST_PointN re-walks the geometry from its start on every call, which OOMs
-    almost instantly on a large line (confirmed on a synthetic 500K-vertex
-    line) — an O(n^2) blowup that would hit Chile-scale _02 rows hard. The
-    window function is O(n log n). lid (per-_02-row, not fid) is required for
-    PARTITION BY: a single fid can have multiple disjoint _02 line pieces
-    (e.g. a multipolygon exterior), and partitioning by fid alone would
-    wrongly stitch the last vertex of one piece to the first vertex of the
-    next.
+    Independent of DISTANCE, so callers can build this once and reuse it
+    across attempt.py's retry loop instead of recomputing it on every attempt.
     """
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_03_tmp1" AS

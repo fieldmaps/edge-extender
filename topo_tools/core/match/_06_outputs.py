@@ -9,9 +9,9 @@ from topo_tools.core.io import export_geometry_table
 
 
 def _build_issues(conn: DuckDBPyConnection, name: str) -> None:
-    """Build `{name}_05`: every unassigned child plus every dropped-group child."""
+    """Build `{name}_06`: every unassigned child plus every dropped-group child."""
     conn.execute(f"""--sql
-        CREATE OR REPLACE TABLE "{name}_05" AS
+        CREATE OR REPLACE TABLE "{name}_06" AS
         SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
                child_fid, NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason, geom
         FROM "{name}_02_unassigned"
@@ -30,21 +30,14 @@ def main(
     *,
     debug: bool = False,
 ) -> None:
-    """Output the matched layer + issues report to dest/issues_dest.
-
-    check_gaps can't distinguish a gap match's clip introduced from a gap the
-    parent/clip layer already had between two different parents' territories
-    (e.g. a world ADM0 layer with disputed/unclaimed areas) -- ship as-is:
-    a gap here is a real signal the clip layer itself needs extend treatment
-    first, not something match should silently paper over.
-    """
-    check_overlaps(conn, f"{name}_04")
-    check_gaps(conn, f"{name}_04")
+    """Output the matched layer + issues report to dest/issues_dest."""
+    check_overlaps(conn, f"{name}_05")
+    check_gaps(conn, f"{name}_05")
 
     _build_issues(conn, name)
 
-    export_geometry_table(conn, f"{name}_04", dest)
-    export_geometry_table(conn, f"{name}_05", issues_dest, exclude_fid=False)
+    export_geometry_table(conn, f"{name}_05", dest)
+    export_geometry_table(conn, f"{name}_06", issues_dest, exclude_fid=False)
 
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
@@ -53,5 +46,5 @@ def main(
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_assign"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_unassigned"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03b"')
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_04"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_05"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_06"')

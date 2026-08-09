@@ -13,12 +13,9 @@ logger = getLogger(__name__)
 def main(conn: DuckDBPyConnection, name: str) -> None:
     """Assign each child to its plurality-overlap parent; drop and log the rest.
 
-    Bbox-prefiltered self-join across the two layers, not ST_Within/
-    ST_Intersects in the JOIN condition -- that triggers DuckDB's SPATIAL_JOIN
-    operator and its ~1x-RAM virtual reservation. Both layers are exploded
-    into parts first so a multi-part parent (e.g. a country with offshore
-    islands) doesn't get one whole-fid bbox spanning everything and defeat
-    the prefilter, same as _05_merge.py's _05_tmp1.
+    Each child decides independently, so one file's children MAY scatter
+    across many different parents -- correct for raw/unextended geometry,
+    where overshoot can't misassign anything.
     """
     # Bbox columns precomputed here, not called inline in the join below --
     # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
@@ -85,7 +82,8 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
     if unassigned:
         fids = [row[0] for row in unassigned]
         logger.warning(
-            "match: dropping %d unmatched child fid(s) with no parent overlap: %s",
+            "assign-many: dropping %d unmatched child fid(s) with no parent "
+            "overlap: %s",
             len(fids),
             fids,
         )

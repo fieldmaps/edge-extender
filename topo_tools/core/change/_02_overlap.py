@@ -9,17 +9,7 @@ from ._constants import INTERSECTION_SLIVER_DEG2
 
 
 def main(conn: DuckDBPyConnection, name: str) -> None:
-    """Compute shared_area/coverage_a/coverage_b/iou for every touching (a, b) pair.
-
-    Bbox-prefiltered join on ST_Dump-exploded parts of both layers -- never a
-    bare spatial predicate in the JOIN condition, which would trigger DuckDB's
-    SPATIAL_JOIN operator and its ~1x-RAM virtual reservation -- same pattern
-    as core/match/_02_assign.py. Unlike that assign stage (top-1 parent per
-    child), every pair with shared_area > 0 is kept: classification needs the
-    full pair graph, not just the best match per fid. Native DuckDB always
-    uses exact ST_Intersection here -- no point-sampling fallback, unlike the
-    JS version's WASM-only workaround.
-    """
+    """Compute shared_area/coverage_a/coverage_b/iou for every touching (a, b) pair."""
     # Bbox columns precomputed here, not called inline in the join below --
     # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql

@@ -1,9 +1,4 @@
-"""Path-compressed disjoint-set union over string keys.
-
-Nodes are "a:<fid>" / "b:<fid>"; edges are pair rows that pass tau_match or
-the identity-claim guard in _03_classify.py. Ported from topo-tools-js's
-polygon-changelog/unionFind.ts.
-"""
+"""Path-compressed disjoint-set union over string keys ("a:<fid>" / "b:<fid>")."""
 
 
 class UnionFind:

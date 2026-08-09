@@ -3,20 +3,21 @@
 from logging import getLogger
 from pathlib import Path
 
+from topo_tools.core.assign import _02_many as assign
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
     resolve_tmp_dir,
 )
 from topo_tools.core.match import _01_inputs as inputs
-from topo_tools.core.match import _02_assign as assign
 from topo_tools.core.match import _03_groups as groups
-from topo_tools.core.match import _04_merge as merge
-from topo_tools.core.match import _05_outputs as outputs
+from topo_tools.core.match import _04_clip as clip
+from topo_tools.core.match import _05_stitch as stitch
+from topo_tools.core.match import _06_outputs as outputs
 
 logger = getLogger(__name__)
 
-_STEP_ORDER = ["inputs", "assign", "groups", "merge", "outputs"]
+_STEP_ORDER = ["inputs", "assign", "groups", "clip", "stitch", "outputs"]
 
 _STEP_TABLES = {
     "inputs": ["{n}_child_01", "{n}_parent_01"],
@@ -25,7 +26,8 @@ _STEP_TABLES = {
     # (dynamic "{n}_g{parent_fid}" names), so it falls through to the
     # "export everything currently in the connection" default below, same as
     # a full (no --step) run.
-    "merge": ["{n}_04"],
+    "clip": ["{n}_04"],
+    "stitch": ["{n}_05"],
     "outputs": [],
 }
 
@@ -44,16 +46,7 @@ def match(  # noqa: C901, PLR0913
 ) -> None:
     """Match child polygons to their best-overlapping parent, then extend to fill gaps.
 
-    Processes exactly one child file + one parent/clip file per call. Children
-    are assigned to whichever parent polygon they share the largest area with,
-    grouped by that assignment, extended within each group independently (in
-    an isolated subprocess per group), clipped to that group's own parent,
-    reassembled, and coverage-cleaned once as a whole. If output_path is
-    omitted, it defaults to input_path with a "_matched" suffix in the same
-    directory. Always writes a second file, the issues report (issues_path,
-    "_issues" suffix off output_path if omitted), listing every unassigned
-    child and every child belonging to a dropped group, so a human can audit
-    what didn't make it into the output.
+    Processes exactly one child file + one parent/clip file per call.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
@@ -109,8 +102,10 @@ def match(  # noqa: C901, PLR0913
                     threads=threads,
                     debug=debug,
                 )
-            elif s == "merge":
-                merge.main(conn, name, debug=debug)
+            elif s == "clip":
+                clip.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
+            elif s == "stitch":
+                stitch.main(conn, name, debug=debug)
             elif s == "outputs":
                 outputs.main(conn, name, output_path, issues_path, debug=debug)
         maybe_export_debug_tables(

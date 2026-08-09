@@ -13,6 +13,7 @@ from click.testing import CliRunner
 
 from topo_tools.api.match import match
 from topo_tools.cli.main import cli
+from topo_tools.core.match import _04_clip as match_clip
 from topo_tools.core.match._03_groups import _record_dropped_group
 
 # Parent A (large square) contains children 1 & 2 with a gap between them --
@@ -31,7 +32,7 @@ _PARENT_WKT = [
     (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))"),
 ]
 
-_STEPS = ["inputs", "assign", "groups", "merge", "outputs"]
+_STEPS = ["inputs", "assign", "groups", "clip", "stitch", "outputs"]
 
 
 def _write_synthetic(path, wkt_rows):
@@ -182,6 +183,32 @@ def test_record_dropped_group():
         (1, 10, "boom: something failed"),
         (2, 10, "boom: something failed"),
     ]
+
+
+def test_match_clip_step_aborts_on_bad_parent_fid(tmp_path):
+    """A single bad parent_fid in the clip step aborts the whole run.
+
+    Documents the accepted simplification vs. match's old per-group
+    continue-past-failure behavior: clip's own hard-fail-on-first-bad-
+    parent_fid semantics now apply uniformly to match too.
+    """
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute("""--sql
+            CREATE TABLE t_03a AS
+            SELECT * FROM (VALUES
+                (1, 99, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))'))
+            ) AS v(fid, parent_fid, geom)
+        """)
+        conn.execute("""--sql
+            CREATE TABLE t_parent_01 AS
+            SELECT * FROM (VALUES
+                (1, ST_GeomFromText('POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))'))
+            ) AS v(fid, geom)
+        """)
+
+        with pytest.raises(RuntimeError, match="parent_fid=99"):
+            match_clip.main(conn, "t", tmp_path)
 
 
 def test_match_single_parent_group(tmp_path):

@@ -12,8 +12,8 @@ instead of repeating them.
   `match`.
 - The `change` tool MAY reuse `extend`'s logic; `extend` MUST NOT depend on
   `change`.
-- The `mosaic` tool MAY reuse `extend`'s and `match`'s logic; neither
-  `extend` nor `match` MUST depend on `mosaic`.
+- The `mosaic` tool MUST NOT depend on `extend` or `match`, and neither
+  MUST depend on `mosaic` (see `docs/explanation/mosaic.md`).
 - The shared constants, coverage-validation, file I/O,
   database-connection, and clip helpers MUST NOT depend on any of the five
   tools -- they are leaf building blocks usable by all of them.
