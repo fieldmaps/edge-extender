@@ -10,9 +10,9 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.mosaic import _03_clip as clip
-from topo_tools.core.mosaic import _04_stitch as stitch
-from topo_tools.core.mosaic import _05_outputs as outputs
+from topo_tools.core.mosaic import _01_clip as clip
+from topo_tools.core.mosaic import _02_stitch as stitch
+from topo_tools.core.mosaic import _03_outputs as outputs
 
 logger = getLogger(__name__)
 

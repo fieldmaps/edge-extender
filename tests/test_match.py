@@ -13,8 +13,8 @@ from click.testing import CliRunner
 
 from topo_tools.api.match import match
 from topo_tools.cli.main import cli
-from topo_tools.core.match import _04_clip as match_clip
-from topo_tools.core.match._03_groups import _record_dropped_group
+from topo_tools.core.match import _03_clip as match_clip
+from topo_tools.core.match._02_groups import _record_dropped_group
 
 # Parent A (large square) contains children 1 & 2 with a gap between them,
 # exercises multi-child grouping, within-group Voronoi fill, and clip-to-

@@ -10,10 +10,10 @@ from topo_tools.core.duckdb_utils import (
     resolve_tmp_dir,
 )
 from topo_tools.core.match import _01_inputs as inputs
-from topo_tools.core.match import _03_groups as groups
-from topo_tools.core.match import _04_clip as clip
-from topo_tools.core.match import _05_stitch as stitch
-from topo_tools.core.match import _06_outputs as outputs
+from topo_tools.core.match import _02_groups as groups
+from topo_tools.core.match import _03_clip as clip
+from topo_tools.core.match import _04_stitch as stitch
+from topo_tools.core.match import _05_outputs as outputs
 
 logger = getLogger(__name__)
 

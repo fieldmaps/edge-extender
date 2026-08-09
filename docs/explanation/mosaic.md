@@ -22,14 +22,14 @@ docs); `mosaic` is a thin wrapper chaining `assign-one` → `clip` → `stitch`.
    `docs/explanation/assign.md`. Also narrows `{name}_parent_01` down to
    only the parent fids any child was actually assigned to, before clip
    runs.
-3. **`_03_clip`**: a thin wrapper joining `parent_fid` onto
+3. **`_01_clip`**: a thin wrapper joining `parent_fid` onto
    `{name}_child_01` from `{name}_02_assign`, then calling
    `core.clip.main()`, the same per-`parent_fid`-subprocess, adaptively
    grid-tiled clip `clip` exposes standalone, see `docs/explanation/clip.md`.
-4. **`_04_stitch`**: calls `core.stitch._02_clean.main()` directly, the
+4. **`_02_stitch`**: calls `core.stitch._02_clean.main()` directly, the
    same whole-table `ST_CoverageClean` pass `stitch` exposes standalone,
    see `docs/explanation/stitch.md`.
-5. **`_05_outputs`**: the same `check_overlaps`/`check_gaps` hard gate,
+5. **`_03_outputs`**: the same `check_overlaps`/`check_gaps` hard gate,
    an issues report listing only unassigned children (no dropped-group
    kind, since there are no groups), and export.
 
@@ -50,7 +50,7 @@ paths are passed, since there's no single filename to default one from.
 ## Why neither input is coverage pre-checked
 
 Neither the parent nor the child layer is checked or cleaned for coverage
-violations before assign/clip runs (see ADR-0018). `_05_outputs.py`'s hard
+violations before assign/clip runs (see ADR-0018). `_03_outputs.py`'s hard
 `check_overlaps`/`check_gaps` gate on the final stitched output already
 guarantees correctness regardless: there is no path where a dirty parent
 or child silently reaches export undetected, only a loud failure. The

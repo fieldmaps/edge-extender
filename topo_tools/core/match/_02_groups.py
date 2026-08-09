@@ -2,7 +2,7 @@
 
 Data crosses the process boundary as small Parquet files, never a shared
 connection (DuckDB files are single-writer). Clipping to each group's
-parent happens later, batched, in `_04_clip.py`, not here.
+parent happens later, batched, in `_03_clip.py`, not here.
 """
 
 import contextlib

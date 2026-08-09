@@ -54,19 +54,19 @@ Run `topo-tools match --help` for the full, always-current option list.
    majority); drops and logs children with zero overlap with any parent,
    keeping their geometry for the issues report. See
    `docs/explanation/assign.md` for the algorithm.
-3. **`_03_groups`**: groups children by their assigned parent (always, even
+3. **`_02_groups`**: groups children by their assigned parent (always, even
    a group of exactly one parent), runs `extend`'s pipeline within each group
    in an isolated subprocess, then reassembles the survivors, tagging each
    row with its group's own `parent_fid`. No clipping happens here anymore
    (see "Two subprocess generations" below). A failed group's children are
    recorded, with the parent id and failure reason, for the issues report.
-4. **`_04_clip`**: one batched call into `core.clip.main()` over the whole
+4. **`_03_clip`**: one batched call into `core.clip.main()` over the whole
    reassembled table at once, clipping every row to its own `parent_fid`'s
    geometry. See `docs/explanation/clip.md` for the algorithm.
-5. **`_05_stitch`**: calls `core.stitch._02_clean.main()` directly: a
+5. **`_04_stitch`**: calls `core.stitch._02_clean.main()` directly: a
    single whole-table `ST_CoverageClean` pass over the clipped output to
    close cross-group seams. See `docs/explanation/stitch.md`.
-6. **`_06_outputs`**: validates topology, builds the issues report from the
+6. **`_05_outputs`**: validates topology, builds the issues report from the
    dropped children collected in stages 2/3, and exports both the final
    layer and the issues report.
 
@@ -206,7 +206,7 @@ a plain `ST_Intersection`.
 
 ## `check_gaps` and parent-layer gaps
 
-`_06_outputs.py` reuses `check_overlaps`/`check_gaps` from the shared
+`_05_outputs.py` reuses `check_overlaps`/`check_gaps` from the shared
 `topo_tools/core/coverage.py` unmodified, on the final `{name}_05` table.
 This cannot distinguish a gap `match`'s own clip step introduced from a gap
 the parent/clip layer already had between two different parents' territories
