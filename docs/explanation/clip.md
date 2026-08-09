@@ -1,40 +1,49 @@
 # Clip Explanation
 
 `clip` is the standalone extraction of the clipping step `match` and
-`mosaic` each ran internally before this extraction: intersect every child
-polygon against its own already-assigned parent's geometry, dropping
-anything that clips to empty. It is purely mechanical: it has no opinion
-about where `parent_fid` came from (`assign-many`, `assign-one`, or
-anything else that produces the same column) and no opinion about whether
-its output is coverage-clean; that's `stitch`'s job downstream.
+`mosaic` each ran internally before this extraction: assign every child to
+its parent, then intersect it against that parent's geometry, dropping
+anything that clips to empty. Unlike `match`/`mosaic`'s internal use of the
+same clipping mechanism, standalone `clip` never expects a caller to have
+already assigned `parent_fid` itself; it does that internally, always via
+`assign-one` (see `docs/explanation/assign.md`, `docs/adr/0021`). It has no
+opinion about whether its output is coverage-clean; that's `stitch`'s job
+downstream.
 
 ## Pipeline
 
 1. **`_01_inputs`**: loads the children and parent/clip layers raw via
-   `core.io.read_and_reproject`, then validates the children table actually
-   has a `parent_fid` column, raising `ValueError` if not (a clear failure
-   instead of a confusing downstream SQL error).
-2. **`_02_clip`**: the actual clip logic; see below.
-3. **`_03_outputs`**: exports the clipped layer, raising `RuntimeError`
-   first if the result is empty. No coverage hard gate here.
+   `core.io.read_and_reproject`.
+2. **`_02_assign`**: tags the children with a constant `source_file` (a
+   standalone `clip()` call is always one input file, so `assign-one`'s
+   per-file majority vote degenerates to "the whole file shares one
+   parent"), calls `core.assign._02_one.main()` directly, then joins the
+   resulting crosswalk onto the children to build `{name}_02_clip_in`.
+3. **`_03_clip`**: the actual clip logic; see below.
+4. **`_04_outputs`**: exports the clipped layer, raising `RuntimeError`
+   first if the result is empty (this is also what surfaces the case where
+   `assign-one` couldn't match any child to any parent at all). No
+   coverage hard gate here.
 
-`mosaic` and `match` both bypass `_01_inputs`/`_03_outputs` and call
-`core.clip._02_clip.main()` directly on their own already-loaded tables (via
-`core.clip.main`, the package's re-exported name), the same pattern
-`core.match`/`core.change` use to call `core.extend`'s stage functions
-directly. `mosaic` calls it once per run (its own per-parent-fid loop is
-`core.clip`'s only subprocess generation); `match` calls it once too, but
-batched over its already-reassembled, already-extended `{name}_03a` table,
-the second of `match`'s own two subprocess generations, see
+`mosaic` and `match` both bypass `_01_inputs`/`_02_assign`/`_04_outputs`
+and call `core.clip._03_clip.main()` directly on their own already-loaded,
+already-assigned tables (via `core.clip.main`, the package's re-exported
+name), the same pattern `core.match`/`core.change` use to call
+`core.extend`'s stage functions directly. `mosaic` calls it once per run
+(its own per-parent-fid loop is `core.clip`'s only subprocess generation);
+`match` calls it once too, but batched over its already-reassembled,
+already-extended `{name}_03a` table, the second of `match`'s own two
+subprocess generations, see
 `docs/adr/0020-match-clip-two-subprocess-generations.md`.
 
 ## One parent fid at a time, each in its own subprocess
 
-`_02_clip.main()` requires the children table to already carry
+`_03_clip.main()` requires the children table to already carry
 `parent_fid` (assign's own output contract) rather than taking a separate
 assign table and joining internally, since a caller assembling children
 from multiple sources (e.g. match's reassembled per-group output) may not
-have one single assign table to join against.
+have one single assign table to join against. Standalone `clip` always
+satisfies this itself via `_02_assign`'s join, before `_03_clip` ever runs.
 
 For each distinct `parent_fid`, present children and that one parent's
 geometry are exported to per-fid Parquet files and handed to a freshly

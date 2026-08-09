@@ -17,16 +17,12 @@ _PARENT_WKT = [
     (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))"),
 ]
 
-# Both children massively overshoot their assigned parent, clip must bound
-# each one down to exactly that parent's own extent.
-_CHILD_ROWS = [
-    (1, 1, "POLYGON((-5 -5, 5 -5, 5 5, -5 5, -5 -5))"),
-    (2, 2, "POLYGON((8 -5, 20 -5, 20 20, 8 20, 8 -5))"),
-]
+# Overshoots parent A's extent only, no overlap with parent B.
+_CHILD_ROWS = [(1, "POLYGON((-5 -5, 5 -5, 5 5, -5 5, -5 -5))")]
 
 _PARENT_A_AREA = 9.0
 
-_STEPS = ["inputs", "clip", "outputs"]
+_STEPS = ["inputs", "assign", "clip", "outputs"]
 
 
 def _write_parents(path, wkt_rows):
@@ -39,17 +35,13 @@ def _write_parents(path, wkt_rows):
         conn.execute(f"COPY synth TO '{path}'")
 
 
-def _write_children(path, rows):
-    values = ", ".join(
-        f"({fid}, {parent_fid}, ST_GeomFromText('{wkt}'))"
-        for fid, parent_fid, wkt in rows
-    )
+def _write_children(path, wkt_rows):
+    values = ", ".join(f"({fid}, ST_GeomFromText('{wkt}'))" for fid, wkt in wkt_rows)
     with duckdb.connect() as conn:
         conn.execute("INSTALL spatial; LOAD spatial;")
-        conn.execute(f"""--sql
-            CREATE TABLE synth AS
-            SELECT * FROM (VALUES {values}) AS t(id, parent_fid, geom)
-        """)
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t(id, geom)"
+        )
         conn.execute(f"COPY synth TO '{path}'")
 
 
@@ -70,7 +62,7 @@ def synthetic_children(tmp_path):
 def test_cli_help():
     result = CliRunner().invoke(cli, ["clip", "--help"])
     assert result.exit_code == 0
-    assert "already-assigned parent" in result.output
+    assert "assign-one" in result.output
     assert "Examples:" in result.output
 
 
@@ -87,29 +79,42 @@ def test_clip_bounds_output_to_parent(synthetic_children, synthetic_parents, tmp
     assert area == pytest.approx(_PARENT_A_AREA, abs=1e-6)
 
 
-def test_clip_requires_parent_fid_column(synthetic_parents, tmp_path):
-    no_parent_fid_path = tmp_path / "no_parent_fid.parquet"
+def test_clip_majority_vote_drops_outlier(synthetic_parents, tmp_path):
+    """Two children overshoot parent A, one overshoots parent B.
+
+    A wins the file's majority vote; the dissenting child is dropped, not misassigned.
+    """
+    children_path = tmp_path / "children.parquet"
+    _write_children(
+        children_path,
+        [
+            (1, "POLYGON((-5 -5, 5 -5, 5 5, -5 5, -5 -5))"),
+            (2, "POLYGON((-2 -2, 4 -2, 4 4, -2 4, -2 -2))"),
+            (3, "POLYGON((8 -5, 20 -5, 20 20, 8 20, 8 -5))"),
+        ],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    clip(children_path, synthetic_parents, output_path, overwrite=True)
+
     with duckdb.connect() as conn:
-        conn.execute("INSTALL spatial; LOAD spatial;")
-        conn.execute("""--sql
-            CREATE TABLE synth AS
-            SELECT 1 AS id,
-                   ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))') AS geom
-        """)
-        conn.execute(f"COPY synth TO '{no_parent_fid_path}'")
+        conn.execute("LOAD spatial")
+        rows = conn.execute(f"""--sql
+            SELECT id, ST_Area(geometry) FROM '{output_path}' ORDER BY id
+        """).fetchall()
+    assert [r[0] for r in rows] == [1, 2]
+    assert all(area == pytest.approx(_PARENT_A_AREA, abs=1e-6) for _, area in rows)
+
+
+def test_clip_raises_when_no_child_overlaps_any_parent(synthetic_parents, tmp_path):
+    children_path = tmp_path / "children.parquet"
+    _write_children(
+        children_path, [(1, "POLYGON((100 100, 101 100, 101 101, 100 101, 100 100))")]
+    )
 
     output_path = tmp_path / "out.parquet"
-    with pytest.raises(ValueError, match="parent_fid"):
-        clip(no_parent_fid_path, synthetic_parents, output_path, overwrite=True)
-
-
-def test_clip_raises_on_unknown_parent_fid(synthetic_parents, tmp_path):
-    bad_children_path = tmp_path / "bad_children.parquet"
-    _write_children(bad_children_path, [(1, 99, "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))")])
-
-    output_path = tmp_path / "out.parquet"
-    with pytest.raises(RuntimeError, match="parent_fid=99"):
-        clip(bad_children_path, synthetic_parents, output_path, overwrite=True)
+    with pytest.raises(RuntimeError, match="no child survived clipping"):
+        clip(children_path, synthetic_parents, output_path, overwrite=True)
 
 
 def test_clip_default_output_path(synthetic_children, synthetic_parents):

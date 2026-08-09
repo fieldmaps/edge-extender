@@ -12,7 +12,7 @@ Three are primitives, each standalone AND reused internally by the two
 composite tools below them:
 
 - **extend**: extends polygon boundaries outward using Voronoi diagrams, producing a complete coverage layer that fills gaps (coastlines, disputed areas, water bodies).
-- **clip**: clips each child to its own already-assigned parent's geometry, one `parent_fid` at a time in its own subprocess. See `docs/explanation/clip.md`.
+- **clip**: assigns each child to its parent (always `assign-one`), then clips it to that parent's geometry, one `parent_fid` at a time in its own subprocess. See `docs/explanation/clip.md`.
 - **stitch**: closes seams in an already-tiled layer with one whole-table `ST_CoverageClean` pass. See `docs/explanation/stitch.md`.
 - **match**: `assign-many` → per-group `extend` (own subprocess) → batched `clip` → `stitch`, fitting a child layer into a coarser parent/clip layer (e.g. admin4 into admin0). See `docs/explanation/match.md`.
 - **mosaic**: `assign-one` → `clip` → `stitch`, fitting an already-extended child layer (a prior `extend()` output) into a new/different parent/clip layer, skipping Voronoi extension entirely. See `docs/explanation/mosaic.md`.
@@ -86,18 +86,19 @@ per-tool table names are in `docs/explanation/{tool}.md`.
 - **DuckDB tables as IPC**: stages read and write named tables on the shared connection; no Parquet between stages.
 - **Topology validation** (`_check_overlaps`/`_check_gaps` in each tool's outputs stage, backed by `has_coverage_violations` in `topo_tools/core/coverage.py`) always unnests MultiPolygons first. No byte-exactness check, see the next bullet.
 - **Geometry column names**: `geom` in DuckDB tables, `geometry` in final output. `duckdb_memory()` profiling caveats are in `docs/explanation/performance.md`.
-- **`_05_merge.py` joins against nearby originals via bbox-prefiltered, part-exploded join, never a global `ST_Union_Agg` operand** (`_02_lines.py`'s neighbor-union join uses whole-fid bboxes instead, not interchangeable). See `docs/adr/0001-avoid-global-union-agg-operand.md`.
-- **Never call `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` inline inside a JOIN's `ON` clause.** DuckDB recomputes the envelope per pairwise comparison instead of once per row, which can hang indefinitely on a table with even a few very-high-vertex-count polygons. Precompute bbox columns on the joined table/CTE first, as `_05_merge.py` already does (see `docs/adr/0014-bbox-inline-recompute-in-join.md`).
+- **`_05_merge.py` joins against nearby originals via bbox-prefiltered, part-exploded join, never a global `ST_Union_Agg` operand** (`_02_lines.py`'s neighbor-union join uses whole-fid bboxes instead, not interchangeable). See `docs/adr/0001`.
+- **Never call `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` inline inside a JOIN's `ON` clause** — can hang indefinitely on high-vertex-count tables. Precompute bbox columns on the joined table/CTE first, as `_05_merge.py` does (see `docs/adr/0014`).
 - **Byte-exact preservation of original polygon vertices is not a goal.** `ST_CoverageClean` may shift any polygon's boundary, including previously-untouched ones (see `docs/explanation/topology.md`).
-- **`match` reuses `extend`'s stage functions per-group** (so `extend` stays usable standalone) **in an isolated subprocess**, not `match()`'s own process, because GEOS's native heap isn't fully released between files even after closing the DuckDB connection. `match` runs two subprocess generations per call: per-group `extend`, then a separate, later, batched `clip` generation over the whole reassembled table (see `docs/adr/0020`). See `docs/explanation/match.md`.
-- **`mosaic` skips Voronoi extension entirely.** It assumes the child layer is already a finished `extend()` output, and chains `core.assign`'s `assign-one` strategy, then `core.clip`, then `core.stitch` directly, with no per-group subprocess for extension itself. See `docs/explanation/mosaic.md`.
-- **`core/clip/`'s `_02_clip.main()` always clips one parent fid at a time, each in its own spawned subprocess, boundary adaptively grid-tiled before intersecting**, uniformly for every caller, including `match`; a single bad `parent_fid` aborts the whole run. Repeated plain `ST_Intersection` leaks GEOS's native heap the same way `extend()`'s Voronoi machinery does, and a single oversized parent (many children against a highly complex boundary) can itself exceed available memory even fully isolated; tile size is solved from each parent's own vertex density rather than a fixed constant, and small parents skip tiling entirely (see `docs/adr/0015`, `docs/adr/0016`, `docs/adr/0017`).
+- **`match` reuses `extend`'s stage functions per-group, each in an isolated subprocess** (GEOS's native heap isn't fully released between files). Two subprocess generations per call: per-group `extend`, then a separate batched `clip` pass (see `docs/adr/0020`, `docs/explanation/match.md`).
+- **`mosaic` skips Voronoi extension entirely**, assuming the child layer is already a finished `extend()` output; chains `assign-one` → `clip` → `stitch` directly, no per-group subprocess. See `docs/explanation/mosaic.md`.
+- **`core/clip/`'s `_03_clip.main()` clips one `parent_fid` at a time, each in its own subprocess, boundary adaptively grid-tiled**, uniformly for every caller including `match`; a bad `parent_fid` aborts the whole run. Tile size derives from each parent's own vertex density (small parents skip tiling) (see `docs/adr/0015`, `docs/adr/0016`, `docs/adr/0017`).
+- **Standalone `clip` never expects `parent_fid` on its input**; it always assigns internally via `assign-one` (`core/clip/_02_assign.py`) before clipping, no strategy flag. `match`/`mosaic` are unaffected, they call `core.clip._03_clip.main()` directly with their own already-tagged tables (see `docs/adr/0021`).
 - **`core/assign/`'s two strategies are picked by the input's geometry state, not by tool-of-origin**: `assign-many` (per-child plurality) for raw/unextended children, `assign-one` (per-file majority vote) for already-extended/overshoot children. See `docs/explanation/assign.md` and `docs/adr/0019`.
 - **`core.clean` depends only on the shared leaf modules, not `core.extend`.** See `docs/explanation/clean.md`.
-- **`ST_CoverageClean`'s `gap_maximum_width` has no GEOS-native auto-fill default.** `clean`'s `--gap-width auto` mode computes an explicit width from the widest thin detected gap; `all` mode uses a fixed `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` sentinel (see `docs/adr/0002-gap-maximum-width-no-native-default.md`).
-- **`coverage_clean()` (`core/coverage.py`) must call `ST_CoverageClean` positionally, never via DuckDB's `:=` named-argument syntax.** DuckDB binds named arguments to compiled/extension scalar functions purely by position, silently discarding the name (see `docs/adr/0003-st-coverageclean-positional-args.md`).
-- **`ST_Distance(GEOMETRY, GEOMETRY)` is unreliable for two disjoint polygons at small separations.** Use `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` extent comparisons or `ST_MaximumInscribedCircle` instead (see `docs/adr/0004-st-distance-unreliable-near-disjoint.md`).
-- **`clean/_02_issues.py`'s per-detection-kind retry falls back to an empty result table (logged) if both attempts fail, rather than leaving the table missing.** Any new call site of `_run_with_retry` must supply `empty_sql` (see `docs/adr/0005-clean-retry-fallback-bug.md`).
+- **`ST_CoverageClean`'s `gap_maximum_width` has no GEOS-native auto-fill default.** `clean`'s `--gap-width auto` mode computes an explicit width from the widest thin detected gap; `all` mode uses a fixed `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` sentinel (see `docs/adr/0002`).
+- **`coverage_clean()` (`core/coverage.py`) must call `ST_CoverageClean` positionally, never via DuckDB's `:=` named-argument syntax.** DuckDB binds named arguments to compiled/extension scalar functions purely by position, silently discarding the name (see `docs/adr/0003`).
+- **`ST_Distance(GEOMETRY, GEOMETRY)` is unreliable for two disjoint polygons at small separations.** Use `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` extent comparisons or `ST_MaximumInscribedCircle` instead (see `docs/adr/0004`).
+- **`clean/_02_issues.py`'s per-detection-kind retry falls back to an empty result table (logged) if both attempts fail, rather than leaving the table missing.** Any new call site of `_run_with_retry` must supply `empty_sql` (see `docs/adr/0005`).
 - **`change`'s classification runs in Python (`core/change/_03_classify.py`), not SQL**, feature-count-scaled, not vertex-scaled, unlike `extend`/`clean`'s work. See `docs/explanation/change.md`.
 - **`change` always uses exact `ST_Intersection`, never point-sampling**, unlike the sister JS app's WASM-only-bug workaround. See `docs/explanation/change.md`.
 - **`clean`'s `--maximum-gap-width`/`--snapping-distance` are decimal degrees, not meters** (`_01` is always EPSG:4326). See `docs/explanation/clean.md`.
@@ -123,7 +124,7 @@ uv run topo-tools match children.geojson parents.geojson
 uv run topo-tools mosaic extended_children.parquet new_parents.geojson
 
 # Run clip/stitch standalone (the primitives match/mosaic chain internally)
-uv run topo-tools clip children_with_parent_fid.parquet parents.geojson
+uv run topo-tools clip children.parquet parents.geojson
 uv run topo-tools stitch tiled.geojson
 
 # Run the clean tool (detects/fixes gaps+overlaps, reports issues separately)
@@ -166,20 +167,7 @@ file (or an old/new comparison pair, for `change`) from the catalog.
 
 ## Reference Docs
 
-- `docs/reference/`: behavior contracts per tool (`shared.md` for common settings/gates)
-- `docs/explanation/extend.md`: Voronoi-extension algorithm, stage-by-stage detail
-- `docs/explanation/topology.md`: ST_Node/ST_Polygonize approach, spatial function reference, SPATIAL_JOIN memory bug
-- `docs/explanation/assign.md`: `assign-many` vs `assign-one` algorithms, comparison table
-- `docs/explanation/clip.md`: per-`parent_fid` subprocess isolation, adaptive grid-tiling
-- `docs/explanation/stitch.md`: whole-table coverage-clean, seam-gap findings
-- `docs/explanation/match.md`: assignment algorithm, two-generation subprocess isolation, `check_gaps` caveat
-- `docs/explanation/mosaic.md`: assign/clip/stitch chaining, match-vs-mosaic comparison, overshoot/cross-provenance caveats
-- `docs/explanation/clean.md`: defect detection, `ST_CoverageClean` semantics, issues-file schema
-- `docs/explanation/change.md`: overlap/classification algorithm, output schema, two-file design
-- `docs/explanation/performance.md`: thread-scaling benchmarks, phase profiles, RTREE experiment
-- `docs/explanation/voronoi-memory.md`: per-file resampling distance, memory ceilings for `phl_admin3`/`idn_admin3`
-- `docs/how-to/publishing.md`: PyPI release process (GitHub Release, then OIDC trusted publisher)
-- `docs/how-to/verify-duckdb-function.md`: DuckDB/spatial function lookup commands
-- `docs/how-to/at-scale-testing.md`: portolan catalog layout, picking a file or old/new pair for a real-scale test
-- `docs/adr/README.md`: how to decide whether a fact belongs in an ADR vs. `docs/explanation/` vs. CLAUDE.md's Key Patterns
-- `docs/adr/`: immutable decision records referenced from Key Patterns above
+- `docs/reference/{tool}.md`: behavior contract per tool (`shared.md` for common settings/gates)
+- `docs/explanation/{tool}.md`: stage-by-stage detail for `extend`, `topology`, `assign`, `clip`, `stitch`, `match`, `mosaic`, `clean`, `change`; notable: `topology.md` has the SPATIAL_JOIN memory bug, `performance.md` has thread-scaling benchmarks + the RTREE experiment, `voronoi-memory.md` has per-file resampling distance and memory ceilings for `phl_admin3`/`idn_admin3`, `match.md` has the `check_gaps` caveat
+- `docs/how-to/`: `publishing.md` (PyPI release via OIDC), `verify-duckdb-function.md` (DuckDB/spatial function lookup), `at-scale-testing.md` (portolan catalog layout, picking a test file/pair)
+- `docs/adr/README.md`: how to decide ADR vs. `docs/explanation/` vs. CLAUDE.md's Key Patterns; `docs/adr/` itself holds the decision records

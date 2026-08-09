@@ -7,9 +7,18 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 - `clip` MUST load the children layer and the parent/clip layer raw,
   neither coverage-checked nor -cleaned.
-- The children layer MUST already carry a `parent_fid` column (e.g.
-  `assign-many`'s or `assign-one`'s own output). `clip` MUST raise
-  `ValueError` if it does not.
+- `clip` MUST NOT require or read a `parent_fid` column on the children
+  layer.
+
+## Assignment
+
+- `clip` MUST internally assign every child to exactly one parent before
+  clipping, via `assign-one`'s per-file majority-vote strategy (see
+  `docs/explanation/assign.md`): every child in the input file is forced
+  onto the one parent that wins a majority vote by count of the file's
+  children, not evaluated per child.
+- A child that does not agree with its file's majority-vote parent MUST be
+  dropped, not clipped against the wrong parent.
 
 ## Clipping
 
@@ -41,5 +50,5 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   suffix.
 - `clip` MUST raise `FileExistsError` if the output exists and
   overwriting wasn't requested.
-- `step`, if given, MUST be one of `inputs`, `clip`, `outputs`; any other
-  value MUST raise `ValueError`.
+- `step`, if given, MUST be one of `inputs`, `assign`, `clip`, `outputs`;
+  any other value MUST raise `ValueError`.

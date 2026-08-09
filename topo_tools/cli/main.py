@@ -617,7 +617,7 @@ def stitch(  # noqa: PLR0913, PLR0917
 @click.option(
     "--step",
     envvar="STEP",
-    type=click.Choice(["inputs", "clip", "outputs"]),
+    type=click.Choice(["inputs", "assign", "clip", "outputs"]),
     default=None,
     help="Run only one named stage.",
 )
@@ -631,20 +631,21 @@ def clip(  # noqa: PLR0913, PLR0917
     tmp_dir: str | None,
     step: str | None,
 ) -> None:
-    r"""Clip each child to its own already-assigned parent's geometry.
+    r"""Assign each child to its parent, then clip it to that parent's geometry.
 
-    INPUT_FILE MUST already carry a parent_fid column (e.g. assign-many's or
-    assign-one's own output). OUTPUT_FILE defaults to INPUT_FILE with a
-    "_clipped" suffix if omitted.
+    INPUT_FILE and CLIP_FILE are both raw polygon layers; INPUT_FILE's
+    children are assigned to CLIP_FILE's parents internally (assign-one)
+    before clipping. OUTPUT_FILE defaults to INPUT_FILE with a "_clipped"
+    suffix if omitted.
 
     \b
     Examples:
-      # Clip an assign-many crosswalk down to its parents
-      topo-tools clip children_assigned.parquet adm1.geojson
+      # Clip a children layer against a parent/clip layer
+      topo-tools clip children.parquet adm1.geojson
 
       \b
       # Explicit output
-      topo-tools clip children_assigned.parquet adm1.geojson clipped.parquet
+      topo-tools clip children.parquet adm1.geojson clipped.parquet
     """
     logger.info("--debug=%s", debug)
     try:

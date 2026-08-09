@@ -1,11 +1,12 @@
-"""Public API: clip each child to its own already-assigned parent's geometry."""
+"""Public API: assign each child to its parent, then clip it to that geometry."""
 
 from logging import getLogger
 from pathlib import Path
 
 from topo_tools.core.clip import _01_inputs as inputs
-from topo_tools.core.clip import _02_clip as clip_stage
-from topo_tools.core.clip import _03_outputs as outputs
+from topo_tools.core.clip import _02_assign as assign_stage
+from topo_tools.core.clip import _03_clip as clip_stage
+from topo_tools.core.clip import _04_outputs as outputs
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
@@ -14,11 +15,12 @@ from topo_tools.core.duckdb_utils import (
 
 logger = getLogger(__name__)
 
-_STEP_ORDER = ["inputs", "clip", "outputs"]
+_STEP_ORDER = ["inputs", "assign", "clip", "outputs"]
 
 _STEP_TABLES = {
     "inputs": ["{n}_child_01", "{n}_parent_01"],
-    "clip": ["{n}_02"],
+    "assign": ["{n}_02_clip_in"],
+    "clip": ["{n}_03"],
     "outputs": [],
 }
 
@@ -34,12 +36,10 @@ def clip(  # noqa: PLR0913
     debug: bool = False,
     step: str | None = None,
 ) -> None:
-    """Clip each child to its own already-assigned parent's geometry.
+    """Assign each child to its parent via assign-one, then clip it to that geometry.
 
-    children_path MUST already carry a parent_fid column (e.g. assign-many's
-    or assign-one's own output). Processes exactly one file per call; if
-    output_path is omitted, it defaults to children_path with a "_clipped"
-    suffix.
+    Processes exactly one file per call; if output_path is omitted, it
+    defaults to children_path with a "_clipped" suffix.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
@@ -72,12 +72,14 @@ def clip(  # noqa: PLR0913
                 logger.info("=== %s ===", s)
             if s == "inputs":
                 inputs.main(conn, name, children_path, parent_path)
+            elif s == "assign":
+                assign_stage.main(conn, name, children_path)
             elif s == "clip":
                 clip_stage.main(
                     conn,
-                    f"{name}_child_01",
+                    f"{name}_02_clip_in",
                     f'"{name}_parent_01"',
-                    f"{name}_02",
+                    f"{name}_03",
                     tmp_dir_path,
                     threads=threads,
                     debug=debug,
