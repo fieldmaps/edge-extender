@@ -1,12 +1,13 @@
 # Assign Explanation
 
-`assign-many` and `assign-one` are the standalone extraction of the
-crosswalk step `match` and `mosaic` each ran internally before this
-extraction. Both build a `(child_fid, parent_fid)` pairing from a
-bbox-prefiltered, part-exploded overlap-area join; they differ only in how
-that pairing gets finalized once per-pair shared area is known. The
-right one to use is decided by the input's geometry state, not by which
-tool you're eventually headed toward:
+`assign-many` and `assign-one` are two internal crosswalk strategies in
+`core/assign/`, picked between by `match` (`assign-many`) and `mosaic`
+(`assign-one`); neither is a standalone CLI/API tool. Both build a
+`(child_fid, parent_fid)` pairing from a bbox-prefiltered, part-exploded
+overlap-area join; they differ only in how that pairing gets finalized
+once per-pair shared area is known. The right one to use is decided by
+the input's geometry state, not by which tool you're eventually headed
+toward:
 
 - **`assign-many`**: each child decides independently which parent it
   overlaps most; one input file's children MAY scatter across **many**
@@ -20,33 +21,28 @@ tool you're eventually headed toward:
   themselves to the wrong neighboring parent.
 
 This is a decision-granularity distinction (per-child vs. per-file), not a
-tool-of-origin one: `assign-many` is `match`'s original assignment logic,
-`assign-one` is `mosaic`'s; both are legitimate standalone operations on
-their own (e.g. a largest-overlap crosswalk of raw children without
-running `extend`+`clip`+`stitch`).
+tool-of-origin one: `assign-many` is `match`'s assignment logic,
+`assign-one` is `mosaic`'s.
 
-## Pipeline
+## Modules
 
-Both commands share the same three stages:
+`core/assign/_01_inputs.py` loads the (possibly multi-file) child layer
+and the single parent/clip layer raw via `core.io.read_and_reproject`,
+neither coverage-checked nor -cleaned (consistent with `clip`/`stitch`;
+these are all purely mechanical primitives). Every child row is tagged
+with a `source_file` column recording the exact path it came from
+(basename alone can't distinguish same-named files across directories).
+Only `mosaic` calls it directly; `match` loads its own children via
+`core.match._01_inputs` instead.
 
-1. **`_01_inputs`**: loads the (possibly multi-file) child layer and the
-   single parent/clip layer raw via `core.io.read_and_reproject`, neither
-   coverage-checked nor -cleaned (consistent with `clip`/`stitch`; these
-   are all purely mechanical primitives). Every child row is tagged with a
-   `source_file` column recording the exact path it came from (basename
-   alone can't distinguish same-named files across directories).
-2. **`_02_many`** / **`_02_one`**: the actual assignment logic; see below.
-3. **`_03_outputs`**: joins the child table to the assign table to attach
-   `parent_fid`, drops unassigned rows, and exports the result alongside
-   an issues report of every unassigned child. No coverage hard gate here:
-   an unclipped crosswalk is expected to still overlap/gap between
-   neighboring children, that's `clip`'s and `stitch`'s job downstream.
-
-`match`/`mosaic` bypass `_01_inputs`/`_03_outputs` entirely and call
-`core.assign._02_many.main()` / `core.assign._02_one.main()` directly on
-their own already-loaded tables, the same pattern `core.match`/`core.change`
-use to call `core.extend`'s stage functions directly rather than going
-through `api.extend()`.
+`_02_many.py` / `_02_one.py` hold the actual assignment logic (see
+below); `match` calls `core.assign._02_many.main()`, `mosaic` calls
+`core.assign._02_one.main()`, both directly on their own already-loaded
+tables, the same pattern `core.match`/`core.change` use to call
+`core.extend`'s stage functions directly rather than going through
+`api.extend()`. Neither stage runs a coverage hard gate: an unclipped
+crosswalk is expected to still overlap/gap between neighboring children,
+that's `clip`'s and `stitch`'s job downstream.
 
 ## `_02_many`: largest-overlap assignment
 

@@ -69,8 +69,9 @@ def main(  # noqa: PLR0913 (each param is a distinct required input)
             result_queue.get()
             if not result_queue.empty()
             else (
-                f"worker exited with no result "
-                f"(exitcode={process.exitcode}, likely killed/OOM)"
+                f"worker exited with no result (exitcode={process.exitcode}); "
+                "could be OOM/killed, or a spawn startup failure unrelated "
+                "to memory (e.g. the entry point wasn't a real file)"
             )
         )
         output_path = group_dir / "output.parquet"

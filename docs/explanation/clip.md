@@ -47,6 +47,13 @@ the same way `extend()`'s Voronoi machinery does, and only a fresh process
 per parent reliably reclaims it. See `docs/adr/0015` for the isolation
 decision itself.
 
+A caller driving `clip`/`mosaic`/`match` programmatically (not via the CLI)
+MUST run its own entry point from a real `.py` file, not stdin or `-c`:
+`spawn` re-execs workers by re-importing `__main__` from that file's path,
+so a worker started from stdin fails immediately with a `FileNotFoundError`
+that surfaces as a generic "worker exited with no result" error, easy to
+mistake for OOM.
+
 Within one parent's subprocess, that parent's boundary is grid-tiled
 before intersecting once its vertex count reaches `CLIP_TILE_MIN_VERTICES`
 (`core.clip.subdivide_boundary`, `_tiling.py`), joining children to tiles

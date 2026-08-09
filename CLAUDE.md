@@ -4,15 +4,14 @@
 
 `topo-tools` is a Python package of DuckDB-powered geospatial topology utilities,
 `pip install`-able and importable, mirroring the organization of the sister JS app
-at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships nine
+at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships seven
 tools, all used for improving administrative boundary datasets and matching
 sub-national boundaries to national boundaries (import-linter contracts
 governing which tool may depend on which are in `docs/reference/shared.md`).
-Four are primitives, each standalone AND reused internally by the two
+Three are primitives, each standalone AND reused internally by the two
 composite tools below them:
 
 - **extend**: extends polygon boundaries outward using Voronoi diagrams, producing a complete coverage layer that fills gaps (coastlines, disputed areas, water bodies).
-- **assign-many** / **assign-one**: crosswalks a child layer's `parent_fid`, per-child plurality (`-many`, for raw/unextended geometry) or per-file majority vote (`-one`, for already-extended/overshoot geometry). See `docs/explanation/assign.md`.
 - **clip**: clips each child to its own already-assigned parent's geometry, one `parent_fid` at a time in its own subprocess. See `docs/explanation/clip.md`.
 - **stitch**: closes seams in an already-tiled layer with one whole-table `ST_CoverageClean` pass. See `docs/explanation/stitch.md`.
 - **match**: `assign-many` → per-group `extend` (own subprocess) → batched `clip` → `stitch`, fitting a child layer into a coarser parent/clip layer (e.g. admin4 into admin0). See `docs/explanation/match.md`.
@@ -47,15 +46,13 @@ exception, see `docs/explanation/match.md`). Three layers, each with a specific 
   `core.clip`/`core.stitch` are themselves neutral leaves, alongside
   `core.constants`/`core.coverage`/`core.io`/`core.duckdb_utils`; every
   tool package may import any of these seven, none of them may import back.
-- `topo_tools/api/{extend,assign_many,assign_one,clip,stitch,match,mosaic,clean,change}.py`:
+- `topo_tools/api/{extend,clip,stitch,match,mosaic,clean,change}.py`:
   public API functions; each chains its own tool's stages for exactly one
-  file (or file pair) per call, except `mosaic`'s and `assign-many`'s/
-  `assign-one`'s children role, which MAY span multiple files (see
-  `docs/reference/mosaic.md`).
+  file (or file pair) per call, except `mosaic`'s children role, which
+  MAY span multiple files (see `docs/reference/mosaic.md`).
 - `topo_tools/cli/main.py`: the click CLI, mapping flags/env vars onto one
   `api.*()` call per invocation, one file (or pair) at a time (`mosaic`'s
-  and `assign-many`'s/`assign-one`'s child argument alone MAY be a glob
-  pattern, no directory batching).
+  child argument alone MAY be a glob pattern, no directory batching).
 
 Import boundaries between these layers, and between tools, are mechanically
 enforced by `pyproject.toml`'s import-linter contracts, see
@@ -125,9 +122,7 @@ uv run topo-tools match children.geojson parents.geojson
 # Run the mosaic tool (re-clips an already-extended child layer into a new parent layer)
 uv run topo-tools mosaic extended_children.parquet new_parents.geojson
 
-# Run assign/clip/stitch standalone (the primitives match/mosaic chain internally)
-uv run topo-tools assign-many children.geojson parents.geojson
-uv run topo-tools assign-one extended_children.parquet new_parents.geojson
+# Run clip/stitch standalone (the primitives match/mosaic chain internally)
 uv run topo-tools clip children_with_parent_fid.parquet parents.geojson
 uv run topo-tools stitch tiled.geojson
 

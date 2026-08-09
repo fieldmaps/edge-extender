@@ -68,12 +68,13 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
         if issues_path is not None
         else output_path.with_stem(output_path.stem + "_issues")
     )
-    if output_path.exists() and not overwrite:
-        msg = f"output already exists: {output_path}"
-        raise FileExistsError(msg)
-    if issues_path.exists() and not overwrite:
-        msg = f"output already exists: {issues_path}"
-        raise FileExistsError(msg)
+    if step in (None, "outputs"):
+        if output_path.exists() and not overwrite:
+            msg = f"output already exists: {output_path}"
+            raise FileExistsError(msg)
+        if issues_path.exists() and not overwrite:
+            msg = f"output already exists: {issues_path}"
+            raise FileExistsError(msg)
 
     # "_mosaic" keeps every table/file this call creates distinct from an
     # extend()/match() run against the same input_path/tmp_dir.
