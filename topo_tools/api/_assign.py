@@ -1,67 +1,61 @@
-"""Public API: fit already-extended children into a new parent/clip layer."""
+"""Shared plumbing for assign-many and assign-one, which differ only by strategy."""
 
 from logging import getLogger
 from pathlib import Path
+from types import ModuleType
 
 from topo_tools.core.assign import _01_inputs as inputs
-from topo_tools.core.assign import _02_one as assign
+from topo_tools.core.assign import _03_outputs as outputs
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.mosaic import _03_clip as clip
-from topo_tools.core.mosaic import _04_stitch as stitch
-from topo_tools.core.mosaic import _05_outputs as outputs
 
 logger = getLogger(__name__)
 
-_STEP_ORDER = ["inputs", "assign", "clip", "stitch", "outputs"]
+_STEP_ORDER = ["inputs", "assign", "outputs"]
 
 _STEP_TABLES = {
     "inputs": ["{n}_child_01", "{n}_parent_01"],
     "assign": ["{n}_02_pairs", "{n}_02_assign", "{n}_02_unassigned"],
-    "clip": ["{n}_03"],
-    "stitch": ["{n}_04"],
     "outputs": [],
 }
 
 
-def mosaic(  # noqa: C901, PLR0912, PLR0913
-    input_paths: str | Path | list[str | Path],
-    clip_path: str | Path,
-    output_path: str | Path | None = None,
-    issues_path: str | Path | None = None,
+def run(  # noqa: C901, PLR0912, PLR0913
+    children_paths: str | Path | list[str | Path],
+    parent_path: str | Path,
+    output_path: str | Path | None,
+    issues_path: str | Path | None,
     *,
-    threads: int | None = None,
-    tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
-    debug: bool = False,
-    step: str | None = None,
+    assign_module: ModuleType,
+    name_suffix: str,
+    threads: int | None,
+    tmp_dir: str | Path | None,
+    overwrite: bool,
+    debug: bool,
+    step: str | None,
 ) -> None:
-    """Fit one or more already-extended children layers into a new parent/clip layer.
-
-    input_paths MAY be a list; output_path is then required, since there's
-    no single filename to default from.
-    """
+    """Run inputs -> assign_module.main -> outputs; name_suffix disambiguates tables."""
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
 
-    if isinstance(input_paths, (str, Path)):
-        paths = [Path(input_paths)]
-        single_path = Path(input_paths)
+    if isinstance(children_paths, (str, Path)):
+        paths = [Path(children_paths)]
+        single_path = Path(children_paths)
     else:
-        paths = [Path(p) for p in input_paths]
+        paths = [Path(p) for p in children_paths]
         single_path = None
 
-    clip_path = Path(clip_path)
+    parent_path = Path(parent_path)
     if output_path is not None:
         output_path = Path(output_path)
     elif single_path is not None:
-        output_path = single_path.with_stem(single_path.stem + "_mosaicked")
+        output_path = single_path.with_stem(single_path.stem + "_assigned")
     else:
-        msg = "output_path is required when multiple input_paths are given"
+        msg = "output_path is required when multiple children_paths are given"
         raise ValueError(msg)
     issues_path = (
         Path(issues_path)
@@ -75,12 +69,10 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
         msg = f"output already exists: {issues_path}"
         raise FileExistsError(msg)
 
-    # "_mosaic" keeps every table/file this call creates distinct from an
-    # extend()/match() run against the same input_path/tmp_dir.
     name = (
-        single_path.name.replace(".", "_") + "_mosaic"
+        single_path.name.replace(".", "_") + name_suffix
         if single_path is not None
-        else output_path.name.replace(".", "_") + "_mosaic"
+        else output_path.name.replace(".", "_") + name_suffix
     )
 
     with (
@@ -96,13 +88,9 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
             if debug:
                 logger.info("=== %s ===", s)
             if s == "inputs":
-                inputs.main(conn, name, paths, clip_path)
+                inputs.main(conn, name, paths, parent_path)
             elif s == "assign":
-                assign.main(conn, name)
-            elif s == "clip":
-                clip.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
-            elif s == "stitch":
-                stitch.main(conn, name, debug=debug)
+                assign_module.main(conn, name)
             elif s == "outputs":
                 outputs.main(conn, name, output_path, issues_path, debug=debug)
         maybe_export_debug_tables(

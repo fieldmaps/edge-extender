@@ -14,9 +14,9 @@ instead of repeating them.
   `change`.
 - The `mosaic` tool MUST NOT depend on `extend` or `match`, and neither
   MUST depend on `mosaic` (see `docs/explanation/mosaic.md`).
-- The shared constants, coverage-validation, file I/O,
-  database-connection, and clip helpers MUST NOT depend on any of the five
-  tools -- they are leaf building blocks usable by all of them.
+- The shared constants, coverage-validation, file I/O, database-connection,
+  assign, clip, and stitch helpers MUST NOT depend on any of the five
+  tools; they are leaf building blocks usable by all of them.
 
 ## Coverage-topology checks
 
@@ -31,18 +31,18 @@ instead of repeating them.
 Every tool's public API function takes these in addition to its own
 tool-specific settings (see the tool's own file for those):
 
-- `tmp_dir` -- intermediate DuckDB + Parquet location; MUST default to a
+- `tmp_dir`: intermediate DuckDB + Parquet location; MUST default to a
   fresh temporary directory when unset, and MUST be cleaned up after the
   call unless `debug` is set.
-- `threads` -- DuckDB thread count; unset MUST defer to DuckDB's own
+- `threads`: DuckDB thread count; unset MUST defer to DuckDB's own
   default.
-- `overwrite` -- whether to overwrite an existing output path.
-- `debug` -- MUST keep intermediate tables, export all of them to Parquet,
+- `overwrite`: whether to overwrite an existing output path.
+- `debug`: MUST keep intermediate tables, export all of them to Parquet,
   and log timing + memory delta per query.
-- `step` -- if given, MUST run only the one named stage; any value outside
+- `step`: if given, MUST run only the one named stage; any value outside
   that tool's own stage names MUST raise `ValueError`.
 
-No module-level `argparse`/env parsing exists anywhere -- settings flow in
+No module-level `argparse`/env parsing exists anywhere; settings flow in
 as plain keyword arguments on each tool's own `api.*()` function, and the
 CLI maps flags/env vars onto those same kwargs 1:1.
 
@@ -51,7 +51,7 @@ CLI maps flags/env vars onto those same kwargs 1:1.
 - `extend`, `match`, and `mosaic` MUST raise if their final output has any
   overlap or any gap.
 - `clean` MUST raise if its final output has any overlap. It MUST NOT raise
-  over an unfilled gap -- gaps may legitimately remain by design and are
+  over an unfilled gap: gaps may legitimately remain by design and are
   only logged.
 - `change` performs no topology hard gate at all; it is a read-only
   comparison between two inputs, not a fix.

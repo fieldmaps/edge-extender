@@ -7,12 +7,12 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.duckdb_utils import get_connection, log_file
+from topo_tools.core.duckdb_utils import bbox_columns_sql, get_connection, log_file
 
 from ._tiling import subdivide_boundary
 
 
-def main(  # noqa: PLR0913 -- each param is a distinct required input
+def main(  # noqa: PLR0913 (each param is a distinct required input)
     conn: DuckDBPyConnection,
     table_in: str,
     parent_source: str,
@@ -112,28 +112,33 @@ def _clip_one_worker(
             """)
             worker_conn.execute(f"""--sql
                 CREATE TABLE clip_children AS
-                SELECT * EXCLUDE (geom), ST_SetCRS(geom, 'EPSG:4326') AS geom
+                SELECT * EXCLUDE (geom), ST_SetCRS(geom, 'EPSG:4326') AS geom,
+                       {bbox_columns_sql("geom")}
                 FROM read_parquet('{group_dir / "child.parquet"}')
             """)
-            subdivide_boundary(worker_conn, "clip_one", "geom", "clip_btile")
+            subdivide_boundary(worker_conn, "clip_one", "geom", "clip_btile_raw")
+            # Bbox columns precomputed here, not called inline in the join below:
+            # DuckDB re-evaluates an inline envelope call per comparison, not per row.
+            worker_conn.execute(f"""--sql
+                CREATE TABLE clip_btile AS
+                SELECT geom, {bbox_columns_sql("geom")} FROM clip_btile_raw
+            """)
             worker_conn.execute(f"""--sql
                 COPY (
                     SELECT * FROM (
-                        SELECT c.* EXCLUDE (geom),
+                        SELECT c.* EXCLUDE (geom, xmin, xmax, ymin, ymax),
                                ST_SetCRS(ST_Multi(ST_CollectionExtract(
                                    ST_Union_Agg(ST_Intersection(c.geom, b.geom)), 3
                                ))::GEOMETRY, 'EPSG:4326') AS geom
                         FROM clip_children c
                         JOIN clip_btile b
-                          ON ST_XMax(b.geom) >= ST_XMin(c.geom)
-                         AND ST_XMin(b.geom) <= ST_XMax(c.geom)
-                         AND ST_YMax(b.geom) >= ST_YMin(c.geom)
-                         AND ST_YMin(b.geom) <= ST_YMax(c.geom)
+                          ON b.xmax >= c.xmin AND b.xmin <= c.xmax
+                         AND b.ymax >= c.ymin AND b.ymin <= c.ymax
                         GROUP BY ALL
                     ) WHERE NOT ST_IsEmpty(geom)
                 ) TO '{group_dir / "output.parquet"}' (FORMAT PARQUET)
             """)
             worker_conn.close()
         result_queue.put(None)
-    except Exception as e:  # noqa: BLE001 -- must not raise across the process boundary uncaught
+    except Exception as e:  # noqa: BLE001 (must not raise across the process boundary uncaught)
         result_queue.put(f"{type(e).__name__}: {e}")
