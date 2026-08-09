@@ -26,7 +26,7 @@ def check_overlaps(conn: DuckDBPyConnection, table: str) -> None:
 def has_gaps(conn: DuckDBPyConnection, table: str) -> bool:
     """Return True if the union of `table.geom` has any fully-enclosed interior holes.
 
-    Dumps the union into parts before checking -- ST_NumInteriorRings silently
+    Dumps the union into parts before checking. ST_NumInteriorRings silently
     returns NULL on a MultiPolygon.
     """
     max_interior_rings = conn.execute(f"""--sql
@@ -48,7 +48,7 @@ def check_gaps(conn: DuckDBPyConnection, table: str) -> None:
         raise RuntimeError(error)
 
 
-def coverage_clean(  # noqa: PLR0913 -- each param is a distinct required input, not decomposable
+def coverage_clean(  # noqa: PLR0913 (each param is a distinct required input, not decomposable)
     conn: DuckDBPyConnection,
     table_in: str,
     table_out: str,

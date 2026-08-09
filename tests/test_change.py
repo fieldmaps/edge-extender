@@ -1,6 +1,6 @@
 """Portability smoke tests: does change() run to completion on this machine.
 
-Not a topology suite -- the union-find/classification logic in
+Not a topology suite: the union-find/classification logic in
 core/change/_03_classify.py is new and non-obvious enough (ported from
 topo-tools-js's classify.ts) that several of these tests assert on specific
 classification outcomes, not just "did it run."
@@ -117,7 +117,7 @@ def test_change_full_run(old_layer, new_layer, tmp_path):
     assert overlay_path.exists()
     rows = _read_changelog(output_path)
     # code/name columns come from --code-column-a/-b, which default to
-    # unresolved (None) unless a link flag is set -- geometry-only mode still
+    # unresolved (None) unless a link flag is set: geometry-only mode still
     # classifies correctly, but code_a/code_b are NULL throughout this run.
     classes = {row[4] for row in rows}
     assert classes == {"unchanged", "modified", "split", "merge", "created", "removed"}
@@ -140,7 +140,7 @@ def test_change_tau_match_threshold(old_layer, new_layer, tmp_path):
     """RL1's ~10% overlap is below the default tau_match; lowering it links the pair.
 
     code_column_a/-b are passed explicitly (without a --link-by-code flag) so
-    the changelog's display columns are populated for row lookup -- this has
+    the changelog's display columns are populated for row lookup, this has
     no effect on classification, which stays purely spatial here.
     """
     default_out = tmp_path / "default.csv"

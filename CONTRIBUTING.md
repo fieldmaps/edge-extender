@@ -31,7 +31,7 @@ uv run pytest
 ```
 
 Tests use small synthetic geometry generated in-fixture (see
-`tests/test_extend.py`) rather than committed binary fixtures — prefer that
+`tests/test_extend.py`) rather than committed binary fixtures; prefer that
 pattern for new tests unless a bug genuinely requires a real-world file to
 reproduce.
 
@@ -48,7 +48,7 @@ locally and fail in CI.
 
 ## Architecture
 
-Read `CLAUDE.md` before making structural changes — it documents the
+Read `CLAUDE.md` before making structural changes. It documents the
 three-layer split (`core/` → `api/` → `cli/`) and the rule that `core/` and
 `api/` must never import `click`. New tools should follow the same
 `core/api/cli` layering as `extend`.
@@ -70,5 +70,5 @@ useful bug report you can give us.
 
 ## Security issues
 
-Do not open a public issue for a security vulnerability — see
+Do not open a public issue for a security vulnerability, see
 [`SECURITY.md`](SECURITY.md).

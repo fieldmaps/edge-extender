@@ -112,7 +112,7 @@ def extend(  # noqa: PLR0913, PLR0917
     default="auto",
     show_default=True,
     help="'auto' (fill only thin/sliver-shaped gaps), 'all' (fill every detected "
-    "gap), or a number in decimal degrees (the layer's EPSG:4326 units -- "
+    "gap), or a number in decimal degrees (the layer's EPSG:4326 units, "
     "matches GDAL/OGR convention, not meters).",
 )
 @click.option(
@@ -502,7 +502,7 @@ def mosaic(  # noqa: PLR0913, PLR0917
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
-        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 -- arbitrary pattern, not anchored to one Path
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 (arbitrary pattern, not anchored to one Path)
         if not matches:
             msg = f"no files matched: {input_file}"
             raise click.ClickException(msg)
@@ -659,7 +659,7 @@ def assign_many(  # noqa: PLR0913, PLR0917
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
-        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 -- arbitrary pattern, not anchored to one Path
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 (arbitrary pattern, not anchored to one Path)
         if not matches:
             msg = f"no files matched: {input_file}"
             raise click.ClickException(msg)
@@ -730,7 +730,7 @@ def assign_one(  # noqa: PLR0913, PLR0917
 ) -> None:
     r"""Crosswalk a multi-file child set onto one shared majority-vote parent.
 
-    Every child in one source file lands on one shared parent -- guards
+    Every child in one source file lands on one shared parent, guards
     against already-extended/overshoot geometry crossing borders.
     OUTPUT_FILE defaults to INPUT_FILE with an "_assigned" suffix if
     omitted; it is required when INPUT_FILE is a glob matching more than
@@ -747,7 +747,7 @@ def assign_one(  # noqa: PLR0913, PLR0917
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
-        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 -- arbitrary pattern, not anchored to one Path
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 (arbitrary pattern, not anchored to one Path)
         if not matches:
             msg = f"no files matched: {input_file}"
             raise click.ClickException(msg)

@@ -109,7 +109,7 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
 
     A file's children are one group (e.g. one country's admin2 units), not
     independently routed to whichever parent each one individually overlaps
-    most -- guards against already-extended/overshoot geometry crossing
+    most, guards against already-extended/overshoot geometry crossing
     borders. Every child in one file lands on one shared parent.
     """
     _build_pairs(conn, name)

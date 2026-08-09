@@ -3,11 +3,11 @@
 ## One-time setup (already done)
 
 - GitHub Environment `pypi` on this repo, with a required-reviewer protection rule (repo Settings → Environments). Approval is required before the `publish` job in `.github/workflows/publish.yml` can run, even after a Release is published.
-- Pending trusted publisher registered at <https://pypi.org/manage/account/publishing/>: project `topo-tools`, owner `OCHA-DAP`, repo `topo-tools-py`, workflow `publish.yml`, environment `pypi`. This authorizes GitHub Actions to publish via OIDC — no long-lived API token stored anywhere.
-- **Repo moved from `fieldmaps` to `OCHA-DAP`** — if the PyPI trusted publisher still shows owner `fieldmaps`, update it at the link above before the next release; GitHub's OIDC token now asserts `OCHA-DAP` as the repo owner and the publish job's OIDC exchange will fail on a mismatch.
+- Pending trusted publisher registered at <https://pypi.org/manage/account/publishing/>: project `topo-tools`, owner `OCHA-DAP`, repo `topo-tools-py`, workflow `publish.yml`, environment `pypi`. This authorizes GitHub Actions to publish via OIDC, no long-lived API token stored anywhere.
+- **Repo moved from `fieldmaps` to `OCHA-DAP`.** If the PyPI trusted publisher still shows owner `fieldmaps`, update it at the link above before the next release; GitHub's OIDC token now asserts `OCHA-DAP` as the repo owner and the publish job's OIDC exchange will fail on a mismatch.
 - `.github/workflows/publish.yml` triggers only on `release: published`, never on push/tag alone.
 
-None of the above needs to be redone for future releases. It's specific to real PyPI — TestPyPI (below) is a fully separate service with its own account/tokens and isn't wired into this workflow.
+None of the above needs to be redone for future releases. It's specific to real PyPI; TestPyPI (below) is a fully separate service with its own account/tokens and isn't wired into this workflow.
 
 ## Cutting a real release
 
@@ -17,11 +17,11 @@ None of the above needs to be redone for future releases. It's specific to real 
 4. GitHub → Releases → Draft a new release → tag it (e.g. `v0.1.1`) → Publish release.
 5. Approve the `publish` job in the Actions run (the required-reviewer gate from the environment setup above).
 
-Version numbers, once uploaded, are permanent — PyPI never allows re-uploading the same filename again, even after deletion. Staying in `0.x` (SemVer's "no compatibility promises yet" range) means there's no expectation of a steady cadence or of never breaking the CLI/API between releases.
+Version numbers, once uploaded, are permanent: PyPI never allows re-uploading the same filename again, even after deletion. Staying in `0.x` (SemVer's "no compatibility promises yet" range) means there's no expectation of a steady cadence or of never breaking the CLI/API between releases.
 
 ## Rehearsing on TestPyPI
 
-TestPyPI (test.pypi.org) is a separate index for exactly this: testing packaging/publishing mechanics without touching the real project. Same permanent-filename rule applies there too, so each rehearsal attempt needs its own version bump — use `.devN` suffixes (e.g. `0.1.1.dev1`, `0.1.1.dev2`, ...) to keep these visually distinct from real release versions.
+TestPyPI (test.pypi.org) is a separate index for exactly this: testing packaging/publishing mechanics without touching the real project. Same permanent-filename rule applies there too, so each rehearsal attempt needs its own version bump; use `.devN` suffixes (e.g. `0.1.1.dev1`, `0.1.1.dev2`, ...) to keep these visually distinct from real release versions.
 
 Requires a `.env` file (gitignored) in the repo root with `UV_PUBLISH_TOKEN=pypi-...`, generated at <https://test.pypi.org/manage/account/token/> (account-scoped, since the project doesn't exist there yet on first use).
 
@@ -42,4 +42,4 @@ uv pip install --python /tmp/testpypi-check \
 /tmp/testpypi-check/bin/topo-tools extend --help
 ```
 
-The `--extra-index-url` fallback is required — TestPyPI doesn't mirror `click`/`duckdb`/`psutil`, only whatever you've published there yourself. Full version history: <https://test.pypi.org/project/topo-tools/#history>.
+The `--extra-index-url` fallback is required: TestPyPI doesn't mirror `click`/`duckdb`/`psutil`, only whatever you've published there yourself. Full version history: <https://test.pypi.org/project/topo-tools/#history>.

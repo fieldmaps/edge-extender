@@ -23,10 +23,10 @@ composite tools below them:
 ## Deployment Targets
 
 The pipeline targets two memory-constrained environments: **DuckDB-WASM in
-the browser** (no disk, JS heap only — the Python pipeline documents the SQL
+the browser** (no disk, JS heap only, and the Python pipeline documents the SQL
 approach for eventual JS/TS porting) and **memory-limited containers**
 (typically 2–4 GB RAM, no swap; pip-install this package into whatever image
-you need — no Dockerfile ships here). Prefer approaches that minimize
+you need, no Dockerfile ships here). Prefer approaches that minimize
 intermediate materializations, avoid platform-specific calls (`os.sysconf`,
 `/proc`, `subprocess`), and work with small buffer budgets.
 
@@ -36,29 +36,29 @@ Each tool's pipeline is a sequence of stages, each a standalone module in its
 own `topo_tools/core/{tool}/` package. All stages of one `extend()`/`match()`
 call share a single file-backed DuckDB connection; tables are the IPC
 mechanism between stages (per-group subprocesses inside `match` are the one
-exception — see `docs/explanation/match.md`). Three layers, each with a specific job
+exception, see `docs/explanation/match.md`). Three layers, each with a specific job
 (mirroring `geoparquet-io`'s `core`/`api`/`cli` split):
 
-- `topo_tools/core/{extend,assign,clip,stitch,match,mosaic,clean,change}/` —
+- `topo_tools/core/{extend,assign,clip,stitch,match,mosaic,clean,change}/`:
   stage implementations. `core.match`/`core.mosaic` call
   `core.assign`/`core.clip`/`core.stitch` stage functions directly (not
   through their own `api.*()`), the same pattern `core.match`/`core.change`
   use to call `core.extend`'s stage functions directly. `core.assign`/
   `core.clip`/`core.stitch` are themselves neutral leaves, alongside
-  `core.constants`/`core.coverage`/`core.io`/`core.duckdb_utils` — every
+  `core.constants`/`core.coverage`/`core.io`/`core.duckdb_utils`; every
   tool package may import any of these seven, none of them may import back.
-- `topo_tools/api/{extend,assign_many,assign_one,clip,stitch,match,mosaic,clean,change}.py`
-  — public API functions; each chains its own tool's stages for exactly one
+- `topo_tools/api/{extend,assign_many,assign_one,clip,stitch,match,mosaic,clean,change}.py`:
+  public API functions; each chains its own tool's stages for exactly one
   file (or file pair) per call, except `mosaic`'s and `assign-many`'s/
   `assign-one`'s children role, which MAY span multiple files (see
   `docs/reference/mosaic.md`).
-- `topo_tools/cli/main.py` — the click CLI, mapping flags/env vars onto one
-  `api.*()` call per invocation, one file (or pair) at a time — `mosaic`'s
+- `topo_tools/cli/main.py`: the click CLI, mapping flags/env vars onto one
+  `api.*()` call per invocation, one file (or pair) at a time (`mosaic`'s
   and `assign-many`'s/`assign-one`'s child argument alone MAY be a glob
-  pattern — no directory batching.
+  pattern, no directory batching).
 
 Import boundaries between these layers, and between tools, are mechanically
-enforced by `pyproject.toml`'s import-linter contracts — see
+enforced by `pyproject.toml`'s import-linter contracts, see
 `docs/reference/shared.md` for the MUST/MAY rules.
 
 ### Pipeline, Configuration & Table Naming
@@ -69,7 +69,7 @@ live in `docs/reference/{tool}.md`, stage-by-stage detail in
 `docs/explanation/{tool}.md`.
 
 Settings flow in as plain keyword arguments on each tool's own `api.*()`
-function, mapped 1:1 from CLI flags/env vars — no module-level `argparse`/env
+function, mapped 1:1 from CLI flags/env vars. There's no module-level `argparse`/env
 parsing anywhere. Common settings (`tmp_dir`, `threads`, `overwrite`,
 `debug`, `step`) are in `docs/reference/shared.md`; per-tool
 paths/arguments/`step` values are in `docs/reference/{tool}.md`
@@ -86,23 +86,23 @@ per-tool table names are in `docs/explanation/{tool}.md`.
 ### Key Patterns
 
 - **DuckDB spatial extension** handles all geometry operations (`ST_*` functions), one file-backed connection per input file (`topo_tools/core/duckdb_utils.py`), returned as a `ProfiledConnection` proxy that logs timing/memory per query when `--debug` is set.
-- **DuckDB tables as IPC** — stages read and write named tables on the shared connection; no Parquet between stages.
-- **Topology validation** (`_check_overlaps`/`_check_gaps` in each tool's outputs stage, backed by `has_coverage_violations` in `topo_tools/core/coverage.py`) always unnests MultiPolygons first. No byte-exactness check — see the next bullet.
+- **DuckDB tables as IPC**: stages read and write named tables on the shared connection; no Parquet between stages.
+- **Topology validation** (`_check_overlaps`/`_check_gaps` in each tool's outputs stage, backed by `has_coverage_violations` in `topo_tools/core/coverage.py`) always unnests MultiPolygons first. No byte-exactness check, see the next bullet.
 - **Geometry column names**: `geom` in DuckDB tables, `geometry` in final output. `duckdb_memory()` profiling caveats are in `docs/explanation/performance.md`.
-- **`_05_merge.py` joins against nearby originals via bbox-prefiltered, part-exploded join, never a global `ST_Union_Agg` operand** (`_02_lines.py`'s neighbor-union join uses whole-fid bboxes instead — not interchangeable). See `docs/adr/0001-avoid-global-union-agg-operand.md`.
-- **Never call `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` inline inside a JOIN's `ON` clause** — DuckDB recomputes the envelope per pairwise comparison instead of once per row, which can hang indefinitely on a table with even a few very-high-vertex-count polygons. Precompute bbox columns on the joined table/CTE first, as `_05_merge.py` already does (see `docs/adr/0014-bbox-inline-recompute-in-join.md`).
+- **`_05_merge.py` joins against nearby originals via bbox-prefiltered, part-exploded join, never a global `ST_Union_Agg` operand** (`_02_lines.py`'s neighbor-union join uses whole-fid bboxes instead, not interchangeable). See `docs/adr/0001-avoid-global-union-agg-operand.md`.
+- **Never call `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` inline inside a JOIN's `ON` clause.** DuckDB recomputes the envelope per pairwise comparison instead of once per row, which can hang indefinitely on a table with even a few very-high-vertex-count polygons. Precompute bbox columns on the joined table/CTE first, as `_05_merge.py` already does (see `docs/adr/0014-bbox-inline-recompute-in-join.md`).
 - **Byte-exact preservation of original polygon vertices is not a goal.** `ST_CoverageClean` may shift any polygon's boundary, including previously-untouched ones (see `docs/explanation/topology.md`).
-- **`match` reuses `extend`'s stage functions per-group** (so `extend` stays usable standalone) **in an isolated subprocess**, not `match()`'s own process — GEOS's native heap isn't fully released between files even after closing the DuckDB connection. `match` runs two subprocess generations per call: per-group `extend`, then a separate, later, batched `clip` generation over the whole reassembled table (see `docs/adr/0020`). See `docs/explanation/match.md`.
-- **`mosaic` skips Voronoi extension entirely** — it assumes the child layer is already a finished `extend()` output, and chains `core.assign`'s `assign-one` strategy → `core.clip` → `core.stitch` directly, no per-group subprocess for extension itself. See `docs/explanation/mosaic.md`.
-- **`core/clip/`'s `_02_clip.main()` always clips one parent fid at a time, each in its own spawned subprocess, boundary adaptively grid-tiled before intersecting** — uniformly for every caller, including `match`; a single bad `parent_fid` aborts the whole run. Repeated plain `ST_Intersection` leaks GEOS's native heap the same way `extend()`'s Voronoi machinery does, and a single oversized parent (many children against a highly complex boundary) can itself exceed available memory even fully isolated; tile size is solved from each parent's own vertex density rather than a fixed constant, and small parents skip tiling entirely (see `docs/adr/0015`, `docs/adr/0016`, `docs/adr/0017`).
+- **`match` reuses `extend`'s stage functions per-group** (so `extend` stays usable standalone) **in an isolated subprocess**, not `match()`'s own process, because GEOS's native heap isn't fully released between files even after closing the DuckDB connection. `match` runs two subprocess generations per call: per-group `extend`, then a separate, later, batched `clip` generation over the whole reassembled table (see `docs/adr/0020`). See `docs/explanation/match.md`.
+- **`mosaic` skips Voronoi extension entirely.** It assumes the child layer is already a finished `extend()` output, and chains `core.assign`'s `assign-one` strategy, then `core.clip`, then `core.stitch` directly, with no per-group subprocess for extension itself. See `docs/explanation/mosaic.md`.
+- **`core/clip/`'s `_02_clip.main()` always clips one parent fid at a time, each in its own spawned subprocess, boundary adaptively grid-tiled before intersecting**, uniformly for every caller, including `match`; a single bad `parent_fid` aborts the whole run. Repeated plain `ST_Intersection` leaks GEOS's native heap the same way `extend()`'s Voronoi machinery does, and a single oversized parent (many children against a highly complex boundary) can itself exceed available memory even fully isolated; tile size is solved from each parent's own vertex density rather than a fixed constant, and small parents skip tiling entirely (see `docs/adr/0015`, `docs/adr/0016`, `docs/adr/0017`).
 - **`core/assign/`'s two strategies are picked by the input's geometry state, not by tool-of-origin**: `assign-many` (per-child plurality) for raw/unextended children, `assign-one` (per-file majority vote) for already-extended/overshoot children. See `docs/explanation/assign.md` and `docs/adr/0019`.
 - **`core.clean` depends only on the shared leaf modules, not `core.extend`.** See `docs/explanation/clean.md`.
 - **`ST_CoverageClean`'s `gap_maximum_width` has no GEOS-native auto-fill default.** `clean`'s `--gap-width auto` mode computes an explicit width from the widest thin detected gap; `all` mode uses a fixed `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` sentinel (see `docs/adr/0002-gap-maximum-width-no-native-default.md`).
 - **`coverage_clean()` (`core/coverage.py`) must call `ST_CoverageClean` positionally, never via DuckDB's `:=` named-argument syntax.** DuckDB binds named arguments to compiled/extension scalar functions purely by position, silently discarding the name (see `docs/adr/0003-st-coverageclean-positional-args.md`).
 - **`ST_Distance(GEOMETRY, GEOMETRY)` is unreliable for two disjoint polygons at small separations.** Use `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` extent comparisons or `ST_MaximumInscribedCircle` instead (see `docs/adr/0004-st-distance-unreliable-near-disjoint.md`).
 - **`clean/_02_issues.py`'s per-detection-kind retry falls back to an empty result table (logged) if both attempts fail, rather than leaving the table missing.** Any new call site of `_run_with_retry` must supply `empty_sql` (see `docs/adr/0005-clean-retry-fallback-bug.md`).
-- **`change`'s classification runs in Python (`core/change/_03_classify.py`), not SQL** — feature-count-scaled, not vertex-scaled, unlike `extend`/`clean`'s work. See `docs/explanation/change.md`.
-- **`change` always uses exact `ST_Intersection`, never point-sampling** — unlike the sister JS app's WASM-only-bug workaround. See `docs/explanation/change.md`.
+- **`change`'s classification runs in Python (`core/change/_03_classify.py`), not SQL**, feature-count-scaled, not vertex-scaled, unlike `extend`/`clean`'s work. See `docs/explanation/change.md`.
+- **`change` always uses exact `ST_Intersection`, never point-sampling**, unlike the sister JS app's WASM-only-bug workaround. See `docs/explanation/change.md`.
 - **`clean`'s `--maximum-gap-width`/`--snapping-distance` are decimal degrees, not meters** (`_01` is always EPSG:4326). See `docs/explanation/clean.md`.
 
 ### Supported Formats
@@ -147,7 +147,7 @@ Pre-commit hooks run `uv-sync`, `ruff-format`, and `ruff-check` automatically.
 
 | Dataset | Use |
 | --- | --- |
-| **West Africa cluster** (`sen`/`gmb`/`gnb`/`gin`/`civ`/`gha`/`tgo`/`ben`, portolan `adm2`) | Mutually neighboring countries — single-file tool tests (extend/match/clean/change) and mosaic's multi-file combine test |
+| **West Africa cluster** (`sen`/`gmb`/`gnb`/`gin`/`civ`/`gha`/`tgo`/`ben`, portolan `adm2`) | Mutually neighboring countries, used for single-file tool tests (extend/match/clean/change) and mosaic's multi-file combine test |
 
 A full portolan catalog (real, large-scale admin boundary data, multiple
 countries and admin levels, some with multiple historical versions) is
@@ -158,9 +158,9 @@ available for at-scale/real-data stress testing beyond the cluster above:
   STAC root catalog at `https://data.source.coop/hdx/cod-ab/catalog.json`
   (`id: portolan`; per-country `child` links, e.g. `./chl/catalog.json`)
 
-**HARD RULE — the portolan catalog (local copy or live source) is read-only.**
+**HARD RULE: the portolan catalog (local copy or live source) is read-only.**
 Never write, modify, move, or delete anything inside
-`/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan` — no
+`/Users/computer/GitHub/OCHA-DAP/hdx-scraper-cod-ab-global/portolan`. No
 `--output-path`/`--overwrite`, no `--tmp-dir`, no `--debug` exports, nothing.
 Only ever read from it. Every output/tmp/debug path for a portolan-sourced
 test run must point outside the catalog (e.g. the session scratchpad or
@@ -171,20 +171,20 @@ file (or an old/new comparison pair, for `change`) from the catalog.
 
 ## Reference Docs
 
-- `docs/reference/` — behavior contracts per tool (`shared.md` for common settings/gates)
-- `docs/explanation/extend.md` — Voronoi-extension algorithm, stage-by-stage detail
-- `docs/explanation/topology.md` — ST_Node/ST_Polygonize approach, spatial function reference, SPATIAL_JOIN memory bug
-- `docs/explanation/assign.md` — `assign-many` vs `assign-one` algorithms, comparison table
-- `docs/explanation/clip.md` — per-`parent_fid` subprocess isolation, adaptive grid-tiling
-- `docs/explanation/stitch.md` — whole-table coverage-clean, seam-gap findings
-- `docs/explanation/match.md` — assignment algorithm, two-generation subprocess isolation, `check_gaps` caveat
-- `docs/explanation/mosaic.md` — assign/clip/stitch chaining, match-vs-mosaic comparison, overshoot/cross-provenance caveats
-- `docs/explanation/clean.md` — defect detection, `ST_CoverageClean` semantics, issues-file schema
-- `docs/explanation/change.md` — overlap/classification algorithm, output schema, two-file design
-- `docs/explanation/performance.md` — thread-scaling benchmarks, phase profiles, RTREE experiment
-- `docs/explanation/voronoi-memory.md` — per-file resampling distance, memory ceilings for `phl_admin3`/`idn_admin3`
-- `docs/how-to/publishing.md` — PyPI release process (GitHub Release → OIDC trusted publisher)
-- `docs/how-to/verify-duckdb-function.md` — DuckDB/spatial function lookup commands
-- `docs/how-to/at-scale-testing.md` — portolan catalog layout, picking a file or old/new pair for a real-scale test
-- `docs/adr/README.md` — how to decide whether a fact belongs in an ADR vs. `docs/explanation/` vs. CLAUDE.md's Key Patterns
-- `docs/adr/` — immutable decision records referenced from Key Patterns above
+- `docs/reference/`: behavior contracts per tool (`shared.md` for common settings/gates)
+- `docs/explanation/extend.md`: Voronoi-extension algorithm, stage-by-stage detail
+- `docs/explanation/topology.md`: ST_Node/ST_Polygonize approach, spatial function reference, SPATIAL_JOIN memory bug
+- `docs/explanation/assign.md`: `assign-many` vs `assign-one` algorithms, comparison table
+- `docs/explanation/clip.md`: per-`parent_fid` subprocess isolation, adaptive grid-tiling
+- `docs/explanation/stitch.md`: whole-table coverage-clean, seam-gap findings
+- `docs/explanation/match.md`: assignment algorithm, two-generation subprocess isolation, `check_gaps` caveat
+- `docs/explanation/mosaic.md`: assign/clip/stitch chaining, match-vs-mosaic comparison, overshoot/cross-provenance caveats
+- `docs/explanation/clean.md`: defect detection, `ST_CoverageClean` semantics, issues-file schema
+- `docs/explanation/change.md`: overlap/classification algorithm, output schema, two-file design
+- `docs/explanation/performance.md`: thread-scaling benchmarks, phase profiles, RTREE experiment
+- `docs/explanation/voronoi-memory.md`: per-file resampling distance, memory ceilings for `phl_admin3`/`idn_admin3`
+- `docs/how-to/publishing.md`: PyPI release process (GitHub Release, then OIDC trusted publisher)
+- `docs/how-to/verify-duckdb-function.md`: DuckDB/spatial function lookup commands
+- `docs/how-to/at-scale-testing.md`: portolan catalog layout, picking a file or old/new pair for a real-scale test
+- `docs/adr/README.md`: how to decide whether a fact belongs in an ADR vs. `docs/explanation/` vs. CLAUDE.md's Key Patterns
+- `docs/adr/`: immutable decision records referenced from Key Patterns above

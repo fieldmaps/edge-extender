@@ -47,26 +47,26 @@ Run `topo-tools match --help` for the full, always-current option list.
 
 ## Pipeline
 
-1. **`_01_inputs`** — loads and coverage-cleans both layers by delegating
+1. **`_01_inputs`**: loads and coverage-cleans both layers by delegating
    twice to `extend`'s own loader (`{name}_child_01`, `{name}_parent_01`).
-2. **assign** — calls `core.assign._02_many.main()` directly: assigns each
+2. **assign**: calls `core.assign._02_many.main()` directly: assigns each
    child to the parent it shares the largest area with (plurality, not
    majority); drops and logs children with zero overlap with any parent,
    keeping their geometry for the issues report. See
    `docs/explanation/assign.md` for the algorithm.
-3. **`_03_groups`** — groups children by their assigned parent (always, even
+3. **`_03_groups`**: groups children by their assigned parent (always, even
    a group of exactly one parent), runs `extend`'s pipeline within each group
    in an isolated subprocess, then reassembles the survivors, tagging each
    row with its group's own `parent_fid`. No clipping happens here anymore
    (see "Two subprocess generations" below). A failed group's children are
    recorded, with the parent id and failure reason, for the issues report.
-4. **`_04_clip`** — one batched call into `core.clip.main()` over the whole
+4. **`_04_clip`**: one batched call into `core.clip.main()` over the whole
    reassembled table at once, clipping every row to its own `parent_fid`'s
    geometry. See `docs/explanation/clip.md` for the algorithm.
-5. **`_05_stitch`** — calls `core.stitch._02_clean.main()` directly: a
+5. **`_05_stitch`**: calls `core.stitch._02_clean.main()` directly: a
    single whole-table `ST_CoverageClean` pass over the clipped output to
    close cross-group seams. See `docs/explanation/stitch.md`.
-6. **`_06_outputs`** — validates topology, builds the issues report from the
+6. **`_06_outputs`**: validates topology, builds the issues report from the
    dropped children collected in stages 2/3, and exports both the final
    layer and the issues report.
 
@@ -87,7 +87,7 @@ One consequence: a single bad `parent_fid` in the `clip` step now aborts
 the whole run, rather than match's old per-group continue-past-failure
 behavior for clip failures specifically. Per-group `extend` failures (OOM,
 or exhausting `attempt.py`'s 10 retries) still continue, dropping just that
-group, as before -- only clip's own hard-fail-on-first-bad-`parent_fid`
+group, as before; only clip's own hard-fail-on-first-bad-`parent_fid`
 semantics are new, and apply uniformly to every `clip` caller including
 `match` (see `docs/explanation/clip.md`).
 
@@ -107,13 +107,13 @@ per-file-per-process isolation guarantee down to group granularity avoids
 that outright rather than hoping in-process cleanup is sufficient.
 
 Data crosses the process boundary as small Parquet files (`child.parquet`,
-`parent.parquet` in, `output.parquet` out), never a shared connection — a
+`parent.parquet` in, `output.parquet` out), never a shared connection: a
 DuckDB file is single-writer, and the group's own DuckDB file
 (`group.duckdb`) lives entirely inside that group's private temp directory,
 discarded when the group finishes (unless `--debug`). Verified empirically
 that a `GEOMETRY` column round-trips correctly through
 `COPY ... TO (FORMAT PARQUET)` + `read_parquet(...)` in the installed DuckDB
-version — no `GEOPARQUET_VERSION` option is needed for this internal,
+version; no `GEOPARQUET_VERSION` option is needed for this internal,
 DuckDB-to-DuckDB round trip.
 
 `match()` raises only if **no** group produced any output at all (see
@@ -121,7 +121,7 @@ DuckDB-to-DuckDB round trip.
 failure behavior).
 
 A freshly-spawned process has no logging configuration of its own
-(`basicConfig` only ever runs in `cli/main.py`, in the parent process) — the
+(`basicConfig` only ever runs in `cli/main.py`, in the parent process); the
 worker puts a success/error signal on a `multiprocessing.Queue` instead of
 relying solely on its own log output, and only configures logging locally
 (mirroring `cli/main.py`'s own call, teed to a per-group log file) when
@@ -129,15 +129,15 @@ relying solely on its own log output, and only configures logging locally
 silently dropped during a debug run.
 
 **Real-world smoke test**: `bdi_admin4.gpkg` (3,067 features) matched against
-`bdi_admin2.parquet` (119 parents) completed successfully end-to-end — 119
+`bdi_admin2.parquet` (119 parents) completed successfully end-to-end: 119
 subprocess spawns, zero dropped children, zero failed groups, valid output
 coverage (see verification steps in the project's implementation history).
 
 **Colombia-scale profiling** (portolan `col/latest/adm3` → `col/latest/adm2`,
 `--debug`, Apple Silicon/10 logical cores): 31,880 children against 1,122
 parents, 1,120 of them with at least one assigned child (the other 2 parents
-had zero overlapping children — not a failure, no adm3 unit fell inside
-them). All 1,120 groups and all 1,120 clip subprocesses succeeded — zero
+had zero overlapping children (not a failure, no adm3 unit fell inside
+them). All 1,120 groups and all 1,120 clip subprocesses succeeded: zero
 dropped children, zero failed groups. Wall time 38m23s, peak RSS 7.23 GB
 (see `docs/adr/0020` for the full before/after comparison against the
 pre-extraction fused-subprocess design). Stage breakdown:
@@ -153,7 +153,7 @@ pre-extraction fused-subprocess design). Stage breakdown:
 
 `groups` still dominates as expected (1,120 sequential subprocess spawns,
 each running the per-group `extend` pipeline) but no longer accounts for
-the clip work it used to do inline -- that now shows up as its own `clip`
+the clip work it used to do inline; that now shows up as its own `clip`
 stage, batched over all 1,120 parent fids after every group has finished.
 
 ## Rejected: `ST_Snap` around the clip step's `ST_Intersection`
@@ -174,7 +174,7 @@ on that same exact reference:
 1. Snap each group's pre-clip geometry onto the parent's vertices, *before*
    `ST_Intersection(t.geom, p.geom)`.
 2. Snap the clipped *result* onto the parent's vertices, *after* the
-   intersection -- the mirror image, covering the case where `ST_Intersection`
+   intersection: the mirror image, covering the case where `ST_Intersection`
    itself perturbs the parent's inherited edge vertices during overlay
    processing rather than `t.geom`'s own vertices being the problem.
 
@@ -182,7 +182,7 @@ Tested both on Burundi, Sri Lanka, Malawi, Senegal, Haiti, Guatemala, and
 Chile (admin2-into-admin1 for the first six, admin3-into-admin2 for Chile):
 **zero measurable difference**, either direction, on every metric checked
 (pre-clean invalid-edge flag, count of fids the clean pass actually
-touches, whole-table clean peak RSS, wall time) -- identical or noise-level
+touches, whole-table clean peak RSS, wall time): identical or noise-level
 (<10%, no consistent direction) on all seven files, including Chile's
 56-group stress test (213/213 fids touched both ways, ~2550 MB peak all
 three variants).
@@ -191,12 +191,12 @@ Root cause, found by extracting the actual invalid-edge geometries on
 Burundi (`ST_CoverageInvalidEdges_Agg`, unnested, joined back to nearby
 fids): all 171 invalid edges border exactly the fid pairs the assign step
 places in two *different* parent groups, confirming these are genuinely
-cross-group seams -- but their lengths run from slivers up to **0.0058°
+cross-group seams, but their lengths run from slivers up to **0.0058°
 (~645 m)**, averaging **~12 m**. `SNAP_TOLERANCE` is `1e-8°` (~1.1 mm),
 five to six orders of magnitude smaller. This isn't the same failure mode
 as `_05_merge.py` at all: it's not two computations of the same crossing
 point disagreeing by float noise, it's two *different* groups' Voronoi
-extensions -- built independently, with no knowledge of each other --
+extensions, built independently, with no knowledge of each other,
 genuinely disagreeing about how far to reach near their shared parent
 border. No vertex-snapping tolerance in a sane range closes a
 meters-to-hundreds-of-meters gap; that's real gap-filling work, which is
@@ -218,8 +218,8 @@ intentional: a gap here is a real signal that the clip layer itself needs
 
 `--step=groups --debug` exports everything currently in the connection
 (`{name}_child_01`, `{name}_parent_01`, `{name}_02_pairs`, `{name}_02_assign`,
-`{name}_02_unassigned`, `{name}_03a`, `{name}_03b`), the same as a full run
-— group ids
+`{name}_02_unassigned`, `{name}_03a`, `{name}_03b`), the same as a full run:
+group ids
 aren't known ahead of time, so there's no static table list to filter to for
 that step. Per-group internal detail (the group's own `group.duckdb`,
 `group.log`, `child.parquet`, `parent.parquet`, `output.parquet`) is

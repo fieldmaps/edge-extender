@@ -24,7 +24,7 @@ def main(
     """
     # Every new-version unit, tagged with its relationship_class, plus every
     # old-version unit classed "removed" (gone in the new version, so no new
-    # polygon stands in for it) -- together these tile the comparison area
+    # polygon stands in for it), together these tile the comparison area
     # exactly once, colored by what happened. Ported from topo-tools-js's
     # pipeline/render.ts:stageRender.
     conn.execute(f"""--sql

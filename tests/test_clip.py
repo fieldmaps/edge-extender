@@ -1,6 +1,6 @@
 """Portability smoke tests: does clip() run to completion on this machine.
 
-Not a topology/correctness suite -- outputs.main already raises RuntimeError
+Not a topology/correctness suite: outputs.main already raises RuntimeError
 on an empty result, so a run that completes without raising has already
 been vetted for correctness by the pipeline itself.
 """
@@ -17,7 +17,7 @@ _PARENT_WKT = [
     (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))"),
 ]
 
-# Both children massively overshoot their assigned parent -- clip must bound
+# Both children massively overshoot their assigned parent, clip must bound
 # each one down to exactly that parent's own extent.
 _CHILD_ROWS = [
     (1, 1, "POLYGON((-5 -5, 5 -5, 5 5, -5 5, -5 -5))"),

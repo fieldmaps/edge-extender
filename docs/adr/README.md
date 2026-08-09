@@ -13,5 +13,5 @@ and is squashed/rewritten as understanding evolves.
 Numbered `NNNN-title.md`, sequential, never reused. A bullet belongs here
 instead of `CLAUDE.md`'s "Key Patterns" or a `docs/explanation/*.md` file if
 it would otherwise be a paragraph starting with "confirmed", "previously",
-"was misdiagnosed", or "empirically tested" — narrative investigation
+"was misdiagnosed", or "empirically tested": narrative investigation
 history, not current-state description.

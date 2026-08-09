@@ -9,7 +9,7 @@ Accepted
 `clean/_02_issues.py`'s module docstring promised each detection kind is
 "retried once at reduced precision, then falls back to an empty result
 (logged) rather than raising." `_run_with_retry` only logged on the second
-failure — it never created the temp table, so a double failure left it
+failure: it never created the temp table, so a double failure left it
 entirely missing and crashed `main()`'s downstream `UNION ALL` with a
 binder/catalog error instead of degrading gracefully.
 

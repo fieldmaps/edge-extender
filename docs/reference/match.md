@@ -17,7 +17,7 @@ tools.
 - A tie between two candidate parents MUST be broken by the lower parent
   id.
 - A child with no overlap with any parent MUST be dropped, not treated as
-  fatal, and `match` MUST log a warning naming it -- this may signal a real
+  fatal, and `match` MUST log a warning naming it, since this may signal a real
   data problem even though it isn't fatal. It MUST also be recorded in the
   issues report described under Outputs.
 
@@ -26,14 +26,14 @@ tools.
 - `match` MUST group children by their assigned parent, including a group
   of exactly one child.
 - For each group, `match` MUST extend that group's children alone
-  (boundary extraction, point/Voronoi generation, merging -- see
+  (boundary extraction, point/Voronoi generation, merging; see
   `docs/reference/extend.md`). Clipping to the group's parent happens later,
   batched across all groups (see Clipping below), not inside this step.
 - Each group's extension MUST run in an isolated process, separate from
   every other group and from `match`'s own process.
 - A group whose extension fails MUST be dropped from the output, not
   treated as fatal to the whole run, and `match` MUST log an error naming
-  it -- this may signal a real data problem even though it isn't fatal.
+  it, since this may signal a real data problem even though it isn't fatal.
   `match` MUST raise only if every group fails to produce output. Every
   child belonging to a failed group MUST be recorded in the issues report
   described under Outputs.

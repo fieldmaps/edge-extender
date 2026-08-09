@@ -51,7 +51,7 @@ def main(
     d = float(distance)
     cap_threshold = d * MAX_POINTS_PER_SEGMENT
 
-    # Buffered union of all line endpoints — marks the shared-boundary zone
+    # Buffered union of all line endpoints, marks the shared-boundary zone
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_03a" AS
         SELECT ST_Union_Agg(ST_Buffer(ST_Boundary(geom), {SNAP_TOLERANCE}))
@@ -59,16 +59,16 @@ def main(
         FROM "{name}_02"
     """)
 
-    # Split into "long" real segments (rare — a single one can span many
+    # Split into "long" real segments (rare, a single one can span many
     # degrees, e.g. Chad/Algeria's straight desert admin lines) and "normal"
     # ones. Long segments get capped interpolation directly. Normal segments
     # are re-merged back into contiguous per-fid lines and resampled with the
-    # original whole-line formula — this matters because decomposing into
+    # original whole-line formula, this matters because decomposing into
     # per-segment points unconditionally (even earlier revisions of this fix)
     # guarantees at least one point per real segment, creating a floor equal
     # to the file's raw vertex count. That floor doesn't respond to DISTANCE
     # and broke phl_admin3 (13M real vertices in its exterior boundary alone,
-    # already over MAX_POINTS with zero interpolation) — every retry from
+    # already over MAX_POINTS with zero interpolation), every retry from
     # 0.0002 to 0.1024 kept failing near 13.07M points. Re-merging normal
     # segments before resampling restores the old arc-length behavior, which
     # can shrink below the raw vertex count as DISTANCE grows, for the
@@ -109,7 +109,7 @@ def main(
     """)
 
     # Points from both branches, aggregated to one multipoint per fid
-    # *before* differencing against the shared-boundary zone — differencing
+    # *before* differencing against the shared-boundary zone. Differencing
     # per segment instead of per fid blew up on idn_admin3 (7,069 features,
     # 2.49M real segments): 12.7GB OOM at every retry distance, since it
     # repeats ST_Difference against the file-wide shared-boundary geometry

@@ -29,7 +29,7 @@ class _Pair:
 
 
 def _unique_values(rows: list[tuple], col_idx: int) -> set[str]:
-    """Values appearing exactly once in rows[:, col_idx] -- excludes duplicates."""
+    """Values appearing exactly once in rows[:, col_idx]; excludes duplicates."""
     counts: dict[str, int] = {}
     for row in rows:
         v = row[col_idx]
@@ -38,7 +38,7 @@ def _unique_values(rows: list[tuple], col_idx: int) -> set[str]:
     return {v for v, n in counts.items() if n == 1}
 
 
-def _identity_match(  # noqa: PLR0913 -- each param is a distinct required input, not decomposable
+def _identity_match(  # noqa: PLR0913 (each param is a distinct required input, not decomposable)
     pair: _Pair,
     *,
     link_by_code: bool,
@@ -75,7 +75,7 @@ def _identity_match(  # noqa: PLR0913 -- each param is a distinct required input
     return code_match or name_match
 
 
-def main(  # noqa: C901, PLR0912, PLR0913, PLR0915 -- ported classification algorithm, not decomposable without losing the single coherent pass
+def main(  # noqa: C901, PLR0912, PLR0913, PLR0915 (ported classification algorithm, not decomposable without losing the single coherent pass)
     conn: DuckDBPyConnection,
     name: str,
     *,
@@ -148,7 +148,7 @@ def main(  # noqa: C901, PLR0912, PLR0913, PLR0915 -- ported classification algo
         "unique_names_b": unique_names_b,
     }
 
-    # Which B fids each A fid reaches via tau_match (and vice versa) -- used
+    # Which B fids each A fid reaches via tau_match (and vice versa), used
     # by the identity claim guard below.
     spatial_neighbors_a: dict[int, set[int]] = {}
     spatial_neighbors_b: dict[int, set[int]] = {}
@@ -172,7 +172,7 @@ def main(  # noqa: C901, PLR0912, PLR0913, PLR0915 -- ported classification algo
     claimed_b: set[int] = set()
     passing_pairs: list[_Pair] = []
 
-    # Phase 1 -- identity: claim a pair ahead of spatial matching only if
+    # Phase 1, identity: claim a pair ahead of spatial matching only if
     # every other spatial tau_match neighbor of both fids is also
     # identity-covered. Otherwise a genuine split (A -> B1 keeps the code, B2
     # is new) would be incorrectly collapsed into a false 1:1 identity match
@@ -204,7 +204,7 @@ def main(  # noqa: C901, PLR0912, PLR0913, PLR0915 -- ported classification algo
             uf.union(f"a:{p.a_fid}", f"b:{p.b_fid}")
             passing_pairs.append(p)
 
-    # Phase 2 -- spatial: union unclaimed fids whose coverage passes tau_match.
+    # Phase 2, spatial: union unclaimed fids whose coverage passes tau_match.
     for p in pairs:
         if p.coverage_a is None or p.coverage_b is None:
             continue
@@ -281,7 +281,7 @@ def main(  # noqa: C901, PLR0912, PLR0913, PLR0915 -- ported classification algo
             cls = "removed"
         elif na == 0 and nb == 1:
             cls = "created"
-        else:  # pragma: no cover -- unreachable for a connected component
+        else:  # pragma: no cover (unreachable for a connected component)
             cls = "complex"
         cluster_class[cid] = cls
 

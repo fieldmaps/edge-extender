@@ -15,7 +15,7 @@ def main(
     columns = [row[0] for row in conn.execute(f'DESCRIBE "{name}_child_01"').fetchall()]
     if "parent_fid" not in columns:
         msg = (
-            f"clip: {children_path} has no parent_fid column -- run assign-many "
+            f"clip: {children_path} has no parent_fid column: run assign-many "
             "or assign-one first"
         )
         raise ValueError(msg)

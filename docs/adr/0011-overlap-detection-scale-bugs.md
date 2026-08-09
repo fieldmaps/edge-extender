@@ -14,12 +14,12 @@ only visible past a few thousand fids.
 
 1. **Overlap join predicate was `ST_Intersects`, not `ST_Overlaps`/
    `ST_Contains`.** `ST_Intersects` is true for any pair of polygons that
-   merely share a boundary edge -- the normal case for every adjacent pair
+   merely share a boundary edge, the normal case for every adjacent pair
    in a coverage layer, not a defect. On Indonesia admin3 (7,069 fids) this
    matched 18,457 candidate pairs, each still paying for `ST_Intersection`
    + `ST_MakeValid` + `ST_CollectionExtract`, and the stage did not finish
    in 6+ minutes. Switched the join predicate to `ST_Overlaps(a, b) OR
-   ST_Contains(a, b) OR ST_Contains(b, a)` -- `ST_Overlaps` alone would
+   ST_Contains(a, b) OR ST_Contains(b, a)`; `ST_Overlaps` alone would
    miss a fully-duplicated or nested polygon pair (OGC: its intersection
    equals one/both inputs, so `ST_Overlaps` is false by definition), hence
    the `ST_Contains` half. Regression test:

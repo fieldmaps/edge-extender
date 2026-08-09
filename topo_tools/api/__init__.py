@@ -1,4 +1,4 @@
-"""Public functions library callers import — no click dependency."""
+"""Public functions library callers import, no click dependency."""
 
 from .assign_many import assign_many
 from .assign_one import assign_one

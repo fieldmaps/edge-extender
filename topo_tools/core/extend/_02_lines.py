@@ -7,7 +7,7 @@ from topo_tools.core.duckdb_utils import bbox_columns_sql
 
 def main(conn: DuckDBPyConnection, name: str) -> None:
     """Create boundary lines from polygons."""
-    # Per-polygon boundary lines, with bbox columns precomputed -- DuckDB
+    # Per-polygon boundary lines, with bbox columns precomputed: DuckDB
     # re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS

@@ -10,7 +10,7 @@ from ._constants import INTERSECTION_SLIVER_DEG2
 
 def main(conn: DuckDBPyConnection, name: str) -> None:
     """Compute shared_area/coverage_a/coverage_b/iou for every touching (a, b) pair."""
-    # Bbox columns precomputed here, not called inline in the join below --
+    # Bbox columns precomputed here, not called inline in the join below:
     # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS
@@ -30,7 +30,7 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
     """)
 
     # Sliver crumbs are dropped by raw (untransformed) degree^2 area, matching
-    # topo-tools-js's overlap.ts -- cheap pre-filter before the equal-area
+    # topo-tools-js's overlap.ts, cheap pre-filter before the equal-area
     # transform, which is only ever applied to surviving intersection geometry.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp3" AS

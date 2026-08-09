@@ -72,7 +72,7 @@ def match(  # noqa: C901, PLR0913
         raise FileExistsError(msg)
 
     # "_match" keeps every table/file this call creates distinct from an
-    # extend() run against the same input_path/tmp_dir -- e.g. extend's bare
+    # extend() run against the same input_path/tmp_dir, e.g. extend's bare
     # "{name}_04" (Voronoi cells) would otherwise collide with match's own
     # bare "{name}_04" (final coverage-cleaned output) if both tools shared a
     # tmp_dir and were run with --debug for side-by-side inspection.

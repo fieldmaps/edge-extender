@@ -1,6 +1,6 @@
 """Regex-based code/name column auto-detection.
 
-Ported from topo-tools-js's src/lib/db/columns.ts -- same patterns, same
+Ported from topo-tools-js's src/lib/db/columns.ts, same patterns, same
 first-match-wins priority order.
 """
 
@@ -26,7 +26,7 @@ _NAME_PATTERNS = [
 ]
 
 # fid is topo-tools' own internal row_number column, geom is the internal
-# geometry column -- neither is a candidate identity attribute.
+# geometry column; neither is a candidate identity attribute.
 _EXCLUDED_COLUMNS = {"fid", "geom"}
 
 

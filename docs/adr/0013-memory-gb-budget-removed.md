@@ -16,7 +16,7 @@ lever at all and routinely exceed a 4GB ceiling regardless
 (`phl_admin3` needs ~5.9GB, `idn_admin3` ~5.4GB, a real Colombia `match()`
 run peaked at 5.26GB during merge). A container genuinely bounded to 4GB
 was never achievable pipeline-wide, so budget-tuning one stage was mostly
-theater — real headroom has to come from swap or a larger container either
+theater; real headroom has to come from swap or a larger container either
 way, and `--memory-gb` was never wired into DuckDB's own `memory_limit`.
 
 (Verifying this under a real container also surfaced a Docker Desktop
@@ -30,7 +30,7 @@ passed before trusting a container test.)
 
 Removed `--memory-gb` entirely. `attempt.py` instead computes
 `effective_distance = MIN(DEFAULT_DISTANCE, natural_res)`, where
-`natural_res` is the median real segment length — this lets files with
+`natural_res` is the median real segment length; this lets files with
 finer native detail than `DEFAULT_DISTANCE` (e.g. Philippines) start
 sharper, with no memory-budget parameter at all. The existing
 doubling-retry loop still handles any failure, including the one
@@ -41,7 +41,7 @@ exceeding a sane starting distance).
 
 `phl_admin3`'s `_01_inputs.py` `ST_CoverageClean` pass (~5.9GB) and
 `idn_admin3`'s `_02_lines.py` neighbor-union self-join (~5.4GB) are known,
-`DISTANCE`-independent memory floors with no runtime gate — a future OOM on
+`DISTANCE`-independent memory floors with no runtime gate; a future OOM on
 either file is an expected, already-diagnosed cost, not a regression to
 chase. Don't reintroduce a `--memory-gb`-style runtime memory-budget check:
 a check that can only log a line isn't worth the upkeep of the

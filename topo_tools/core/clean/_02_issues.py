@@ -23,7 +23,7 @@ def _detect_or_empty(
     """Call build(conn, source); on failure, log and run empty_sql instead."""
     try:
         build(conn, source)
-    except Exception as e:  # noqa: BLE001 -- GEOS topology failures surface as generic duckdb errors
+    except Exception as e:  # noqa: BLE001 (GEOS topology failures surface as generic duckdb errors)
         logger.warning(
             "%s detection failed on %s (%s); reporting none", kind, source, e
         )
@@ -53,12 +53,12 @@ def _build_gaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
 
 
 def _build_overlaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
-    # ST_Overlaps/ST_Contains, not ST_Intersects -- skips merely-touching
+    # ST_Overlaps/ST_Contains, not ST_Intersects: skips merely-touching
     # adjacent pairs; ST_Contains alone catches full containment.
     #
     # Projecting to (fid, geom) before the self-join avoids DuckDB's
     # single-threaded fallback on a wide table. Bbox columns are precomputed
-    # here, not called inline in the join -- DuckDB re-evaluates an inline
+    # here, not called inline in the join: DuckDB re-evaluates an inline
     # envelope call per comparison, not once per row.
     narrow = f"{table}_narrow"
     conn.execute(f"""--sql
@@ -127,7 +127,7 @@ def main(
         )
     else:
         conn.execute(empty_overlaps_sql)
-    # max_width_m skips the cos(lat) factor -- exact N-S, approximate E-W.
+    # max_width_m skips the cos(lat) factor, exact N-S, approximate E-W.
     m2_per_deg2 = m2_per_deg2_factor(conn, table)
     width_m = f"(ST_MaximumInscribedCircle(geom)).radius * 2 * {METERS_PER_DEGREE}"
     # Polsby-Popper thinness ratio, computed directly in raw degree-space.

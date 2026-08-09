@@ -14,10 +14,10 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
     """Assign each child to its plurality-overlap parent; drop and log the rest.
 
     Each child decides independently, so one file's children MAY scatter
-    across many different parents -- correct for raw/unextended geometry,
+    across many different parents, correct for raw/unextended geometry,
     where overshoot can't misassign anything.
     """
-    # Bbox columns precomputed here, not called inline in the join below --
+    # Bbox columns precomputed here, not called inline in the join below:
     # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS
@@ -36,7 +36,7 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
         FROM parts
     """)
 
-    # Shared area per (child, parent) fid pair, summed across all part-pairs --
+    # Shared area per (child, parent) fid pair, summed across all part-pairs:
     # a multi-part child can overlap a multi-part parent in more than one
     # place. Ranked in an equal-area CRS; only the intersection geometry (not
     # the whole layer) is transformed, to bound the cost.

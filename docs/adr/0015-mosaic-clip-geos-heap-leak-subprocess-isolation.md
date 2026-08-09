@@ -28,7 +28,7 @@ This is the same class of problem already documented for `match`: GEOS's
 native heap isn't fully released even after closing a DuckDB connection
 (`docs/explanation/match.md`), which is why `match` isolates each group's
 `extend()` call in a subprocess. The new finding here is that this leak
-doesn't require `extend()`'s Voronoi machinery at all — repeated plain
+doesn't require `extend()`'s Voronoi machinery at all: repeated plain
 `ST_Intersection` calls within one long-lived process leak the same way,
 contradicting `mosaic`'s founding assumption ("no subprocess isolation
 needed since we skip `extend()`'s heavy Voronoi work").
@@ -42,7 +42,7 @@ per-group pattern: child/parent rows written to Parquet, a fresh subprocess
 reads them, intersects, writes `output.parquet`, and the parent process
 appends the result and lets the subprocess exit before moving to the next
 parent fid. Requires a `tmp_dir` argument (raises `ValueError` if omitted
-with `assign_table` set) — `match`'s own call site (`assign_table=None`)
+with `assign_table` set); `match`'s own call site (`assign_table=None`)
 needs no isolation since it already runs inside `match`'s own per-group
 subprocess.
 

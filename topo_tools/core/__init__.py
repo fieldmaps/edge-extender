@@ -1,1 +1,1 @@
-"""Real DuckDB implementation — no click dependency."""
+"""Real DuckDB implementation, no click dependency."""

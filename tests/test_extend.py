@@ -1,6 +1,6 @@
 """Portability smoke tests: does extend() run to completion on this machine.
 
-Not a topology/correctness suite -- outputs.main already raises RuntimeError
+Not a topology/correctness suite: outputs.main already raises RuntimeError
 on coverage violations, so a run that completes without raising has already
 been vetted for correctness by the pipeline itself.
 """
@@ -34,7 +34,7 @@ _STEPS = ["inputs", "lines", "attempt", "merge", "outputs"]
 
 @pytest.fixture
 def synthetic_input(tmp_path):
-    """Write a small synthetic GeoParquet -- no real-world fixture needed."""
+    """Write a small synthetic GeoParquet, no real-world fixture needed."""
     path = tmp_path / "synthetic.parquet"
     values = ", ".join(
         f"({fid}, ST_GeomFromText('{wkt}'))" for fid, wkt in _SYNTHETIC_WKT
@@ -107,7 +107,7 @@ def test_extend_steps(synthetic_input, tmp_path):
 
 
 # A degenerate near-collinear point cluster found by fuzzing that GEOS's
-# ST_VoronoiDiagram fails to produce a cell for every generator point on --
+# ST_VoronoiDiagram fails to produce a cell for every generator point on:
 # reproduces the silent hole risk that _04_voronoi.py's completeness check
 # guards against.
 _DEGENERATE_POINTS = [

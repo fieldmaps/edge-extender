@@ -11,7 +11,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   otherwise it MUST leave the input unmodified.
 - Correcting a violation MAY shift any polygon's boundary, not just the
   violating one.
-- `extend` MUST NOT distinguish a real hole from a digitization gap --
+- `extend` MUST NOT distinguish a real hole from a digitization gap;
   both are left for the boundary-extension stage.
 
 ## Extracting boundaries

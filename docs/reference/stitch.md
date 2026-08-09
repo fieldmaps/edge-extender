@@ -6,7 +6,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Inputs
 
 - `stitch` MUST read the input and reproject it to EPSG:4326.
-- `stitch` MUST NOT coverage-clean the input before stitching -- whatever
+- `stitch` MUST NOT coverage-clean the input before stitching: whatever
   seams or defects the input has are exactly what the stitch pass exists
   to close.
 

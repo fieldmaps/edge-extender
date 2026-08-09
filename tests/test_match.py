@@ -1,6 +1,6 @@
 """Portability smoke tests: does match() run to completion on this machine.
 
-Not a topology/correctness suite -- outputs.main already raises RuntimeError
+Not a topology/correctness suite: outputs.main already raises RuntimeError
 on coverage violations, so a run that completes without raising has already
 been vetted for correctness by the pipeline itself.
 """
@@ -16,11 +16,11 @@ from topo_tools.cli.main import cli
 from topo_tools.core.match import _04_clip as match_clip
 from topo_tools.core.match._03_groups import _record_dropped_group
 
-# Parent A (large square) contains children 1 & 2 with a gap between them --
+# Parent A (large square) contains children 1 & 2 with a gap between them,
 # exercises multi-child grouping, within-group Voronoi fill, and clip-to-
-# parent. Parent B (disjoint large square) contains only child 3 alone --
+# parent. Parent B (disjoint large square) contains only child 3 alone,
 # exercises the "always group, even size 1" path. Child 4 sits far outside
-# both parents -- exercises the drop-unmatched-with-a-warning path.
+# both parents, exercises the drop-unmatched-with-a-warning path.
 _CHILD_WKT = [
     (1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))"),
     (2, "POLYGON((1.5 0.5, 2 0.5, 2 1, 1.5 1, 1.5 0.5))"),
@@ -47,7 +47,7 @@ def _write_synthetic(path, wkt_rows):
 
 @pytest.fixture
 def synthetic_children(tmp_path):
-    """Write a small synthetic child-layer GeoParquet -- no real-world fixture."""
+    """Write a small synthetic child-layer GeoParquet, no real-world fixture."""
     path = tmp_path / "children.parquet"
     _write_synthetic(path, _CHILD_WKT)
     return path

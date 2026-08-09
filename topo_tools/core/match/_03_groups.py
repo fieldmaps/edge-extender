@@ -2,7 +2,7 @@
 
 Data crosses the process boundary as small Parquet files, never a shared
 connection (DuckDB files are single-writer). Clipping to each group's
-parent happens later, batched, in `_04_clip.py` -- not here.
+parent happens later, batched, in `_04_clip.py`, not here.
 """
 
 import contextlib
@@ -22,7 +22,7 @@ logger = getLogger(__name__)
 
 
 def list_groups(conn: DuckDBPyConnection, name: str) -> list[int]:
-    """Distinct assigned parent fids, ascending -- deterministic iteration order."""
+    """Distinct assigned parent fids, ascending: deterministic iteration order."""
     rows = conn.execute(f"""--sql
         SELECT DISTINCT parent_fid FROM "{name}_02_assign" ORDER BY parent_fid
     """).fetchall()
@@ -72,7 +72,7 @@ def main(
 
         # A freshly-spawned process has no logging config of its own (spawn
         # re-imports everything from scratch; basicConfig only ever runs in
-        # cli/main.py, in the parent) -- an exception raised inside the
+        # cli/main.py, in the parent), an exception raised inside the
         # worker would otherwise vanish silently instead of surfacing here.
         # The worker puts an error string (or None on success) on the queue
         # instead of relying on its own logging output.
@@ -87,7 +87,7 @@ def main(
         output_path = group_dir / "output.parquet"
         if process.exitcode != 0 or err or not output_path.exists():
             logger.error(
-                "match: group parent_fid=%s failed -- dropping its children from "
+                "match: group parent_fid=%s failed, dropping its children from "
                 "the output. exitcode=%s error=%s (see %s for exported inputs)",
                 parent_fid,
                 process.exitcode,
@@ -188,5 +188,5 @@ def _group_worker(
             """)
             conn.close()
         result_queue.put(None)
-    except Exception as e:  # noqa: BLE001 -- must not raise across the process boundary uncaught
+    except Exception as e:  # noqa: BLE001 (must not raise across the process boundary uncaught)
         result_queue.put(f"{type(e).__name__}: {e}")

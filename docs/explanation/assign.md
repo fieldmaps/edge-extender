@@ -8,12 +8,12 @@ that pairing gets finalized once per-pair shared area is known. The
 right one to use is decided by the input's geometry state, not by which
 tool you're eventually headed toward:
 
-- **`assign-many`** — each child decides independently which parent it
+- **`assign-many`**: each child decides independently which parent it
   overlaps most; one input file's children MAY scatter across **many**
   different parents. Correct for raw/unextended geometry, where a child
   can only ever overlap its true parent (there is no overshoot to
   misassign it).
-- **`assign-one`** — every child in one input file is forced onto **one**
+- **`assign-one`**: every child in one input file is forced onto **one**
   shared parent, chosen by majority vote of that file's children. Needed
   for already-extended (post-`extend()`, overshoot) geometry, where a
   handful of border-crossing children could otherwise plurality-assign
@@ -29,14 +29,14 @@ running `extend`+`clip`+`stitch`).
 
 Both commands share the same three stages:
 
-1. **`_01_inputs`** — loads the (possibly multi-file) child layer and the
+1. **`_01_inputs`**: loads the (possibly multi-file) child layer and the
    single parent/clip layer raw via `core.io.read_and_reproject`, neither
-   coverage-checked nor -cleaned (consistent with `clip`/`stitch` — these
+   coverage-checked nor -cleaned (consistent with `clip`/`stitch`; these
    are all purely mechanical primitives). Every child row is tagged with a
    `source_file` column recording the exact path it came from (basename
    alone can't distinguish same-named files across directories).
-2. **`_02_many`** / **`_02_one`** — the actual assignment logic; see below.
-3. **`_03_outputs`** — joins the child table to the assign table to attach
+2. **`_02_many`** / **`_02_one`**: the actual assignment logic; see below.
+3. **`_03_outputs`**: joins the child table to the assign table to attach
    `parent_fid`, drops unassigned rows, and exports the result alongside
    an issues report of every unassigned child. No coverage hard gate here:
    an unclipped crosswalk is expected to still overlap/gap between
@@ -51,7 +51,7 @@ through `api.extend()`.
 ## `_02_many`: largest-overlap assignment
 
 Both layers are exploded into parts (`UNNEST(ST_Dump(geom))`) before
-computing bbox candidates — a multi-part parent (a country with offshore
+computing bbox candidates, a multi-part parent (a country with offshore
 islands) would otherwise get one bbox spanning everything and defeat the
 prefilter. Shared area per `(child, parent)` fid pair is summed across
 every part-pair (a multi-part child can overlap a multi-part parent in
@@ -104,7 +104,7 @@ prefilter is less selective than `assign-many`'s, and in principle the
 per-child overlap signal underlying the vote could be skewed by a child
 whose overshoot bulges further into a neighboring parent than into its
 true one. The per-file majority vote mitigates this because a file's other,
-unaffected children still outvote a single misbehaving one by count — but
+unaffected children still outvote a single misbehaving one by count, but
 a single-child file has no other vote to correct it, and a tied vote (e.g.
 a two-child file split one-and-one between two parents) falls back to the
 lower parent id rather than any geometric signal.

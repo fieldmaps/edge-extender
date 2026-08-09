@@ -11,7 +11,7 @@ GAP_MAXIMUM_WIDTH_ALL_DEG = 360.0
 # Thinness-ratio (Polsby-Popper compactness) cutoff for --maximum-gap-width=auto.
 DEFAULT_THINNESS_RATIO = 0.3
 
-# Baseline area-loss tolerance with no detected overlaps to explain any loss --
+# Baseline area-loss tolerance with no detected overlaps to explain any loss:
 # double the ~1% per-fid renoding drift confirmed on real defect-dense data.
 AREA_NOISE_FACTOR = 0.02
 

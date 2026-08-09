@@ -31,18 +31,18 @@ If the effective distance still fails or produces too many points
 
 ## Known memory floors with no runtime gate
 
-Two bottlenecks are `DISTANCE`-independent — no resampling lever shrinks
-either — and have no runtime memory check:
+Two bottlenecks are `DISTANCE`-independent (no resampling lever shrinks
+either) and have no runtime memory check:
 
 - `phl_admin3` OOMs in `_01_inputs.py`'s `ST_CoverageClean` pass (triggered
   by invalid-edge detection in the source data) before `lines` or `attempt`
   ever run; needs ~5.9GB.
 - `idn_admin3` needs ~5.4GB in `_02_lines.py`'s neighbor-union bbox
-  self-join, which uses whole-fid (not per-part) bboxes deliberately — see
+  self-join, which uses whole-fid (not per-part) bboxes deliberately, see
   `docs/adr/0001-avoid-global-union-agg-operand.md` for why per-part bboxes
   regress Chile instead.
 
 A future OOM on either file at a given memory ceiling is an expected,
-already-diagnosed cost, not a regression — see
+already-diagnosed cost, not a regression, see
 `docs/adr/0013-memory-gb-budget-removed.md` for why no runtime budget check
 was kept.

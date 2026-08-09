@@ -9,11 +9,11 @@ Machine: Apple Silicon, macOS, 10 logical cores.
 ## Container / platform notes
 
 - No wheel is published for Alpine/musl (`python:*-alpine` images) or for glibc
-  <2.26 (e.g. RHEL/CentOS 7, Amazon Linux 2) — these can't get a prebuilt
+  <2.26 (e.g. RHEL/CentOS 7, Amazon Linux 2), these can't get a prebuilt
   `duckdb` wheel from PyPI. Use a glibc-based image (e.g. `python:3.x-slim`)
   instead.
 - Every CLI flag also has an environment variable equivalent (`INPUT_FILE`,
-  `DEBUG`, etc. — see `topo_tools/cli/main.py`), useful when flags are
+  `DEBUG`, etc., see `topo_tools/cli/main.py`), useful when flags are
   awkward to pass in a container entrypoint.
 - Air-gapped or network-restricted environments need the DuckDB `spatial`
   extension pre-installed rather than downloaded on first run (see
@@ -33,7 +33,7 @@ processes instead.
 in both directions:
 
 - **Undercounts GEOS working memory**: `ST_VoronoiDiagram`, `ST_Node`, `ST_Polygonize`
-  allocate through GEOS's own heap — completely invisible to DuckDB's allocator tracking.
+  allocate through GEOS's own heap, completely invisible to DuckDB's allocator tracking.
   For Chile `_04_tmp1` at 1 thread, this gap is ~6.9 GB (0.9 GB duckdb vs 7.8 GB RSS).
 - **Overcounts when spilling**: the DuckDB buffer pool counts pages it has spilled to the
   `.duckdb` file as still "allocated". For Chile `_05`, this inflated the duckdb peak by
@@ -67,13 +67,13 @@ counts). The retry/doubling-distance mechanism in `attempt.py` is the safety val
 backs off from 10M points until the operation fits in available memory.
 
 **Lines** (`_02b`) used to be the first ~6 GB breach in the pipeline. After the
-bbox-self-join rewrite (see below), the stage peaks at ~2.7 GB at 1 thread —
+bbox-self-join rewrite (see below), the stage peaks at ~2.7 GB at 1 thread;
 Voronoi is now the only stage that crosses 6 GB.
 
 **Outputs topology checks**: `check_overlaps` is a self-join that could degrade to O(n²)
 pairs without a spatial index, but DuckDB's `SPATIAL_JOIN` rewrite handles non-overlapping
 polygon sets cheaply via bounding-box rejection. `check_gaps` runs `ST_Union_Agg` on all
-final polygons — the most expensive single query in the outputs phase.
+final polygons, the most expensive single query in the outputs phase.
 
 ---
 
@@ -85,7 +85,7 @@ The 147-file batch run recorded in `docs/explanation/voronoi-memory.md` predates
 `docs/explanation/clean.md`, `docs/explanation/change.md`) but `extend` itself hadn't been re-run
 against real portolan data under the current code until now.
 
-`phl_admin3` (portolan `phl/latest/adm3`, 1,642 fids, 13.85M vertices —
+`phl_admin3` (portolan `phl/latest/adm3`, 1,642 fids, 13.85M vertices,
 the same file `docs/explanation/voronoi-memory.md` documents as needing ~5.9GB in
 `_01_inputs.py`'s coverage-clean fallback path), `--debug`, Apple Silicon/10
 logical cores. This run predates `--memory-gb`'s removal (see
@@ -94,23 +94,23 @@ since-removed budget model, kept for the real measured numbers:
 
 | Stage   | Wall time | Notes                                                    |
 | ------- | --------- | --------------------------------------------------------- |
-| inputs  | 12s       | no invalid edges detected — fallback `ST_CoverageClean` did **not** trigger |
+| inputs  | 12s       | no invalid edges detected, fallback `ST_CoverageClean` did **not** trigger |
 | lines   | 39s       |                                                             |
-| attempt | 2m13s     | 13.07M raw segments needed ~11.1GB to decompose/remerge alone, exceeding the ~4GB budget in effect at the time before resampling — proceeded anyway with `DEFAULT_DISTANCE`, succeeded on the first attempt (no retry) |
+| attempt | 2m13s     | 13.07M raw segments needed ~11.1GB to decompose/remerge alone, exceeding the ~4GB budget in effect at the time before resampling; proceeded anyway with `DEFAULT_DISTANCE`, succeeded on the first attempt (no retry) |
 | merge   | 1m24s     |                                                             |
 | outputs | 1m47s     |                                                             |
 | **Total** | **6m15s** | peak RSS **4.55 GB**                                     |
 
-Output: 1,642 fids preserved, 905,538 vertices (down from 13.85M — expected,
+Output: 1,642 fids preserved, 905,538 vertices (down from 13.85M, expected,
 `extend` resamples/simplifies via the Voronoi step). Topology validation
 passed (`check_overlaps`/`check_gaps`), no correctness issues.
 
-**This run did not exercise the documented ~5.9GB ceiling** — that figure is
+**This run did not exercise the documented ~5.9GB ceiling**: that figure is
 specifically `_01_inputs.py`'s whole-table `ST_CoverageClean` fallback,
 which only fires when `ST_CoverageInvalidEdges_Agg` finds invalid edges;
 `phl_admin3`'s source data has none, so `inputs` took the no-op fast path.
 The 4.55GB peak measured here is the normal (no-fallback) pipeline cost for
-this file post-restructure — lower than the ~5.9GB ceiling, as expected
+this file post-restructure, lower than the ~5.9GB ceiling, as expected
 since that ceiling is for a different, more expensive code path within the
 same stage. If the invalid-edge fallback ever needs re-validating
 post-restructure, it needs a file that actually trips
@@ -129,12 +129,12 @@ Pipeline peak is `_04_tmp1` (Voronoi point collection + diagram) at all thread c
 
 Key thread-sensitivity breakdown:
 - `_04_tmp2` (fid assignment via `ST_Intersects`): 100s → 56s, 1.8× faster with more threads
-- `_04` (`ST_Union_Agg` by fid, single-threaded GEOS): ~141s → ~140s, flat — the hard ceiling
-- `_02b` (line extraction, bbox-self-join): 7.4s → 7.5s, no gain — `PIECEWISE_MERGE_JOIN` is single-threaded internally
+- `_04` (`ST_Union_Agg` by fid, single-threaded GEOS): ~141s → ~140s, flat, the hard ceiling
+- `_02b` (line extraction, bbox-self-join): 7.4s → 7.5s, no gain: `PIECEWISE_MERGE_JOIN` is single-threaded internally
 - `_05` (cell-point ST_Within `_01` then `_04` fallback): 1.8s → 1.9s, negligible
 
 For memory-constrained deployments: `--threads=1` gives a similar peak (~7.2 GB) to
-default threads. Both are above a 4 GB WASM/Docker target — reducing below that would
+default threads. Both are above a 4 GB WASM/Docker target; reducing below that would
 require pipeline changes (e.g. chunking); see `docs/explanation/voronoi-memory.md` for why a
 resampling-distance budget isn't that lever anymore.
 
@@ -162,7 +162,7 @@ a 2 GB container) so DuckDB can spill to disk rather than crash.
 The lines stage previously expressed the per-polygon "neighbor boundary union" as a
 `LATERAL` subquery containing `ST_Intersects(a.geom, b.geom)`, which DuckDB rewrites to
 the `SPATIAL_JOIN` operator. `SPATIAL_JOIN` pre-allocates ~1× RAM as a virtual spill
-reservation — the same reservation behavior documented in `topology.md` — so even on
+reservation, the same reservation behavior documented in `topology.md`, so even on
 small data the lines stage held a multi-GB working set.
 
 The current form materializes neighbor unions via a self-join with **scalar bbox
@@ -181,7 +181,7 @@ JOIN _02_tmp1 AS b
 GROUP BY a.fid
 ```
 
-DuckDB plans this as `PIECEWISE_MERGE_JOIN` + `HASH_GROUP_BY` — no `SPATIAL_JOIN`.
+DuckDB plans this as `PIECEWISE_MERGE_JOIN` + `HASH_GROUP_BY`, no `SPATIAL_JOIN`.
 Bbox-only is correct because a non-touching neighbor adds nothing to subsequent
 `ST_Difference` / `ST_Intersection` against `a`'s boundary, so the loose prefilter is
 conservative-but-equivalent. Empirically the bbox prefilter is as selective as
@@ -193,7 +193,7 @@ wall time drops from ~53s → ~28s (−47%). End-to-end `_05` outputs are byte-e
 (`ST_Equals` per fid, 0% sym-diff).
 
 The same bbox-self-join pattern applies in `_05_merge.py`'s `_05_tmp1`/`_05_tmp2` (see
-below) — both explode multipolygon fids into parts first, since a whole-fid bbox can
+below), both explode multipolygon fids into parts first, since a whole-fid bbox can
 span mainland to a remote island (Chile's Easter Island case) and defeat the prefilter
 otherwise.
 
@@ -212,15 +212,15 @@ on a database file that already has all prior-stage tables resident (`_01`, `_02
 | `_05_tmp3` | 19.7s  | 2,068 MB | Dissolve to one row per fid, reattach original attributes         |
 | `_05`      | 1.6s   | 1,815 MB | Whole-table `ST_CoverageClean` via the shared `coverage_clean` helper |
 
-Total ≈44s, peak ≈2.9 GB — down 51% from the previous `ST_Node`/`ST_Polygonize` design's
+Total ≈44s, peak ≈2.9 GB, down 51% from the previous `ST_Node`/`ST_Polygonize` design's
 5,953 MB peak, though wall time is roughly 10× slower (~4s → ~44s). The `_05_tmp2` bbox
 self-join (Voronoi cell vs. original-polygon-part bboxes) is the new bottleneck; the
-`ST_CoverageClean` call itself is cheap and was not the risk this design predicted —
+`ST_CoverageClean` call itself is cheap and was not the risk this design predicted;
 memory pressure came from the union/difference step, not the coverage-clean step.
 
 **A single global `ST_Union_Agg(_01)` used as the `ST_Difference` operand OOMs outright**
 at Chile scale (`failed to allocate data of size 16.0 MiB (12.7 GiB/12.7 GiB used)`,
-observed during development) — the union itself is cheap to compute, but using a
+observed during development): the union itself is cheap to compute, but using a
 multi-million-vertex geometry as a per-row `ST_Difference` argument against thousands of
 fids is a different, much more expensive access pattern. The bbox-prefiltered per-part
 neighbor union above is the fix; see `docs/explanation/topology.md`, "Why not a single global union."
@@ -232,9 +232,9 @@ neighbor union above is the fix; see `docs/explanation/topology.md`, "Why not a 
 Tested adding explicit RTREE indexes at every candidate spatial join site across the full
 pipeline (Chile admin3, default threads). Three configurations:
 
-- **none** — no RTREEs anywhere
-- **merge** — RTREE only on `_05_tmp4` (former default)
-- **all** — RTREEs on `_01`, `_02_tmp1`, `_04_tmp1`, and `_05_tmp4`
+- **none**: no RTREEs anywhere
+- **merge**: RTREE only on `_05_tmp4` (former default)
+- **all**: RTREEs on `_01`, `_02_tmp1`, `_04_tmp1`, and `_05_tmp4`
 
 **Wall time (seconds) at key queries:**
 
@@ -242,9 +242,9 @@ pipeline (Chile admin3, default threads). Three configurations:
 |---|---|---|---|---|
 | `_02a` | 11.8 | 11.1 | 11.2 | LATERAL + ST_Intersects on `_02_tmp1` |
 | `_02b` | 18.0 | 17.6 | 17.1 | LATERAL + ST_Intersects on `_02_tmp1` |
-| `_04_tmp1` index | — | — | **0.9** | index build cost |
+| `_04_tmp1` index | n/a | n/a | **0.9** | index build cost |
 | `_04_tmp2` | **50.3** | **55.9** | **57.3** | ST_Intersects join on `_04_tmp1` |
-| `_05_tmp4` index | — | 0.03 | 0.02 | index build cost |
+| `_05_tmp4` index | n/a | 0.03 | 0.02 | index build cost |
 | `_05` | **6.1** | **6.8** | **6.0** | SPATIAL_JOIN on `_05_tmp4` |
 
 **Result: no improvement at any site. The `_04_tmp1` RTREE is net negative.**
@@ -262,7 +262,7 @@ pipeline (Chile admin3, default threads). Three configurations:
 - `_05_tmp2` NOT EXISTS filter against `_01`: indistinguishable across configs.
 
 **The `_05_tmp4` RTREE has been removed.** The structural improvement in `_05_merge.py` is
-materializing `_05_tmp4` as a real table — that decouples ST_Node/ST_Polygonize working
+materializing `_05_tmp4` as a real table: that decouples ST_Node/ST_Polygonize working
 memory from the subsequent SPATIAL_JOIN regardless of whether any index exists on it.
 The index itself was always noise.
 
@@ -281,9 +281,9 @@ The index itself was always noise.
 
 **Result: `ST_MemUnion_Agg` is only viable where the union set per invocation is small.**
 
-- **`_02a`/`_02b` (lines)**: each LATERAL neighbor union covered 3–10 geometries. Memory dropped 3.7% (6,311 → 6,081 MB); time rose ~47% (36s → 53s). Marginal tradeoff — kept at the time because lines was not the pipeline bottleneck and the memory direction was correct. (Superseded by the bbox-self-join rewrite, which removes LATERAL entirely; `ST_Union_Agg` is retained inside the new self-join's GROUP BY.)
-- **`_03a` (points)**: global union of all exterior line segments' buffered endpoints. With `ST_MemUnion_Agg`, each segment is merged into a growing geometry one at a time — O(n²) as the accumulated shape grows. Time ~2.5× slower (3.5s → 8.7s) with no significant memory benefit.
+- **`_02a`/`_02b` (lines)**: each LATERAL neighbor union covered 3–10 geometries. Memory dropped 3.7% (6,311 → 6,081 MB); time rose ~47% (36s → 53s). Marginal tradeoff, kept at the time because lines was not the pipeline bottleneck and the memory direction was correct. (Superseded by the bbox-self-join rewrite, which removes LATERAL entirely; `ST_Union_Agg` is retained inside the new self-join's GROUP BY.)
+- **`_03a` (points)**: global union of all exterior line segments' buffered endpoints. With `ST_MemUnion_Agg`, each segment is merged into a growing geometry one at a time, O(n²) as the accumulated shape grows. Time ~2.5× slower (3.5s → 8.7s) with no significant memory benefit.
 - **`_04` (voronoi)**: each `fid` group contains hundreds to thousands of Voronoi cells. Each incremental merge grows the accumulated geometry, making later merges progressively more expensive. The query ran far beyond 135s and was killed. **`ST_Union_Agg` restored.**
 - **`check_gaps` (outputs)**: union of all final polygons (~355 for Chile). Time rises from ~1s to 8.9s with no memory benefit.
 
-**Conclusion**: `ST_MemUnion_Agg` reverted everywhere. No site offered a memory reduction large enough to affect pipeline feasibility, and the speed costs were disproportionate — especially `_04` (killed), `check_gaps` (9×), and `_03a` (2.5×). `ST_Union_Agg` is the correct choice throughout.
+**Conclusion**: `ST_MemUnion_Agg` reverted everywhere. No site offered a memory reduction large enough to affect pipeline feasibility, and the speed costs were disproportionate, especially `_04` (killed), `check_gaps` (9×), and `_03a` (2.5×). `ST_Union_Agg` is the correct choice throughout.

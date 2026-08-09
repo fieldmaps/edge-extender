@@ -7,7 +7,7 @@ extension for children that were already extended by an earlier pipeline
 run: `match`'s own Colombia-scale profiling (see `docs/explanation/match.md`)
 shows the `groups` stage (where per-parent extension happens) at ~85% of
 total wall time. If the geometry is already extended, only assignment,
-clipping, and seam-closing need to happen -- the same three primitives
+clipping, and seam-closing need to happen: the same three primitives
 `assign`, `clip`, and `stitch` expose standalone (see their own explanation
 docs); `mosaic` is a thin wrapper chaining `assign-one` → `clip` → `stitch`.
 
@@ -17,16 +17,16 @@ docs); `mosaic` is a thin wrapper chaining `assign-one` → `clip` → `stitch`.
    once per child file plus once for the parent (`{name}_child_01`,
    `{name}_parent_01`). Neither side is coverage-checked or -cleaned; see
    "Why neither input is coverage pre-checked" below.
-2. **assign**: calls `core.assign._02_one.main()` directly -- the same
+2. **assign**: calls `core.assign._02_one.main()` directly, the same
    per-file majority-vote pairing `assign-one` exposes standalone, see
    `docs/explanation/assign.md`. Also narrows `{name}_parent_01` down to
    only the parent fids any child was actually assigned to, before clip
    runs.
 3. **`_03_clip`**: a thin wrapper joining `parent_fid` onto
    `{name}_child_01` from `{name}_02_assign`, then calling
-   `core.clip.main()` -- the same per-`parent_fid`-subprocess, adaptively
+   `core.clip.main()`, the same per-`parent_fid`-subprocess, adaptively
    grid-tiled clip `clip` exposes standalone, see `docs/explanation/clip.md`.
-4. **`_04_stitch`**: calls `core.stitch._02_clean.main()` directly -- the
+4. **`_04_stitch`**: calls `core.stitch._02_clean.main()` directly, the
    same whole-table `ST_CoverageClean` pass `stitch` exposes standalone,
    see `docs/explanation/stitch.md`.
 5. **`_05_outputs`**: the same `check_overlaps`/`check_gaps` hard gate,

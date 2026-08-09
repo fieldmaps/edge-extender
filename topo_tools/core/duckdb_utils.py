@@ -33,7 +33,7 @@ class ProfiledConnection:
         self._debug = debug
         self._process = None
         if debug:
-            import psutil  # noqa: PLC0415 -- only installed/needed for --debug
+            import psutil  # noqa: PLC0415 (only installed/needed for --debug)
 
             self._process = psutil.Process()
 
@@ -117,7 +117,7 @@ def get_connection(
 ) -> ProfiledConnection:
     """Create a file-backed DuckDB connection with spatial loaded."""
     conn = duckdb_connect(str(tmp_dir / f"{name}.duckdb"))
-    # LOAD alone does not autoinstall -- fails outright on a machine that has
+    # LOAD alone does not autoinstall, fails outright on a machine that has
     # never cached the spatial extension, network or not. INSTALL is a cheap
     # no-op (~40ms, no network) once it's already cached.
     conn.execute("INSTALL spatial")
@@ -221,7 +221,7 @@ def pipeline_connection(
                 cleanup_tmp(name, tmp_dir)
 
 
-def maybe_export_debug_tables(  # noqa: PLR0913 -- each param is a distinct required input
+def maybe_export_debug_tables(  # noqa: PLR0913 (each param is a distinct required input)
     conn: DuckDBPyConnection,
     tmp_dir: Path,
     name: str,

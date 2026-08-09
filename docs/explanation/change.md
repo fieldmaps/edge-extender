@@ -54,19 +54,19 @@ Run `topo-tools change --help` for the full, always-current option list.
 
 ## Pipeline
 
-1. **`_01_inputs`** — loads and coverage-cleans both layers by delegating
+1. **`_01_inputs`**: loads and coverage-cleans both layers by delegating
    twice to `extend`'s own loader (`{name}_a_01` = old, `{name}_b_01` = new).
    Unlike `clean`, `change` isn't trying to detect defects in the raw
-   input — it's comparing two whole layers — so pre-cleaning each side
+   input (it's comparing two whole layers), so pre-cleaning each side
    reduces the risk of native GEOS choking on invalid geometry during
    `ST_Intersection`, with no downside (same reasoning as `match`'s inputs
    stage, which also pre-cleans both its layers).
-2. **`_02_overlap`** — computes `shared_area`/`coverage_a`/`coverage_b`/`iou`
+2. **`_02_overlap`**: computes `shared_area`/`coverage_a`/`coverage_b`/`iou`
    for every touching `(a_fid, b_fid)` pair.
-3. **`_03_classify`** — identity + spatial union-find clustering and
+3. **`_03_classify`**: identity + spatial union-find clustering and
    cardinality-based classification, run in Python; assembles the final
    changelog table.
-4. **`_04_outputs`** — builds the spatial overlay render layer and exports
+4. **`_04_outputs`**: builds the spatial overlay render layer and exports
    both artifacts. No topology hard-gate here (unlike `extend`/`match`/
    `clean`): `change` is a read-only comparison, not a fix, so there's
    nothing to validate against.
@@ -74,11 +74,11 @@ Run `topo-tools change --help` for the full, always-current option list.
 ## Why the WASM point-sampling fallback is dropped
 
 JS's `src/lib/db/overlap.ts` tries exact `ST_Intersection` first, and falls
-back to a 32×32 point-sampling estimate on failure — working around a
+back to a 32×32 point-sampling estimate on failure, working around a
 documented WASM-only GEOS OverlayNG bug ("found non-noded intersection") on
 near-coincident, independently-digitized boundaries. JS's own commit history
 (`0672282`, replacing an earlier noded-overlay retry) found this fallback
-"fails identically even on the native CLI and adds no value" — i.e. the bug
+"fails identically even on the native CLI and adds no value", i.e. the bug
 is WASM-specific. Since this repo runs native DuckDB, the port always uses
 exact `ST_Intersection`; there is no sampling fallback, no
 `ComparisonMethod` enum, and no capping `tau_same` at 0.99 for a sampling
@@ -91,21 +91,21 @@ layers are exploded into parts (`UNNEST(ST_Dump(geom))`) before the join, so
 a multi-part fid (a country with offshore islands) doesn't get one bbox
 spanning everything and defeat the prefilter. The join uses scalar
 `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` predicates, not `ST_Within`/
-`ST_Intersects` alone in the `JOIN` condition — that triggers DuckDB's
+`ST_Intersects` alone in the `JOIN` condition: that triggers DuckDB's
 `SPATIAL_JOIN` operator and its ~1x-RAM virtual reservation (see
 `docs/explanation/topology.md`). Unlike `_02_assign.py` (which keeps only the top-1
 parent per child), every pair with `shared_area > 0` is kept: classification
 needs the full pair graph, not just the best match per fid.
 
 Intersection crumbs below `INTERSECTION_SLIVER_DEG2` (`1e-12` deg², ~1cm²,
-ported as-is from JS) are dropped by their raw, untransformed degree² area —
+ported as-is from JS) are dropped by their raw, untransformed degree² area,
 a cheap pre-filter before the equal-area transform, which is only ever
 applied to surviving intersection geometry (not the whole layer, to bound
 the cost). Areas and ratios use `EPSG:8857` (Equal Earth), matching `match`'s
 own reasoning for avoiding raw `EPSG:4326` degree-area bias toward
 higher-latitude units. `EQUAL_AREA_CRS` lives in the shared
 `core/constants.py` and is imported from there, not duplicated as a
-separate literal in `change`'s own `_constants.py` the way it once was —
+separate literal in `change`'s own `_constants.py` the way it once was;
 `change` still stays decoupled from `match`/`clean` the same way they're
 decoupled from each other.
 
@@ -114,10 +114,10 @@ decoupled from each other.
 `_03_classify.py` ports `classify.ts` line-for-line, but runs the union-find
 and cardinality classification in Python rather than SQL. This is safe under
 this repo's memory model: the algorithm scales with **feature count**, not
-vertex count — a 500K-polygon admin layer is trivial to hold as Python
+vertex count: a 500K-polygon admin layer is trivial to hold as Python
 dicts/sets, unlike the vertex-scaled Voronoi/coverage-clean work `extend`/
 `clean` do. Pair rows are fetched once via `conn.execute(...).fetchall()`,
-classified entirely in memory, and written back via `conn.executemany()` —
+classified entirely in memory, and written back via `conn.executemany()`;
 no batching needed the way JS's raw-SQL-string `INSERT ... VALUES` batching
 was (`_unionfind.py` mirrors JS's path-compressed, union-by-rank
 `unionFind.ts` directly).
@@ -127,7 +127,7 @@ was (`_unionfind.py` mirrors JS's path-compressed, union-by-rank
 1. **Identity** (only when `--link-by-code`/`--link-by-name` is set): a pair
    is a candidate identity match if its code and/or name values are equal
    **and unique** on each side (duplicate values like a shared "No_Pcode"
-   placeholder are excluded — matching on them would union every polygon
+   placeholder are excluded, matching on them would union every polygon
    sharing that value into one cluster). NULL-safe: a NULL code/name on
    either side never counts as a match.
 2. **Spatial**: any pair with `max(coverage_a, coverage_b) >= tau_match` is
@@ -137,8 +137,8 @@ was (`_unionfind.py` mirrors JS's path-compressed, union-by-rank
 load-bearing piece of this stage: an identity-matched pair is only
 pre-unioned ahead of spatial matching if *every other spatial
 tau_match-passing neighbor* of both fids is *also* identity-covered.
-Without this guard, a genuine split — old unit A splits into new B1
-(inheriting A's code) and new B2 (a new code) — would incorrectly collapse
+Without this guard, a genuine split, old unit A splits into new B1
+(inheriting A's code) and new B2 (a new code), would incorrectly collapse
 into a false 1:1 identity match on A↔B1, leaving B2 stranded as a spurious
 `created` unit instead of correctly grouping A, B1, and B2 into one `split`
 cluster. The guard defers to phase 2's spatial clustering whenever any
@@ -154,17 +154,17 @@ connected component):
 
 | na | nb | condition | class |
 |----|----|-----------|-------|
-| 1  | 0  | — | `removed` |
-| 0  | 1  | — | `created` |
+| 1  | 0  | n/a | `removed` |
+| 0  | 1  | n/a | `created` |
 | 1  | 1  | identity-only, no spatial `tau_match` pass | `relocated` |
 | 1  | 1  | spatial pass, `iou >= tau_same`, code/name unchanged | `unchanged` |
 | 1  | 1  | spatial pass, `iou >= tau_same`, code/name differ | `renamed` |
 | 1  | 1  | spatial pass, `iou < tau_same` | `modified` |
-| 1  | >1 | — | `split` |
-| >1 | 1  | — | `merge` |
-| >1 | >1 | — | `complex` |
+| 1  | >1 | n/a | `split` |
+| >1 | 1  | n/a | `merge` |
+| >1 | >1 | n/a | `complex` |
 
-`renamed` only fires when linking is enabled — in pure geometry mode,
+`renamed` only fires when linking is enabled: in pure geometry mode,
 code/name are never consulted for classification (per JS commit `7244e8a`'s
 "geometry-first mode never consults code/name for renamed"), only for
 display in the output table.
@@ -173,27 +173,27 @@ display in the output table.
 
 JS's `export.ts` registers two sources (`crosswalk_changelog` tabular,
 `crosswalk_overlay` spatial) but only wires the tabular one to a download
-button — the spatial overlay exists internally but was never reachable from
+button; the spatial overlay exists internally but was never reachable from
 the UI. Headless has no such constraint, so `change()` **always** writes
 both:
 
 - **Tabular changelog** (`output_path`, `.csv` default or `.parquet`, no
-  geometry column) — one row per matched pair, plus one row per unmatched
+  geometry column): one row per matched pair, plus one row per unmatched
   singleton (pure `created`/`removed`, or a `split`/`merge` remnant with
   nothing on the other side). Columns: `code_a, name_a, code_b, name_b,
   relationship_class, match_method, a_in_b (coverage_a, 3dp), b_in_a
   (coverage_b, 3dp), similarity (iou, 3dp), threshold_match, threshold_same,
   link_by_code, link_by_name, link_mode`. The last five columns echo the
   run's own parameters into every row (ported from JS commit `06c073a`, "so
-  identity-mode runs are self-documenting") — a reproducibility/audit-trail
+  identity-mode runs are self-documenting"), a reproducibility/audit-trail
   feature worth preserving for a batch tool where the invocation's flags
   aren't otherwise recorded alongside the output. `code_a`/`code_b`/
   `name_a`/`name_b` are `NULL` unless the corresponding `--code-column-*`/
   `--name-column-*` was resolved (explicitly or via auto-detection under a
-  `--link-by-*` flag) — a pure spatial run with no linking and no explicit
+  `--link-by-*` flag): a pure spatial run with no linking and no explicit
   column has no identity columns to report.
 - **Spatial overlay layer** (`overlay_path`, defaults to `old_path`'s own
-  format) — every new-version unit tagged with its `relationship_class`,
+  format): every new-version unit tagged with its `relationship_class`,
   plus every old-version unit classed `removed` (gone in the new version, so
   no new polygon stands in for it). Together these tile the comparison area
   exactly once, colored by what happened (ported from JS's
@@ -204,29 +204,29 @@ both:
 ## Column auto-detection
 
 `core/change/_columns.py` ports JS's `src/lib/db/columns.ts` regex
-patterns verbatim — same priority order, same first-match-wins logic. Only
+patterns verbatim, same priority order, same first-match-wins logic. Only
 consulted when a `--link-by-code`/`--link-by-name` flag is set and its
 column isn't explicitly named; an explicit `--code-column-*`/
 `--name-column-*` always overrides. If linking is requested and no column
 can be found or was given, `change()` raises `ValueError` rather than
-silently falling back to geometry-only — an explicit ask deserves an
+silently falling back to geometry-only: an explicit ask deserves an
 explicit failure, not silent divergence from what the user asked for.
 
 ## Thresholds
 
 - **`--tau-match`** (default `0.8`, JS's current default per commit
-  `420f2ad`) — minimum `max(coverage_a, coverage_b)` for two units to be
+  `420f2ad`): minimum `max(coverage_a, coverage_b)` for two units to be
   spatially linked (a union-find edge). Note the `max`, not `coverage_a`
   alone: a small split fragment that's 100% contained in its parent
   (`coverage_b = 1.0`) still clears the bar even though it might be only a
-  third of the parent's own area (`coverage_a = 0.33`) — this is what lets
+  third of the parent's own area (`coverage_a = 0.33`); this is what lets
   split/merge fragments connect regardless of their share of the original
   unit.
-- **`--tau-same`** (default `0.98`) — minimum IoU for a 1:1 spatially-linked
+- **`--tau-same`** (default `0.98`): minimum IoU for a 1:1 spatially-linked
   pair to be `unchanged`/`renamed` rather than `modified`.
 
 Both are plain floats in `[0, 1]`, with no `auto`/`all` string modes the way
-`clean`'s `--gap-width` has — these thresholds have no GEOS-native
+`clean`'s `--gap-width` has: these thresholds have no GEOS-native
 auto-default to defer to, they're this tool's own tunables.
 
 ## Portolan-scale profiling
@@ -240,7 +240,7 @@ Silicon/10 logical cores:
 | Ethiopia admin3 v01→v04        | 981 / ~1,165   | 21s       | 506 MB   | 262 split, 143 modified, 29 created, 28 complex, 10 merge, 8 removed |
 | Ukraine admin3 v01→v05         | 10,375 / 1,769 | 46s       | 957 MB   | 9,860 merge (finer v01 consolidated into v05) |
 
-All three ran clean on the first attempt -- no correctness or scale issues
+All three ran clean on the first attempt: no correctness or scale issues
 found, unlike `clean`'s overlap-detection bugs (see `docs/explanation/clean.md`). The
 Ethiopia and Ukraine runs are good coverage of the classification taxonomy:
 Ethiopia's real federal-boundary splits exercise `split`/`complex`/`merge`/
@@ -250,14 +250,14 @@ second of the 46s total).
 
 **`--link-by-code` footgun, found via the Philippines run:** its
 `adm3_pcode` values changed format entirely between v02 and v03 (e.g.
-`PH175304000` → `PH1705304`) — a PSGC renumbering, not a real rename. Every
+`PH175304000` → `PH1705304`), a PSGC renumbering, not a real rename. Every
 1:1 spatially-matched pair therefore has `a_code != b_code`, and per this
 tool's documented classification rule (`renamed` fires whenever code *or*
 name differs under linking, see "Classification" above), all 1,624 stable
 units came back `renamed` instead of `unchanged`. Re-running the identical
 comparison in pure spatial mode (no `--link-by-code`) gave the expected
-`unchanged: 1,624` with everything else unchanged — confirming this is
+`unchanged: 1,624` with everything else unchanged, confirming this is
 `change` working exactly as designed, not a bug, but it's a sharp edge:
 **verify a code column is actually stable across the two versions being
-compared before enabling `--link-by-code`** -- a wholesale code-scheme
+compared before enabling `--link-by-code`**: a wholesale code-scheme
 change will otherwise read as a wall of false `renamed` rows.

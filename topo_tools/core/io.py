@@ -24,7 +24,7 @@ def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path) -> None:
     )
     # A source column already named "fid"/"OGC_FID" would otherwise collide
     # with our own row_number() AS fid below (duplicate column) or with
-    # GDAL's reserved FID handling on export (see RESERVED_COLUMN_NAMES) --
+    # GDAL's reserved FID handling on export (see RESERVED_COLUMN_NAMES);
     # rename it once here so nothing downstream has to guard against it.
     colliding_cols = [col[0] for col in schema if col[0] in RESERVED_COLUMN_NAMES]
     if colliding_cols:

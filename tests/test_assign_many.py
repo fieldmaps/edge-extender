@@ -1,6 +1,6 @@
 """Portability smoke tests: does assign_many() run to completion on this machine.
 
-Not a topology/correctness suite -- assignment is deterministic SQL, so a
+Not a topology/correctness suite: assignment is deterministic SQL, so a
 run that completes without raising has already been vetted for correctness.
 """
 
@@ -14,7 +14,7 @@ from topo_tools.api.assign_many import assign_many
 from topo_tools.cli.main import cli
 
 # Child 1 tiles Parent A alone; child 2 straddles both but overlaps B more
-# (area 6 vs 4.5), so assign-many -- deciding per child, not per file --
+# (area 6 vs 4.5), so assign-many (deciding per child, not per file)
 # must pick B for it even though child 1 is in the same file and prefers A.
 _CHILD_WKT = [
     (1, "POLYGON((-5 -5, 1.5 -5, 1.5 5, -5 5, -5 -5))"),

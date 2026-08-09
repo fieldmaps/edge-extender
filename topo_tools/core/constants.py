@@ -1,12 +1,12 @@
 """Shared, tool-neutral constants used by more than one pipeline."""
 
 SNAP_TOLERANCE = 0.00000001
-# Equal Earth -- used by match/change to rank/compute areas for cross-polygon
+# Equal Earth, used by match/change to rank/compute areas for cross-polygon
 # area comparison (never stored).
 EQUAL_AREA_CRS = "EPSG:8857"
 # Exact (case-sensitive) column names DuckDB's GDAL COPY writer treats
 # specially as the feature's implicit FID, colliding with our own internal
-# "fid" or a source column already named this way -- confirmed via a minimal
+# "fid" or a source column already named this way, confirmed via a minimal
 # repro against the installed DuckDB/GDAL: COPY ... (FORMAT GDAL, DRIVER
 # 'GPKG') fails outright if the Arrow table has either column literally
 # present. core.io.read_and_reproject renames any source column matching

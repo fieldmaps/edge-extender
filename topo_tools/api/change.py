@@ -92,7 +92,7 @@ def change(  # noqa: C901, PLR0912, PLR0913
     if output_path.suffix not in TABLE_COPY_OPTS:
         msg = (
             f"output file must be one of {sorted(TABLE_COPY_OPTS)} (a tabular "
-            "format -- the changelog has no geometry column), got "
+            "format, the changelog has no geometry column), got "
             f"{output_path.suffix!r}"
         )
         raise ValueError(msg)

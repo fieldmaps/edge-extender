@@ -1,4 +1,4 @@
-"""Exports the clipped output -- no coverage hard gate, that's stitch's job."""
+"""Exports the clipped output, no coverage hard gate, that's stitch's job."""
 
 from pathlib import Path
 

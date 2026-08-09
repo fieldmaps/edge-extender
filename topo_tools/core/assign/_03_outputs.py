@@ -26,7 +26,7 @@ def main(
 ) -> None:
     """Export the child-to-parent crosswalk + issues report to dest/issues_dest.
 
-    No coverage hard gate here -- an unclipped crosswalk is expected to have
+    No coverage hard gate here: an unclipped crosswalk is expected to have
     overlapping/gapped child geometry; that's clip's and stitch's job.
     """
     conn.execute(f"""--sql

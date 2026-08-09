@@ -10,7 +10,7 @@ from topo_tools.core.duckdb_utils import bbox_columns_sql
 def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     """Merge original geometry with Voronoi extensions, then coverage-clean seams."""
     # Per-part _01 with bbox cols. Parts (not whole multipolygon fids) keep the
-    # bbox tight — a Chile fid can span mainland to a remote island, which would
+    # bbox tight, a Chile fid can span mainland to a remote island, which would
     # make a whole-fid bbox match nearly everything.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_05_tmp1" AS
@@ -25,7 +25,7 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     # A single ST_Union_Agg(_01) as one global blob OOMs at Chile scale when
     # used as a per-fid ST_Difference operand (same failure mode as the
     # global-exterior line algebra ruled out in _02_lines.py). Instead,
-    # bbox-prefiltered self-join per fid against nearby _01 parts only —
+    # bbox-prefiltered self-join per fid against nearby _01 parts only,
     # same pattern _02_lines.py already uses for the neighbor-union self-join.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_05_tmp2" AS
@@ -91,7 +91,7 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     # crossing points slightly differently each time). gap_maximum_width is
     # tied to SNAP_TOLERANCE, not a sliver-vs-real-hole heuristic: by
     # construction every point of the extent belongs to exactly one fid here,
-    # so there's no real feature left to protect from swallowing — anything
+    # so there's no real feature left to protect from swallowing: anything
     # CoverageClean finds to close is seam noise, not a real gap.
     coverage_clean(
         conn,

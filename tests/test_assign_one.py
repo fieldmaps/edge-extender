@@ -1,6 +1,6 @@
 """Portability smoke tests: does assign_one() run to completion on this machine.
 
-Not a topology/correctness suite -- assignment is deterministic SQL, so a
+Not a topology/correctness suite: assignment is deterministic SQL, so a
 run that completes without raising has already been vetted for correctness.
 """
 
@@ -17,7 +17,7 @@ _PARENT_WKT = [
 ]
 
 # file_a tiles Parent A at x=1.5, but child 2 straddles into Parent B with a
-# bigger individual overlap there (area 6 vs 4.5) -- its own plurality would
+# bigger individual overlap there (area 6 vs 4.5); its own plurality would
 # pick B, but file_a's vote count (2 children touch A, 1 touches B) must
 # still pick A for every child in the file. file_b's only child touches B
 # alone, so its file trivially votes for B.

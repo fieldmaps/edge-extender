@@ -26,7 +26,7 @@ it needed empirical re-verification, not just a mechanical refactor.
 ## Decision
 
 Adopt the two-generation design as-is, with clip's existing hard-fail-on-
-first-bad-`parent_fid` semantics applying uniformly to `match` too — a
+first-bad-`parent_fid` semantics applying uniformly to `match` too, a
 single bad `parent_fid` now aborts the whole run, rather than match's old
 per-group continue-past-failure behavior for clip failures specifically
 (per-group `extend` failures still continue, dropping just that group, as
@@ -53,7 +53,7 @@ catalog:
 
 All 1,120 groups and all 1,120 clip subprocesses succeeded: zero dropped
 children, zero failed groups, zero issues rows, output row count (31,880)
-exactly matches input child count. No OOM at any point — the two-generation
+exactly matches input child count. No OOM at any point: the two-generation
 subprocess design still reliably reclaims GEOS's native heap between units
 of work, which is the property the whole isolation architecture exists to
 preserve.
@@ -64,7 +64,7 @@ expectations and not a concern at this scale. Peak RSS grew ~37% (5.26 GB →
 but-unclipped output in `{name}_03a` before clip runs does measurably raise
 peak memory versus the old immediately-clipped-per-group design. This peak
 occurs during clip's own batched pass and the final `stitch` coverage-clean,
-not during `groups` itself, so it doesn't change per-group memory pressure —
+not during `groups` itself, so it doesn't change per-group memory pressure,
 only the single-run peak for very large countries. Accepted as a real but
 bounded cost of the extraction; worth revisiting only if a future
 larger-than-Colombia real-world case is found to OOM under it.

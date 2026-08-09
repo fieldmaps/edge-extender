@@ -56,7 +56,7 @@ before intersecting, joining children to overlapping tiles via bbox
 comparison rather than `ST_Intersects`, then reassembling per child with
 `ST_Union_Agg` + `ST_CollectionExtract(..., 3)` (polygon parts only). This
 runs inside the same per-parent subprocess from ADR-0015, not as an
-additional subprocess layer — the two fixes address different problems
+additional subprocess layer: the two fixes address different problems
 (cross-parent leak vs. single-parent cost) and compose without conflict.
 
 ## Consequences
@@ -72,5 +72,5 @@ Africa) completed end to end with zero memory errors after this fix; the
 only remaining failure was `check_gaps` correctly flagging real coverage
 holes at the locations of 9 African countries entirely absent from the
 local portolan catalog (Botswana, Lesotho, Rwanda, Djibouti, Gabon,
-Madagascar, Mauritius, Seychelles, Tanzania) — a test-data completeness
+Madagascar, Mauritius, Seychelles, Tanzania), a test-data completeness
 limit, not a code defect.

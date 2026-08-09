@@ -58,7 +58,7 @@ def _warn_on_unfilled_gaps(conn: DuckDBPyConnection, name: str) -> None:
     remaining, total = row
     if remaining:
         logger.warning(
-            "clean: %d of %d detected gap(s) remain unfilled -- see the issues file",
+            "clean: %d of %d detected gap(s) remain unfilled, see the issues file",
             remaining,
             total,
         )

@@ -10,7 +10,7 @@ Accepted.
 the input parent before assigning children to it; `_01_inputs.py` ran the
 same check on each child via `extend`'s own loader. Both were redundant with
 `_05_outputs.py`'s hard `check_overlaps`/`check_gaps` gate on the final
-merged output, which already raises `RuntimeError` on any violation — there
+merged output, which already raises `RuntimeError` on any violation: there
 is no code path where a dirty parent or child silently produces a bad
 export.
 
@@ -27,7 +27,7 @@ capping any single row's vertex count. A full 372-file scan of the portolan
 catalog's `extended.parquet` files (all countries, admin 0-4) found a worst
 single-row case of 138,143 vertices (Thailand admin1, 0.60s) and a worst
 aggregate case of 15.6M vertices across 7,425 rows (Thailand admin3, 4.97s)
-— and zero coverage violations anywhere in the catalog.
+, and zero coverage violations anywhere in the catalog.
 
 ## Decision
 

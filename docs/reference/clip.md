@@ -28,7 +28,7 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Outputs
 
 - `clip` MUST NOT run the coverage hard gate in `docs/reference/shared.md`
-  on its own output -- closing seams between clipped pieces is `stitch`'s
+  on its own output: closing seams between clipped pieces is `stitch`'s
   job, not `clip`'s.
 - `clip` MUST raise `RuntimeError` if the clipped result has zero rows.
 - `clip` MUST export the clipped layer.
