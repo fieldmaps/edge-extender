@@ -12,21 +12,31 @@ downstream.
 
 ## Pipeline
 
-1. **`_01_inputs`**: loads the children and parent/clip layers raw via
-   `core.io.read_and_reproject`.
-2. **`_02_assign`**: tags the children with a constant `source_file` (a
-   standalone `clip()` call is always one input file, so `assign-one`'s
-   per-file majority vote degenerates to "the whole file shares one
-   parent"), calls `core.assign._02_one.main()` directly, then joins the
-   resulting crosswalk onto the children to build `{name}_02_clip_in`.
-3. **`_03_clip`**: the actual clip logic; see below.
-4. **`_04_outputs`**: exports the clipped layer, raising `RuntimeError`
-   first if the result is empty (this is also what surfaces the case where
-   `assign-one` couldn't match any child to any parent at all). No
-   coverage hard gate here.
+1. **`inputs`**: `topo_tools.core.assign._01_inputs.main()`, called
+   directly from `api.clip.clip()` (no local wrapper file, the same
+   pattern `mosaic` already uses) loads and unions any number of children
+   files, each tagged with its own full path as `source_file`, and loads
+   the parent/clip layer exactly once regardless of how many children
+   files were given.
+2. **`assign`**: `topo_tools.core.assign._02_one.main()`, also called
+   directly. Its majority vote is `PARTITION BY source_file`, so combining
+   many children files into one table still computes each file's own
+   independent majority-vote parent, not one vote across everything; see
+   `docs/explanation/assign.md`, `docs/adr/0021`.
+3. **`_01_clip`** (clip's own local stage): joins `{name}_02_assign`'s
+   `parent_fid` onto `{name}_child_01` to build `{name}_02_clip_in`, then
+   calls `_engine.main()` (the actual clip logic; see below).
+4. **`_02_outputs`** (clip's own local stage): with a single children
+   file, exports `{name}_03` directly, raising `RuntimeError` first if the
+   result is empty. With multiple children files, first checks every
+   children file's `source_file` still has at least one surviving row in
+   `{name}_03`, raising `RuntimeError` naming any that don't **before**
+   writing anything, then exports each children file's own subset (via a
+   `source_file`-filtered temp view) to its own paired destination. No
+   coverage hard gate here either way.
 
-`mosaic` and `match` both bypass `_01_inputs`/`_02_assign`/`_04_outputs`
-and call `core.clip._03_clip.main()` directly on their own already-loaded,
+`mosaic` and `match` both bypass all four of these steps and call
+`core.clip._engine.main()` directly on their own already-loaded,
 already-assigned tables (via `core.clip.main`, the package's re-exported
 name), the same pattern `core.match`/`core.change` use to call
 `core.extend`'s stage functions directly. `mosaic` calls it once per run
@@ -36,14 +46,29 @@ already-extended `{name}_03a` table, the second of `match`'s own two
 subprocess generations, see
 `docs/adr/0020-match-clip-two-subprocess-generations.md`.
 
+## Multiple children files, one parent load
+
+Reloading and reprojecting a large parent/clip layer (e.g. a global admin0
+file, hundreds of MB) for every children file dominates runtime when
+clipping many children files against the same parent one call at a time.
+Since `core.assign`'s `_01_inputs`/`_02_one` were already built to combine
+many children files behind one parent load for `mosaic`'s own multi-file
+case, and their per-`source_file` grouping already keeps each file's
+assignment independent, `clip` reuses them unchanged rather than growing
+its own separate multi-file mechanism. The only new work is in
+`_02_outputs`, splitting the combined result back apart by `source_file`
+into the caller's own paired output files, since (unlike `mosaic`) `clip`'s
+multi-file case still needs one output per children file, not one combined
+output. See `docs/adr/0022`.
+
 ## One parent fid at a time, each in its own subprocess
 
-`_03_clip.main()` requires the children table to already carry
-`parent_fid` (assign's own output contract) rather than taking a separate
-assign table and joining internally, since a caller assembling children
-from multiple sources (e.g. match's reassembled per-group output) may not
-have one single assign table to join against. Standalone `clip` always
-satisfies this itself via `_02_assign`'s join, before `_03_clip` ever runs.
+`_engine.main()` requires the children table to already carry `parent_fid`
+(assign's own output contract) rather than taking a separate assign table
+and joining internally, since a caller assembling children from multiple
+sources (e.g. match's reassembled per-group output) may not have one
+single assign table to join against. Standalone `clip` always satisfies
+this itself via `_01_clip`'s join, before `_engine.main()` ever runs.
 
 For each distinct `parent_fid`, present children and that one parent's
 geometry are exported to per-fid Parquet files and handed to a freshly

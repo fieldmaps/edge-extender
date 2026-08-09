@@ -372,6 +372,36 @@ def test_mosaic_file_majority_vote_overrides_child_plurality(
     assert straddler_area == pytest.approx(4.5, abs=1e-6)
 
 
+def test_cli_extra_input_flag_combines_with_glob(
+    synthetic_children_file_majority, synthetic_parents, tmp_path
+):
+    """A glob-matched file plus a --input-flagged file both feed one combined run."""
+    file_a, file_b = synthetic_children_file_majority
+    output_path = tmp_path / "out.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "mosaic",
+            str(file_a),
+            str(synthetic_parents),
+            str(output_path),
+            "--input",
+            str(file_b),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+    assert ids == [1, 2, 3]
+
+
 def test_cli_glob_no_matches(synthetic_parents, tmp_path):
     pattern = str(tmp_path / "nomatch_*.parquet")
     result = CliRunner().invoke(

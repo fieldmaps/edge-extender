@@ -76,7 +76,9 @@ tools.
 ## Configuration (`api.mosaic.mosaic()` / CLI)
 
 - `mosaic` MUST accept one or more child files and exactly one parent/clip
-  file per call.
+  file per call. The CLI additionally accepts `--input` (repeatable and
+  comma-separable) alongside the glob-capable `INPUT_FILE` positional, both
+  usable together, matching `clip`'s own `--input` idiom.
 - With a single child file, the output path MUST default to that input
   path with a `_mosaicked` suffix. With multiple child files, `output_path`
   MUST be given explicitly. The issues-report path MUST default to the

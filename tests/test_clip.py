@@ -59,6 +59,22 @@ def synthetic_children(tmp_path):
     return path
 
 
+# Overshoots parent B's extent only, no overlap with parent A.
+_CHILD_B_ROWS = [(1, "POLYGON((8 -5, 20 -5, 20 20, 8 20, 8 -5))")]
+
+_PARENT_B_AREA = 9.0
+
+
+@pytest.fixture
+def synthetic_children_split(tmp_path):
+    """Write two children files, one overshooting each parent."""
+    path_a = tmp_path / "child_a.parquet"
+    path_b = tmp_path / "child_b.parquet"
+    _write_children(path_a, _CHILD_ROWS)
+    _write_children(path_b, _CHILD_B_ROWS)
+    return [path_a, path_b]
+
+
 def test_cli_help():
     result = CliRunner().invoke(cli, ["clip", "--help"])
     assert result.exit_code == 0
@@ -158,3 +174,172 @@ def test_clip_steps(synthetic_children, synthetic_parents, tmp_path):
             overwrite=True,
         )
     assert output_path.exists()
+
+
+def test_clip_multi_file_two_outputs(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    child_a, child_b = synthetic_children_split
+    out_a = tmp_path / "out_a.parquet"
+    out_b = tmp_path / "out_b.parquet"
+    clip(
+        [child_a, child_b],
+        synthetic_parents,
+        [out_a, out_b],
+        name="multi",
+        overwrite=True,
+    )
+
+    assert out_a.exists()
+    assert out_b.exists()
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        area_a = conn.execute(
+            f"SELECT ST_Area(geometry) FROM '{out_a}' WHERE id = 1"
+        ).fetchone()[0]
+        area_b = conn.execute(
+            f"SELECT ST_Area(geometry) FROM '{out_b}' WHERE id = 1"
+        ).fetchone()[0]
+    assert area_a == pytest.approx(_PARENT_A_AREA, abs=1e-6)
+    assert area_b == pytest.approx(_PARENT_B_AREA, abs=1e-6)
+
+
+def test_clip_multi_file_requires_output_paths_same_length(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="output_paths must be the same length"):
+        clip(
+            synthetic_children_split,
+            synthetic_parents,
+            [tmp_path / "only_one.parquet"],
+            name="multi",
+            overwrite=True,
+        )
+
+
+def test_clip_multi_file_requires_name(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    out_a = tmp_path / "out_a.parquet"
+    out_b = tmp_path / "out_b.parquet"
+    with pytest.raises(ValueError, match="name is required"):
+        clip(
+            synthetic_children_split,
+            synthetic_parents,
+            [out_a, out_b],
+            overwrite=True,
+        )
+
+
+def test_clip_multi_file_all_or_nothing_on_empty_file(synthetic_parents, tmp_path):
+    child_a = tmp_path / "child_a.parquet"
+    child_empty = tmp_path / "child_empty.parquet"
+    _write_children(child_a, _CHILD_ROWS)
+    _write_children(
+        child_empty,
+        [(1, "POLYGON((100 100, 101 100, 101 101, 100 101, 100 100))")],
+    )
+    out_a = tmp_path / "out_a.parquet"
+    out_empty = tmp_path / "out_empty.parquet"
+
+    with pytest.raises(RuntimeError, match="no child survived clipping"):
+        clip(
+            [child_a, child_empty],
+            synthetic_parents,
+            [out_a, out_empty],
+            name="multi",
+            overwrite=True,
+        )
+
+    assert not out_a.exists()
+    assert not out_empty.exists()
+
+
+def test_cli_multi_file_repeated_flags(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    child_a, child_b = synthetic_children_split
+    out_a = tmp_path / "out_a.parquet"
+    out_b = tmp_path / "out_b.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "clip",
+            str(child_a),
+            str(synthetic_parents),
+            str(out_a),
+            "--input",
+            str(child_b),
+            "--output",
+            str(out_b),
+            "--name",
+            "multi",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert out_a.exists()
+    assert out_b.exists()
+
+
+def test_cli_multi_file_comma_separated(synthetic_parents, tmp_path):
+    child_a = tmp_path / "child_a.parquet"
+    child_b = tmp_path / "child_b.parquet"
+    child_c = tmp_path / "child_c.parquet"
+    _write_children(child_a, _CHILD_ROWS)
+    _write_children(child_b, _CHILD_B_ROWS)
+    _write_children(child_c, _CHILD_B_ROWS)
+    out_a = tmp_path / "out_a.parquet"
+    out_b = tmp_path / "out_b.parquet"
+    out_c = tmp_path / "out_c.parquet"
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "clip",
+            str(child_a),
+            str(synthetic_parents),
+            str(out_a),
+            "--input",
+            f"{child_b},{child_c}",
+            "--output",
+            f"{out_b},{out_c}",
+            "--name",
+            "multi",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert out_a.exists()
+    assert out_b.exists()
+    assert out_c.exists()
+
+
+def test_cli_multi_file_requires_output_file(synthetic_children_split, tmp_path):
+    child_a, child_b = synthetic_children_split
+    result = CliRunner().invoke(
+        cli,
+        [
+            "clip",
+            str(child_a),
+            str(tmp_path / "parents.parquet"),
+            "--input",
+            str(child_b),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "OUTPUT_FILE is required" in result.output
+
+
+def test_cli_single_file_unchanged(synthetic_children, synthetic_parents, tmp_path):
+    output_path = tmp_path / "cli_out.parquet"
+    result = CliRunner().invoke(
+        cli,
+        ["clip", str(synthetic_children), str(synthetic_parents), str(output_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert output_path.exists()
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        area = conn.execute(f"""--sql
+            SELECT ST_Area(geometry) FROM '{output_path}' WHERE id = 1
+        """).fetchone()[0]
+    assert area == pytest.approx(_PARENT_A_AREA, abs=1e-6)

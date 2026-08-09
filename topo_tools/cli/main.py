@@ -19,6 +19,11 @@ basicConfig(level=INFO, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H
 logger = getLogger(__name__)
 
 
+def _split_commas(values: tuple[str, ...]) -> list[str]:
+    """Flatten repeated --flag occurrences, each optionally comma-separated."""
+    return [v for raw in values for v in raw.split(",")]
+
+
 @click.group()
 @click.version_option(package_name="topo-tools", prog_name="topo-tools")
 def cli() -> None:
@@ -443,6 +448,16 @@ def match(  # noqa: PLR0913, PLR0917
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
+    "--input",
+    "extra_inputs",
+    envvar="EXTRA_INPUTS",
+    multiple=True,
+    help=(
+        "Additional children file beyond INPUT_FILE, combined with it "
+        "[may be repeated, and each value MAY be comma-separated]."
+    ),
+)
+@click.option(
     "--issues-file",
     envvar="ISSUES_FILE",
     default=None,
@@ -477,6 +492,7 @@ def mosaic(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
+    extra_inputs: tuple[str, ...],
     issues_file: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
@@ -487,7 +503,8 @@ def mosaic(  # noqa: PLR0913, PLR0917
     r"""Fit an already-extended children layer into a new parent/clip layer.
 
     OUTPUT_FILE defaults to INPUT_FILE with a "_mosaicked" suffix if omitted;
-    it is required when INPUT_FILE is a glob matching more than one file.
+    it is required when INPUT_FILE is a glob matching more than one file, or
+    when --input is given.
 
     \b
     Examples:
@@ -497,6 +514,12 @@ def mosaic(  # noqa: PLR0913, PLR0917
       \b
       # Combine every country's pre-extended layer, re-clip against a world admin0
       topo-tools mosaic "*/latest/adm2/extended.parquet" world_adm0.geojson out.parquet
+
+      \b
+      # Combine explicit files instead of a glob (--input MAY be repeated
+      # and/or comma-separated)
+      topo-tools mosaic afg.parquet world_adm0.geojson out.parquet \
+        --input ago.parquet,are.parquet
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -504,9 +527,13 @@ def mosaic(  # noqa: PLR0913, PLR0917
         if not matches:
             msg = f"no files matched: {input_file}"
             raise click.ClickException(msg)
-        resolved_input: Path | list[Path] = [Path(p) for p in matches]
+        base_inputs = [Path(p) for p in matches]
     else:
-        resolved_input = Path(input_file)
+        base_inputs = [Path(input_file)]
+    all_inputs = base_inputs + [Path(p) for p in _split_commas(extra_inputs)]
+    resolved_input: Path | list[Path] = (
+        all_inputs[0] if len(all_inputs) == 1 else all_inputs
+    )
     try:
         _mosaic(
             resolved_input,
@@ -597,6 +624,32 @@ def stitch(  # noqa: PLR0913, PLR0917
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
+    "--input",
+    "extra_inputs",
+    envvar="EXTRA_INPUTS",
+    multiple=True,
+    help=(
+        "Additional children file beyond INPUT_FILE, paired by order with "
+        "--output [may be repeated, and each value MAY be comma-separated]."
+    ),
+)
+@click.option(
+    "--output",
+    "extra_outputs",
+    envvar="EXTRA_OUTPUTS",
+    multiple=True,
+    help=(
+        "Additional output file beyond OUTPUT_FILE, paired by order with "
+        "--input [may be repeated, and each value MAY be comma-separated]."
+    ),
+)
+@click.option(
+    "--name",
+    envvar="NAME",
+    default=None,
+    help="Run name for internal tables/tmp files. Required when --input is given.",
+)
+@click.option(
     "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
 )
 @click.option(
@@ -625,6 +678,9 @@ def clip(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
+    extra_inputs: tuple[str, ...],
+    extra_outputs: tuple[str, ...],
+    name: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
@@ -646,13 +702,40 @@ def clip(  # noqa: PLR0913, PLR0917
       \b
       # Explicit output
       topo-tools clip children.parquet adm1.geojson clipped.parquet
+
+      \b
+      # Multiple children files sharing one CLIP_FILE load (--input/--output
+      # MAY each be repeated and/or comma-separated; --name is required)
+      topo-tools clip afg.parquet world_adm0.geojson afg_out.parquet \
+        --input ago.parquet,are.parquet --output ago_out.parquet,are_out.parquet \
+        --name portolan_batch
     """
     logger.info("--debug=%s", debug)
+    if extra_inputs and output_file is None:
+        msg = "OUTPUT_FILE is required when --input is given"
+        raise click.ClickException(msg)
+
+    extra_inputs_split = _split_commas(extra_inputs)
+    extra_outputs_split = _split_commas(extra_outputs)
+    if extra_inputs_split:
+        children: str | Path | list[str | Path] = [
+            input_file,
+            *extra_inputs_split,
+        ]
+        outputs: str | Path | list[str | Path] | None = [
+            output_file,
+            *extra_outputs_split,
+        ]
+    else:
+        children = Path(input_file)
+        outputs = Path(output_file) if output_file is not None else None
+
     try:
         _clip(
-            Path(input_file),
+            children,
             Path(clip_file),
-            Path(output_file) if output_file is not None else None,
+            outputs,
+            name=name,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,

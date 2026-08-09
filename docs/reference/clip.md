@@ -9,14 +9,20 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   neither coverage-checked nor -cleaned.
 - `clip` MUST NOT require or read a `parent_fid` column on the children
   layer.
+- Unlike every tool here except `mosaic`, the children role MAY span
+  multiple files, sharing a single load of the parent/clip layer; the
+  parent/clip layer itself MUST remain a single file.
+- Every output row MUST carry a `source_file` column recording the exact
+  path of the children file it came from.
 
 ## Assignment
 
 - `clip` MUST internally assign every child to exactly one parent before
   clipping, via `assign-one`'s per-file majority-vote strategy (see
-  `docs/explanation/assign.md`): every child in the input file is forced
-  onto the one parent that wins a majority vote by count of the file's
-  children, not evaluated per child.
+  `docs/explanation/assign.md`): every child in one children file is forced
+  onto the one parent that wins a majority vote by count of that file's
+  children, not evaluated per child. With multiple children files, each is
+  its own independent majority-vote group, not one vote across all of them.
 - A child that does not agree with its file's majority-vote parent MUST be
   dropped, not clipped against the wrong parent.
 
@@ -40,15 +46,29 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   on its own output: closing seams between clipped pieces is `stitch`'s
   job, not `clip`'s.
 - `clip` MUST raise `RuntimeError` if the clipped result has zero rows.
-- `clip` MUST export the clipped layer.
+- With multiple children files, `clip` MUST raise `RuntimeError` naming
+  any children file whose rows are all gone after clipping, before writing
+  any output file: a multi-file call MUST either fully succeed or write
+  nothing, never a partial set of outputs.
+- `clip` MUST export the clipped layer, one output file per children file.
 
 ## Configuration (`api.clip.clip()` / CLI)
 
-- `clip` MUST process exactly one children file and exactly one
+- `clip` MUST accept one or more children files and exactly one
   parent/clip file per call.
-- The output path MUST default to the children path with a `_clipped`
-  suffix.
-- `clip` MUST raise `FileExistsError` if the output exists and
+- With a single children file, the output path MUST default to that
+  input path with a `_clipped` suffix. With multiple children files,
+  `output_paths` MUST be given explicitly as a list the same length as
+  `children_paths`, paired by position; `clip` MUST raise `ValueError` on
+  a length mismatch. There is no auto-naming or output-directory
+  convention for the multi-file case.
+- With multiple children files, `name` (the run's internal table/tmp-file
+  identifier) MUST be given explicitly; `clip` MUST raise `ValueError` if
+  it is omitted, since there is no single input path to derive one from.
+- `clip` MUST raise `FileExistsError` if any output already exists and
   overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `assign`, `clip`, `outputs`;
   any other value MUST raise `ValueError`.
+- The CLI additionally accepts `--input`/`--output` (each repeatable and
+  comma-separable), appending more children/output pairs beyond the first
+  positional pair; `--name` is required whenever `--input` is given.

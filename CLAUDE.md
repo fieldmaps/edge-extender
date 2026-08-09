@@ -12,7 +12,7 @@ Three are primitives, each standalone AND reused internally by the two
 composite tools below them:
 
 - **extend**: extends polygon boundaries outward using Voronoi diagrams, producing a complete coverage layer that fills gaps (coastlines, disputed areas, water bodies).
-- **clip**: assigns each child to its parent (always `assign-one`), then clips it to that parent's geometry, one `parent_fid` at a time in its own subprocess. See `docs/explanation/clip.md`.
+- **clip**: assigns each child to its parent (always `assign-one`), then clips it to that parent's geometry, one `parent_fid` at a time in its own subprocess; the children role MAY span multiple files sharing one parent load. See `docs/explanation/clip.md`.
 - **stitch**: closes seams in an already-tiled layer with one whole-table `ST_CoverageClean` pass. See `docs/explanation/stitch.md`.
 - **match**: `assign-many` → per-group `extend` (own subprocess) → batched `clip` → `stitch`, fitting a child layer into a coarser parent/clip layer (e.g. admin4 into admin0). See `docs/explanation/match.md`.
 - **mosaic**: `assign-one` → `clip` → `stitch`, fitting an already-extended child layer (a prior `extend()` output) into a new/different parent/clip layer, skipping Voronoi extension entirely. See `docs/explanation/mosaic.md`.
@@ -48,11 +48,14 @@ exception, see `docs/explanation/match.md`). Three layers, each with a specific 
   tool package may import any of these seven, none of them may import back.
 - `topo_tools/api/{extend,clip,stitch,match,mosaic,clean,change}.py`:
   public API functions; each chains its own tool's stages for exactly one
-  file (or file pair) per call, except `mosaic`'s children role, which
-  MAY span multiple files (see `docs/reference/mosaic.md`).
+  file (or file pair) per call, except `mosaic`'s and `clip`'s children
+  role, which MAY span multiple files (see `docs/reference/mosaic.md`,
+  `docs/reference/clip.md`).
 - `topo_tools/cli/main.py`: the click CLI, mapping flags/env vars onto one
-  `api.*()` call per invocation, one file (or pair) at a time (`mosaic`'s
-  child argument alone MAY be a glob pattern, no directory batching).
+  `api.*()` call per invocation, one file (or pair) at a time, except
+  `mosaic`'s child argument (MAY be a glob pattern) and both `mosaic`'s and
+  `clip`'s `--input` option (repeatable, comma-splittable; `clip` also has
+  a matching `--output`), no directory batching.
 
 Import boundaries between these layers, and between tools, are mechanically
 enforced by `pyproject.toml`'s import-linter contracts, see
@@ -91,8 +94,9 @@ per-tool table names are in `docs/explanation/{tool}.md`.
 - **Byte-exact preservation of original polygon vertices is not a goal.** `ST_CoverageClean` may shift any polygon's boundary, including previously-untouched ones (see `docs/explanation/topology.md`).
 - **`match` reuses `extend`'s stage functions per-group, each in an isolated subprocess** (GEOS's native heap isn't fully released between files). Two subprocess generations per call: per-group `extend`, then a separate batched `clip` pass (see `docs/adr/0020`, `docs/explanation/match.md`).
 - **`mosaic` skips Voronoi extension entirely**, assuming the child layer is already a finished `extend()` output; chains `assign-one` → `clip` → `stitch` directly, no per-group subprocess. See `docs/explanation/mosaic.md`.
-- **`core/clip/`'s `_03_clip.main()` clips one `parent_fid` at a time, each in its own subprocess, boundary adaptively grid-tiled**, uniformly for every caller including `match`; a bad `parent_fid` aborts the whole run. Tile size derives from each parent's own vertex density (small parents skip tiling) (see `docs/adr/0015`, `docs/adr/0016`, `docs/adr/0017`).
-- **Standalone `clip` never expects `parent_fid` on its input**; it always assigns internally via `assign-one` (`core/clip/_02_assign.py`) before clipping, no strategy flag. `match`/`mosaic` are unaffected, they call `core.clip._03_clip.main()` directly with their own already-tagged tables (see `docs/adr/0021`).
+- **`core/clip/`'s `_engine.main()` clips one `parent_fid` at a time, each in its own subprocess, boundary adaptively grid-tiled**, uniformly for every caller including `match`; a bad `parent_fid` aborts the whole run. Tile size derives from each parent's own vertex density (small parents skip tiling) (see `docs/adr/0015`, `docs/adr/0016`, `docs/adr/0017`).
+- **Standalone `clip` never expects `parent_fid` on its input**; it always assigns internally via `assign-one` (`api.clip.clip()` calling `core.assign._01_inputs`/`_02_one` directly, no local wrapper) before clipping, no strategy flag. `match`/`mosaic` are unaffected, they call `core.clip._engine.main()` directly with their own already-tagged tables (see `docs/adr/0021`).
+- **Standalone `clip`'s children role MAY span multiple files, sharing one parent load**, reusing `core.assign`'s multi-file inputs/assign stages exactly as `mosaic` does; unlike `mosaic`, each children file still gets its own output (`output_paths` MUST be an explicit equal-length list, no auto-naming), and a call with multiple children files raises before writing anything if any one file's rows are all gone after clipping (see `docs/adr/0022`).
 - **`core/assign/`'s two strategies are picked by the input's geometry state, not by tool-of-origin**: `assign-many` (per-child plurality) for raw/unextended children, `assign-one` (per-file majority vote) for already-extended/overshoot children. See `docs/explanation/assign.md` and `docs/adr/0019`.
 - **`core.clean` depends only on the shared leaf modules, not `core.extend`.** See `docs/explanation/clean.md`.
 - **`ST_CoverageClean`'s `gap_maximum_width` has no GEOS-native auto-fill default.** `clean`'s `--gap-width auto` mode computes an explicit width from the widest thin detected gap; `all` mode uses a fixed `GAP_MAXIMUM_WIDTH_ALL_DEG = 360` sentinel (see `docs/adr/0002`).
