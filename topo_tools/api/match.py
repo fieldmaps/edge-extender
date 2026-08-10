@@ -3,7 +3,7 @@
 from logging import getLogger
 from pathlib import Path
 
-from topo_tools.core.assign import _02_many as assign
+from topo_tools.core.assign import assign_many
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
@@ -93,7 +93,7 @@ def match(  # noqa: C901, PLR0913
             if s == "inputs":
                 inputs.main(conn, name, input_path, clip_path)
             elif s == "assign":
-                assign.main(conn, name)
+                assign_many(conn, name)
             elif s == "groups":
                 groups.main(
                     conn,

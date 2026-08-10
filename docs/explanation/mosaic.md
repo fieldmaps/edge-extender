@@ -17,7 +17,7 @@ docs); `mosaic` is a thin wrapper chaining `assign-one` → `clip` → `stitch`.
    once per child file plus once for the parent (`{name}_child_01`,
    `{name}_parent_01`). Neither side is coverage-checked or -cleaned; see
    "Why neither input is coverage pre-checked" below.
-2. **assign**: calls `core.assign._02_one.main()` directly, the same
+2. **assign**: calls `core.assign.assign_one()` directly, the same
    per-file majority-vote pairing `assign-one` exposes standalone, see
    `docs/explanation/assign.md`. Also narrows `{name}_parent_01` down to
    only the parent fids any child was actually assigned to, before clip

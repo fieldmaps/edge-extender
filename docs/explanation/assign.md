@@ -26,30 +26,33 @@ tool-of-origin one: `assign-many` is `match`'s assignment logic,
 
 ## Modules
 
-`core/assign/_01_inputs.py` loads the (possibly multi-file) child layer
+`core/assign/` has no `api.*()`/CLI pipeline of its own; every function
+below is called directly by another tool's own `api.*()` orchestrator
+(`api.mosaic`, `api.clip`, `api.match`), never from inside
+`core.mosaic`/`core.match` themselves.
+
+`core/assign/_inputs.py` loads the (possibly multi-file) child layer
 and the single parent/clip layer raw via `core.io.read_and_reproject`,
 neither coverage-checked nor -cleaned (consistent with `clip`/`stitch`;
 these are all purely mechanical primitives). Every child row is tagged
 with a `source_file` column recording the exact path it came from
 (basename alone can't distinguish same-named files across directories).
-`mosaic` and standalone `clip` (its multi-file loop, see
-`docs/explanation/clip.md`) both call it directly, via `load_children()`/
-`load_parent()` since ADR-0023 split those apart; `match` loads its own
-children via `core.match._01_inputs` instead.
+`api.mosaic` and standalone `api.clip` (its multi-file loop, see
+`docs/explanation/clip.md`) both call its `load_children()`/
+`load_parent()` directly, since ADR-0023 split those apart; `api.match`
+loads its own children via `core.match._01_inputs` instead.
 
-`_02_many.py` / `_02_one.py` hold the actual assignment logic (see
-below); `match` calls `core.assign._02_many.main()`, `mosaic` and
-standalone `clip` both call `core.assign._02_one.main()`, all directly on
-their own already-loaded tables, the same pattern `core.match`/
-`core.change` use to call `core.extend`'s stage functions directly rather
-than going through `api.extend()`. `mosaic` calls it once per run;
+`_many.py` / `_one.py` hold the actual assignment logic (see below):
+`api.match` calls `core.assign.assign_many()`, `api.mosaic` and
+standalone `api.clip` both call `core.assign.assign_one()`, all directly
+on their own already-loaded tables. `mosaic` calls it once per run;
 `clip`'s multi-file loop calls it once per children file, reusing a
 cached parent-tile decomposition across every call (see below and
-`docs/adr/0024`). Neither stage runs a coverage hard gate: an unclipped
+`docs/adr/0024`). Neither function runs a coverage hard gate: an unclipped
 crosswalk is expected to still overlap/gap between neighboring children,
 that's `clip`'s and `stitch`'s job downstream.
 
-## `_02_many`: largest-overlap assignment
+## `assign_many`: largest-overlap assignment
 
 Both layers are exploded into parts (`UNNEST(ST_Dump(geom))`) before
 computing bbox candidates, a multi-part parent (a country with offshore
@@ -69,13 +72,13 @@ picks the plurality parent per child; ties break on the lowest parent fid.
 Children with zero overlap with any parent are dropped with a logged
 warning, not an error.
 
-## `_02_one`: per-file majority-vote assignment
+## `assign_one`: per-file majority-vote assignment
 
-`_02_one` cannot use `_02_many`'s pairs join unmodified: it runs against
-already-extended (often massively overshot) geometry, and a plain
+`assign_one` cannot use `assign_many`'s pairs join unmodified: it runs
+against already-extended (often massively overshot) geometry, and a plain
 `ST_Intersection`-based area-sum join against a huge single parent part
 (e.g. a country-scale admin0 polygon) is exactly the failure mode `clip`
-itself grid-tiles around. So `_02_one` builds its own pairs table
+itself grid-tiles around. So `assign_one` builds its own pairs table
 (`_build_pairs`), reusing `core.clip.subdivide_boundary` to tile any
 parent part at or above `CLIP_TILE_MIN_VERTICES` before intersecting, the
 same threshold and tiling logic `clip` uses.
@@ -83,15 +86,15 @@ same threshold and tiling logic `clip` uses.
 That tiling is pure parent geometry, independent of which children are
 loaded, so it's split into its own function, `prepare_parent_tiles()`. A
 caller processing one children file per run (`mosaic`, single-file `clip`)
-never notices: `main()`'s default `use_cached_tiles=False` calls it once
-internally, same as before. `clip`'s multi-file loop instead calls
+never notices: `assign_one()`'s default `use_cached_tiles=False` calls it
+once internally, same as before. `clip`'s multi-file loop instead calls
 `prepare_parent_tiles()` once before iterating and passes
-`use_cached_tiles=True` on every file's `main()` call, so the same parent's
-tiles aren't grid-subdivided from scratch on every one of possibly hundreds
-of files. See `docs/adr/0024` for the profiling discrepancy that motivated
-this split.
+`use_cached_tiles=True` on every file's `assign_one()` call, so the same
+parent's tiles aren't grid-subdivided from scratch on every one of
+possibly hundreds of files. See `docs/adr/0024` for the profiling
+discrepancy that motivated this split.
 
-For each `source_file`, `_02_one` counts how many of that file's children
+For each `source_file`, `assign_one` counts how many of that file's children
 intersect each candidate parent (a count of intersecting children, not
 summed overlap area) and assigns every child in the file to whichever
 parent wins that count, since a single file's children are always one

@@ -49,7 +49,7 @@ Run `topo-tools match --help` for the full, always-current option list.
 
 1. **`_01_inputs`**: loads and coverage-cleans both layers by delegating
    twice to `extend`'s own loader (`{name}_child_01`, `{name}_parent_01`).
-2. **assign**: calls `core.assign._02_many.main()` directly: assigns each
+2. **assign**: calls `core.assign.assign_many()` directly: assigns each
    child to the parent it shares the largest area with (plurality, not
    majority); drops and logs children with zero overlap with any parent,
    keeping their geometry for the issues report. See

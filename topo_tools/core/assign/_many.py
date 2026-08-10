@@ -10,7 +10,7 @@ from topo_tools.core.duckdb_utils import bbox_columns_sql
 logger = getLogger(__name__)
 
 
-def main(conn: DuckDBPyConnection, name: str) -> None:
+def assign_many(conn: DuckDBPyConnection, name: str) -> None:
     """Assign each child to its plurality-overlap parent; drop and log the rest.
 
     Each child decides independently, so one file's children MAY scatter

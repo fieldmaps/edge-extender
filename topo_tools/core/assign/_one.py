@@ -129,7 +129,7 @@ def _build_pairs(
         conn.execute(f'DROP TABLE IF EXISTS "{name}{tbl}"')
 
 
-def main(
+def assign_one(
     conn: DuckDBPyConnection, name: str, *, use_cached_tiles: bool = False
 ) -> None:
     """Force every child in a source_file onto that file's single majority-vote parent.

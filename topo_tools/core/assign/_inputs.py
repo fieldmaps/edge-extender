@@ -32,14 +32,3 @@ def load_children(conn: DuckDBPyConnection, name: str, input_paths: list[Path]) 
 def load_parent(conn: DuckDBPyConnection, name: str, clip_path: Path) -> None:
     """Load the parent/clip layer, uncleaned."""
     read_and_reproject(conn, f"{name}_parent", clip_path)
-
-
-def main(
-    conn: DuckDBPyConnection, name: str, input_paths: list[Path], clip_path: Path
-) -> None:
-    """Load/combine the (possibly multi-file) children; load the parent.
-
-    Both loaded uncleaned.
-    """
-    load_children(conn, name, input_paths)
-    load_parent(conn, name, clip_path)

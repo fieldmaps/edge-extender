@@ -3,8 +3,7 @@
 from logging import getLogger
 from pathlib import Path
 
-from topo_tools.core.assign import _01_inputs as inputs
-from topo_tools.core.assign import _02_one as assign
+from topo_tools.core.assign import assign_one, load_children, load_parent
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
@@ -97,9 +96,10 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
             if debug:
                 logger.info("=== %s ===", s)
             if s == "inputs":
-                inputs.main(conn, name, paths, clip_path)
+                load_children(conn, name, paths)
+                load_parent(conn, name, clip_path)
             elif s == "assign":
-                assign.main(conn, name)
+                assign_one(conn, name)
             elif s == "clip":
                 clip.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
             elif s == "stitch":

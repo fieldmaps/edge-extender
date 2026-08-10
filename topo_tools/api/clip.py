@@ -5,8 +5,12 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.assign import _01_inputs as inputs
-from topo_tools.core.assign import _02_one as assign_stage
+from topo_tools.core.assign import (
+    assign_one,
+    load_children,
+    load_parent,
+    prepare_parent_tiles,
+)
 from topo_tools.core.clip import _01_clip as clip_stage
 from topo_tools.core.clip import _02_outputs as outputs
 from topo_tools.core.duckdb_utils import (
@@ -154,9 +158,10 @@ def _clip_single_file(  # noqa: PLR0913, PLR0917
         if debug:
             logger.info("=== %s ===", s)
         if s == "inputs":
-            inputs.main(conn, name, children, parent_path)
+            load_children(conn, name, children)
+            load_parent(conn, name, parent_path)
         elif s == "assign":
-            assign_stage.main(conn, name)
+            assign_one(conn, name)
         elif s == "clip":
             clip_stage.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
         elif s == "outputs":
@@ -180,11 +185,11 @@ def _clip_each_file(  # noqa: PLR0913, PLR0917
     Keeps only one file's geometry resident alongside the shared parent at a
     time, instead of unioning every children file into one table first.
     """
-    inputs.load_parent(conn, name, parent_path)
+    load_parent(conn, name, parent_path)
     conn.execute(f"""--sql
         CREATE TABLE "{name}_parent_full" AS SELECT * FROM "{name}_parent_01"
     """)
-    assign_stage.prepare_parent_tiles(conn, name)
+    prepare_parent_tiles(conn, name)
 
     staged: list[tuple[Path, Path]] = []
     failed: list[str] = []
@@ -193,8 +198,8 @@ def _clip_each_file(  # noqa: PLR0913, PLR0917
             CREATE OR REPLACE TABLE "{name}_parent_01" AS
             SELECT * FROM "{name}_parent_full"
         """)
-        inputs.load_children(conn, name, [child_path])
-        assign_stage.main(conn, name, use_cached_tiles=True)
+        load_children(conn, name, [child_path])
+        assign_one(conn, name, use_cached_tiles=True)
         clip_stage.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
 
         count = conn.execute(f'SELECT COUNT(*) FROM "{name}_03"').fetchone()[0]

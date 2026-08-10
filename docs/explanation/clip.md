@@ -15,11 +15,11 @@ downstream.
 With a single children file, `api.clip.clip()` runs four named stages once,
 in order (`step` MAY select just one for standalone debugging):
 
-1. **`inputs`**: `topo_tools.core.assign._01_inputs.main()`, called
-   directly (no local wrapper file, the same pattern `mosaic` already
-   uses), loads the one children file (tagged with its own full path as
-   `source_file`) and the parent/clip layer.
-2. **`assign`**: `topo_tools.core.assign._02_one.main()`, also called
+1. **`inputs`**: `topo_tools.core.assign.load_children()`/`load_parent()`,
+   called directly (no local wrapper file, the same pattern `mosaic`
+   already uses), loads the one children file (tagged with its own full
+   path as `source_file`) and the parent/clip layer.
+2. **`assign`**: `topo_tools.core.assign.assign_one()`, also called
    directly; see `docs/explanation/assign.md`, `docs/adr/0021`.
 3. **`_01_clip`** (clip's own local stage): joins `{name}_02_assign`'s
    `parent_fid` onto `{name}_child_01` to build `{name}_02_clip_in`, then
@@ -49,19 +49,19 @@ file, hundreds of MB) for every children file dominates runtime when
 clipping many children files against the same parent one call at a time
 (ADR-0022). An initial design shared that load by combining every children
 file into one table before a single `assign`/`clip` pass, reusing
-`core.assign`'s `_01_inputs`/`_02_one` exactly as `mosaic` does. Profiled
-against the full portolan catalog (100+ countries against one world admin0
-parent), that combined-table `assign` pass alone pushed process RSS past
-7.6GB and climbing: `_02_one`'s bbox-prefiltered join scales with (heavy
-parent parts) x (every children file's parts combined), not just the parts
-near each individual country.
+`core.assign`'s `load_children`/`assign_one` exactly as `mosaic` does.
+Profiled against the full portolan catalog (100+ countries against one
+world admin0 parent), that combined-table `assign` pass alone pushed
+process RSS past 7.6GB and climbing: `assign_one`'s bbox-prefiltered join
+scales with (heavy parent parts) x (every children file's parts combined),
+not just the parts near each individual country.
 
 `_clip_each_file()` (`api.clip.clip()`'s private multi-file loop) instead
 loads the parent once into a pristine `{name}_parent_full` table, then for
 each children file: makes a fresh mutable copy of it (cheap in-connection
 table copy, no re-read/reprojection), loads only that one file's children
-via `core.assign._01_inputs.load_children()`, and runs the unchanged
-`_02_one`/`_01_clip` stages, so each file's join only ever involves that
+via `core.assign.load_children()`, and runs the unchanged
+`assign_one`/`_01_clip` stages, so each file's join only ever involves that
 file's own children, not every country's combined. Each file's clipped
 result is staged to a hidden temp file next to its real destination and
 only promoted (`Path.replace()`) once every file in the batch has
@@ -69,16 +69,15 @@ succeeded, keeping the same "fully succeed or write nothing" guarantee
 ADR-0022 established without holding every file's result in memory at
 once. See `docs/adr/0023` for the full profiling evidence and design.
 
-Cutting memory this way exposed a separate cost: `core.assign._02_one.py`'s
+Cutting memory this way exposed a separate cost: `core.assign._one.py`'s
 `_build_pairs()` grid-tiles every high-vertex parent part before joining
 children to it, work that depends only on the parent, never the children.
 Run once per file across the full portolan batch, that redundant tiling
 pushed wall-clock into multiple hours, against a ~9.5 minute baseline for
 the same 111 countries clipped as one combined call. `_clip_each_file()`
-now calls `assign_stage.prepare_parent_tiles()` once, before the per-file
-loop starts, and every iteration's `assign_stage.main()` call reuses that
-cached decomposition (`use_cached_tiles=True`) instead of rebuilding it.
-See `docs/adr/0024`.
+now calls `prepare_parent_tiles()` once, before the per-file loop starts,
+and every iteration's `assign_one()` call reuses that cached decomposition
+(`use_cached_tiles=True`) instead of rebuilding it. See `docs/adr/0024`.
 
 ## One parent fid at a time, each in its own subprocess
 
