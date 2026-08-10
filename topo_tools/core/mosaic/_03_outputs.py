@@ -6,11 +6,7 @@ from pathlib import Path
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import SNAP_TOLERANCE
-from topo_tools.core.coverage import (
-    check_valid_topology,
-    count_gaps,
-    gap_geometries_sql,
-)
+from topo_tools.core.coverage import check_valid_topology, gap_geometries_sql
 from topo_tools.core.io import export_geometry_table, export_issues_table
 from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 
@@ -62,7 +58,11 @@ def main(
     """Output the mosaicked layer + issues report to dest/issues_dest."""
     check_valid_topology(conn, f"{name}_04", max_gap_width=SNAP_TOLERANCE)
 
-    remaining = count_gaps(conn, f"{name}_04", min_width=SNAP_TOLERANCE)
+    _build_issues(conn, name)
+
+    remaining = conn.execute(f"""--sql
+        SELECT COUNT(*) FROM "{name}_05" WHERE kind = 'gap'
+    """).fetchall()[0][0]
     if remaining:
         logger.warning(
             "mosaic: %d gap(s) wider than the noise floor remain in the output "
@@ -70,8 +70,6 @@ def main(
             "see the issues file",
             remaining,
         )
-
-    _build_issues(conn, name)
 
     export_geometry_table(conn, f"{name}_04", dest)
     export_issues_table(conn, f"{name}_05", issues_dest)
