@@ -1,21 +1,12 @@
 """Imports geodata, reprojects to EPSG:4326, and cleans coverage violations."""
 
-from logging import getLogger
 from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.coverage import coverage_clean, has_valid_topology
-from topo_tools.core.io import read_and_reproject
-
-logger = getLogger(__name__)
+from topo_tools.core.io import read_reproject_and_clean
 
 
 def main(conn: DuckDBPyConnection, name: str, path: Path) -> None:
     """Import geodata into DuckDB tables, then clean coverage topology violations."""
-    read_and_reproject(conn, name, path)
-
-    table = f"{name}_01"
-    if not has_valid_topology(conn, table, gap_maximum_width=0):
-        logger.info("cleaning coverage: invalid edges or gaps detected")
-        coverage_clean(conn, table, table, fids=None)
+    read_reproject_and_clean(conn, name, path)

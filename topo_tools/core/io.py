@@ -6,6 +6,7 @@ from pathlib import Path
 from duckdb import DuckDBPyConnection
 
 from .constants import COPY_OPTS, RESERVED_COLUMN_NAMES
+from .coverage import coverage_clean, has_valid_topology
 
 logger = getLogger(__name__)
 
@@ -62,6 +63,16 @@ def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path) -> None:
                {geom_expr} AS geom
         FROM ({read_expr})
     """)
+
+
+def read_reproject_and_clean(conn: DuckDBPyConnection, name: str, path: Path) -> None:
+    """Read, reproject, and coverage-clean geodata into table `{name}_01`."""
+    read_and_reproject(conn, name, path)
+
+    table = f"{name}_01"
+    if not has_valid_topology(conn, table, gap_maximum_width=0):
+        logger.info("cleaning coverage: invalid edges or gaps detected")
+        coverage_clean(conn, table, table, fids=None)
 
 
 def export_geometry_table(

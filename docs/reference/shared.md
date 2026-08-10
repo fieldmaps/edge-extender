@@ -10,8 +10,6 @@ instead of repeating them.
 - The public API layer MUST NOT depend on the command-line interface.
 - The `match` tool MAY reuse `extend`'s logic; `extend` MUST NOT depend on
   `match`.
-- The `change` tool MAY reuse `extend`'s logic; `extend` MUST NOT depend on
-  `change`.
 - The `mosaic` tool MUST NOT depend on `extend` or `match`, and neither
   MUST depend on `mosaic` (see `docs/explanation/mosaic.md`).
 - The `clean` tool MAY reuse `detect`'s logic; `detect` MUST NOT depend on

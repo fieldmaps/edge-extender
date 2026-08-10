@@ -47,8 +47,9 @@ Run `topo-tools match --help` for the full, always-current option list.
 
 ## Pipeline
 
-1. **`_01_inputs`**: loads and coverage-cleans both layers by delegating
-   twice to `extend`'s own loader (`{name}_child_01`, `{name}_parent_01`).
+1. **`_01_inputs`**: loads and coverage-cleans both layers by calling the
+   shared `core.io.read_reproject_and_clean()` helper twice
+   (`{name}_child_01`, `{name}_parent_01`).
 2. **assign**: calls `core.assign.assign_many()` directly: assigns each
    child to the parent it shares the largest area with (plurality, not
    majority); drops and logs children with zero overlap with any parent,

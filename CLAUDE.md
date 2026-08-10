@@ -42,7 +42,7 @@ exception, see `docs/explanation/match.md`). Three layers, each with a specific 
 - `topo_tools/core/{extend,assign,clip,stitch,detect,match,mosaic,clean,change}/`:
   stage implementations. `core.match`/`core.mosaic` call
   `core.clip`/`core.stitch` stage functions directly (not through their
-  own `api.*()`), the same pattern `core.match`/`core.change` use to call
+  own `api.*()`), the same pattern `core.match` uses to call
   `core.extend`'s stage functions directly, and `core.clean` uses to call
   `core.detect`'s issue-detection stage function directly (see
   `docs/adr/0028`). `core.assign` has no `api.*()`/CLI pipeline of its

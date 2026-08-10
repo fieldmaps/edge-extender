@@ -72,11 +72,10 @@ source_modules = ["topo_tools.core.extend"]
 forbidden_modules = ["topo_tools.core.match"]
 
 [[tool.importlinter.contracts]]
-id = "change-may-use-extend-not-reverse"
-name = "change may depend on extend; extend must not depend on change"
-type = "forbidden"
-source_modules = ["topo_tools.core.extend"]
-forbidden_modules = ["topo_tools.core.change"]
+id = "change-independent-of-extend"
+name = "change and extend must not depend on each other"
+type = "independence"
+modules = ["topo_tools.core.change", "topo_tools.core.extend"]
 
 [[tool.importlinter.contracts]]
 id = "mosaic-independent-of-extend"

@@ -54,8 +54,9 @@ Run `topo-tools change --help` for the full, always-current option list.
 
 ## Pipeline
 
-1. **`_01_inputs`**: loads and coverage-cleans both layers by delegating
-   twice to `extend`'s own loader (`{name}_a_01` = old, `{name}_b_01` = new).
+1. **`_01_inputs`**: loads and coverage-cleans both layers by calling the
+   shared `core.io.read_reproject_and_clean()` helper twice
+   (`{name}_a_01` = old, `{name}_b_01` = new).
    Unlike `clean`, `change` isn't trying to detect defects in the raw
    input (it's comparing two whole layers), so pre-cleaning each side
    reduces the risk of native GEOS choking on invalid geometry during
