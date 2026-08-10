@@ -11,7 +11,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   layer.
 - Unlike every tool here except `mosaic`, the children role MAY span
   multiple files, sharing a single load of the parent/clip layer; the
-  parent/clip layer itself MUST remain a single file.
+  parent/clip layer itself MUST remain a single file. With multiple
+  children files, `clip` processes one file at a time behind that shared
+  parent load, not all of them combined into one table (see
+  `docs/adr/0023`).
 - Every output row MUST carry a `source_file` column recording the exact
   path of the children file it came from.
 
@@ -68,7 +71,11 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `clip` MUST raise `FileExistsError` if any output already exists and
   overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `assign`, `clip`, `outputs`;
-  any other value MUST raise `ValueError`.
+  any other value MUST raise `ValueError`. `step` MUST be `None` when
+  `children_paths` is a list; `clip` MUST raise `ValueError` otherwise,
+  since the multi-file case processes one children file at a time and
+  doesn't map onto four independently resumable stages (see
+  `docs/adr/0023`).
 - The CLI additionally accepts `--input`/`--output` (each repeatable and
   comma-separable), appending more children/output pairs beyond the first
   positional pair; `--name` is required whenever `--input` is given.

@@ -12,28 +12,24 @@ downstream.
 
 ## Pipeline
 
+With a single children file, `api.clip.clip()` runs four named stages once,
+in order (`step` MAY select just one for standalone debugging):
+
 1. **`inputs`**: `topo_tools.core.assign._01_inputs.main()`, called
-   directly from `api.clip.clip()` (no local wrapper file, the same
-   pattern `mosaic` already uses) loads and unions any number of children
-   files, each tagged with its own full path as `source_file`, and loads
-   the parent/clip layer exactly once regardless of how many children
-   files were given.
+   directly (no local wrapper file, the same pattern `mosaic` already
+   uses), loads the one children file (tagged with its own full path as
+   `source_file`) and the parent/clip layer.
 2. **`assign`**: `topo_tools.core.assign._02_one.main()`, also called
-   directly. Its majority vote is `PARTITION BY source_file`, so combining
-   many children files into one table still computes each file's own
-   independent majority-vote parent, not one vote across everything; see
-   `docs/explanation/assign.md`, `docs/adr/0021`.
+   directly; see `docs/explanation/assign.md`, `docs/adr/0021`.
 3. **`_01_clip`** (clip's own local stage): joins `{name}_02_assign`'s
    `parent_fid` onto `{name}_child_01` to build `{name}_02_clip_in`, then
    calls `_engine.main()` (the actual clip logic; see below).
-4. **`_02_outputs`** (clip's own local stage): with a single children
-   file, exports `{name}_03` directly, raising `RuntimeError` first if the
-   result is empty. With multiple children files, first checks every
-   children file's `source_file` still has at least one surviving row in
-   `{name}_03`, raising `RuntimeError` naming any that don't **before**
-   writing anything, then exports each children file's own subset (via a
-   `source_file`-filtered temp view) to its own paired destination. No
-   coverage hard gate here either way.
+4. **`_02_outputs`** (clip's own local stage): exports `{name}_03`
+   directly, raising `RuntimeError` first if the result is empty.
+
+With multiple children files, `api.clip.clip()` instead runs a private
+per-file loop (`_clip_each_file()`); `step` is not usable in this case.
+See "Multiple children files, one at a time" below.
 
 `mosaic` and `match` both bypass all four of these steps and call
 `core.clip._engine.main()` directly on their own already-loaded,
@@ -46,20 +42,43 @@ already-extended `{name}_03a` table, the second of `match`'s own two
 subprocess generations, see
 `docs/adr/0020-match-clip-two-subprocess-generations.md`.
 
-## Multiple children files, one parent load
+## Multiple children files, one at a time
 
 Reloading and reprojecting a large parent/clip layer (e.g. a global admin0
 file, hundreds of MB) for every children file dominates runtime when
-clipping many children files against the same parent one call at a time.
-Since `core.assign`'s `_01_inputs`/`_02_one` were already built to combine
-many children files behind one parent load for `mosaic`'s own multi-file
-case, and their per-`source_file` grouping already keeps each file's
-assignment independent, `clip` reuses them unchanged rather than growing
-its own separate multi-file mechanism. The only new work is in
-`_02_outputs`, splitting the combined result back apart by `source_file`
-into the caller's own paired output files, since (unlike `mosaic`) `clip`'s
-multi-file case still needs one output per children file, not one combined
-output. See `docs/adr/0022`.
+clipping many children files against the same parent one call at a time
+(ADR-0022). An initial design shared that load by combining every children
+file into one table before a single `assign`/`clip` pass, reusing
+`core.assign`'s `_01_inputs`/`_02_one` exactly as `mosaic` does. Profiled
+against the full portolan catalog (100+ countries against one world admin0
+parent), that combined-table `assign` pass alone pushed process RSS past
+7.6GB and climbing: `_02_one`'s bbox-prefiltered join scales with (heavy
+parent parts) x (every children file's parts combined), not just the parts
+near each individual country.
+
+`_clip_each_file()` (`api.clip.clip()`'s private multi-file loop) instead
+loads the parent once into a pristine `{name}_parent_full` table, then for
+each children file: makes a fresh mutable copy of it (cheap in-connection
+table copy, no re-read/reprojection), loads only that one file's children
+via `core.assign._01_inputs.load_children()`, and runs the unchanged
+`_02_one`/`_01_clip` stages, so each file's join only ever involves that
+file's own children, not every country's combined. Each file's clipped
+result is staged to a hidden temp file next to its real destination and
+only promoted (`Path.replace()`) once every file in the batch has
+succeeded, keeping the same "fully succeed or write nothing" guarantee
+ADR-0022 established without holding every file's result in memory at
+once. See `docs/adr/0023` for the full profiling evidence and design.
+
+Cutting memory this way exposed a separate cost: `core.assign._02_one.py`'s
+`_build_pairs()` grid-tiles every high-vertex parent part before joining
+children to it, work that depends only on the parent, never the children.
+Run once per file across the full portolan batch, that redundant tiling
+pushed wall-clock into multiple hours, against a ~9.5 minute baseline for
+the same 111 countries clipped as one combined call. `_clip_each_file()`
+now calls `assign_stage.prepare_parent_tiles()` once, before the per-file
+loop starts, and every iteration's `assign_stage.main()` call reuses that
+cached decomposition (`use_cached_tiles=True`) instead of rebuilding it.
+See `docs/adr/0024`.
 
 ## One parent fid at a time, each in its own subprocess
 

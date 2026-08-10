@@ -5,12 +5,15 @@ on an empty result, so a run that completes without raising has already
 been vetted for correctness by the pipeline itself.
 """
 
+import math
+
 import duckdb
 import pytest
 from click.testing import CliRunner
 
 from topo_tools.api.clip import clip
 from topo_tools.cli.main import cli
+from topo_tools.core.constants import CLIP_TILE_MIN_VERTICES
 
 _PARENT_WKT = [
     (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))"),
@@ -120,6 +123,41 @@ def test_clip_majority_vote_drops_outlier(synthetic_parents, tmp_path):
         """).fetchall()
     assert [r[0] for r in rows] == [1, 2]
     assert all(area == pytest.approx(_PARENT_A_AREA, abs=1e-6) for _, area in rows)
+
+
+def _circle_wkt(cx, cy, r, n):
+    pts = [
+        (cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n))
+        for i in range(n)
+    ]
+    pts.append(pts[0])
+    coords = ", ".join(f"{x} {y}" for x, y in pts)
+    return f"POLYGON(({coords}))"
+
+
+def test_clip_heavy_parent_tiling_finds_real_overlap(tmp_path):
+    """A parent part at/above CLIP_TILE_MIN_VERTICES takes assign-one's grid-tiled path.
+
+    Regression test for a bug where the tiled parts' bbox columns were
+    inserted into a mismatched positional schema, silently corrupting the
+    bbox prefilter and dropping every real overlap against a heavy part.
+    """
+    n_points = CLIP_TILE_MIN_VERTICES + 200
+    parents_path = tmp_path / "heavy_parents.parquet"
+    _write_parents(parents_path, [(1, _circle_wkt(50, 50, 10, n_points))])
+
+    children_path = tmp_path / "heavy_children.parquet"
+    _write_children(
+        children_path, [(1, "POLYGON((49 49, 51 49, 51 51, 49 51, 49 49))")]
+    )
+
+    output_path = tmp_path / "out.parquet"
+    clip(children_path, parents_path, output_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
+    assert count == 1
 
 
 def test_clip_raises_when_no_child_overlaps_any_parent(synthetic_parents, tmp_path):
@@ -311,6 +349,50 @@ def test_cli_multi_file_comma_separated(synthetic_parents, tmp_path):
     assert out_a.exists()
     assert out_b.exists()
     assert out_c.exists()
+
+
+def test_clip_multi_file_rejects_step(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    child_a, child_b = synthetic_children_split
+    out_a = tmp_path / "out_a.parquet"
+    out_b = tmp_path / "out_b.parquet"
+    with pytest.raises(ValueError, match="step"):
+        clip(
+            [child_a, child_b],
+            synthetic_parents,
+            [out_a, out_b],
+            name="multi",
+            step="assign",
+            overwrite=True,
+        )
+
+
+def test_clip_multi_file_no_partial_files_left_on_disk_after_failure(
+    synthetic_parents, tmp_path
+):
+    child_a = tmp_path / "child_a.parquet"
+    child_empty = tmp_path / "child_empty.parquet"
+    _write_children(child_a, _CHILD_ROWS)
+    _write_children(
+        child_empty,
+        [(1, "POLYGON((100 100, 101 100, 101 101, 100 101, 100 100))")],
+    )
+    out_a = tmp_path / "out_a.parquet"
+    out_empty = tmp_path / "out_empty.parquet"
+
+    with pytest.raises(RuntimeError, match="no child survived clipping"):
+        clip(
+            [child_a, child_empty],
+            synthetic_parents,
+            [out_a, out_empty],
+            name="multi",
+            overwrite=True,
+        )
+
+    assert not out_a.exists()
+    assert not out_empty.exists()
+    assert list(tmp_path.glob(".tmp_*")) == []
 
 
 def test_cli_multi_file_requires_output_file(synthetic_children_split, tmp_path):

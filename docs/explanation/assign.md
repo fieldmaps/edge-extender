@@ -32,15 +32,20 @@ neither coverage-checked nor -cleaned (consistent with `clip`/`stitch`;
 these are all purely mechanical primitives). Every child row is tagged
 with a `source_file` column recording the exact path it came from
 (basename alone can't distinguish same-named files across directories).
-Only `mosaic` calls it directly; `match` loads its own children via
-`core.match._01_inputs` instead.
+`mosaic` and standalone `clip` (its multi-file loop, see
+`docs/explanation/clip.md`) both call it directly, via `load_children()`/
+`load_parent()` since ADR-0023 split those apart; `match` loads its own
+children via `core.match._01_inputs` instead.
 
 `_02_many.py` / `_02_one.py` hold the actual assignment logic (see
-below); `match` calls `core.assign._02_many.main()`, `mosaic` calls
-`core.assign._02_one.main()`, both directly on their own already-loaded
-tables, the same pattern `core.match`/`core.change` use to call
-`core.extend`'s stage functions directly rather than going through
-`api.extend()`. Neither stage runs a coverage hard gate: an unclipped
+below); `match` calls `core.assign._02_many.main()`, `mosaic` and
+standalone `clip` both call `core.assign._02_one.main()`, all directly on
+their own already-loaded tables, the same pattern `core.match`/
+`core.change` use to call `core.extend`'s stage functions directly rather
+than going through `api.extend()`. `mosaic` calls it once per run;
+`clip`'s multi-file loop calls it once per children file, reusing a
+cached parent-tile decomposition across every call (see below and
+`docs/adr/0024`). Neither stage runs a coverage hard gate: an unclipped
 crosswalk is expected to still overlap/gap between neighboring children,
 that's `clip`'s and `stitch`'s job downstream.
 
@@ -74,6 +79,17 @@ itself grid-tiles around. So `_02_one` builds its own pairs table
 (`_build_pairs`), reusing `core.clip.subdivide_boundary` to tile any
 parent part at or above `CLIP_TILE_MIN_VERTICES` before intersecting, the
 same threshold and tiling logic `clip` uses.
+
+That tiling is pure parent geometry, independent of which children are
+loaded, so it's split into its own function, `prepare_parent_tiles()`. A
+caller processing one children file per run (`mosaic`, single-file `clip`)
+never notices: `main()`'s default `use_cached_tiles=False` calls it once
+internally, same as before. `clip`'s multi-file loop instead calls
+`prepare_parent_tiles()` once before iterating and passes
+`use_cached_tiles=True` on every file's `main()` call, so the same parent's
+tiles aren't grid-subdivided from scratch on every one of possibly hundreds
+of files. See `docs/adr/0024` for the profiling discrepancy that motivated
+this split.
 
 For each `source_file`, `_02_one` counts how many of that file's children
 intersect each candidate parent (a count of intersecting children, not

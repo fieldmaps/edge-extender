@@ -44,6 +44,12 @@ def main(  # noqa: PLR0913 (each param is a distinct required input)
 
     for parent_fid in parent_fids:
         group_dir = tmp_dir / f"{table_out}_p{parent_fid}"
+        # A prior run against this same parent_fid (e.g. a different
+        # children file earlier in clip's multi-file loop, ADR-0023) may
+        # have left a stale group_dir behind under --debug; always start
+        # from an empty directory regardless of debug, so the worker's
+        # CREATE TABLE calls never collide with a leftover catalog.
+        shutil.rmtree(group_dir, ignore_errors=True)
         group_dir.mkdir(parents=True, exist_ok=True)
 
         conn.execute(f"""--sql
