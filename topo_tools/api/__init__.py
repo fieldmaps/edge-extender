@@ -3,6 +3,7 @@
 from .change import change
 from .clean import clean
 from .clip import clip
+from .detect import detect
 from .extend import extend
 from .match import match
 from .mosaic import mosaic
@@ -12,6 +13,7 @@ __all__ = [
     "change",
     "clean",
     "clip",
+    "detect",
     "extend",
     "match",
     "mosaic",

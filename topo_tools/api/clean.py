@@ -4,9 +4,9 @@ from logging import getLogger
 from pathlib import Path
 
 from topo_tools.core.clean import _01_inputs as inputs
-from topo_tools.core.clean import _02_issues as issues
 from topo_tools.core.clean import _03_clean as clean_stage
 from topo_tools.core.clean import _04_outputs as outputs
+from topo_tools.core.detect import _02_issues as issues
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,

@@ -14,9 +14,12 @@ instead of repeating them.
   `change`.
 - The `mosaic` tool MUST NOT depend on `extend` or `match`, and neither
   MUST depend on `mosaic` (see `docs/explanation/mosaic.md`).
+- The `clean` tool MAY reuse `detect`'s logic; `detect` MUST NOT depend on
+  `clean` (see `docs/explanation/detect.md`, `docs/adr/0028`).
 - The shared constants, coverage-validation, file I/O, database-connection,
-  assign, clip, and stitch helpers MUST NOT depend on any of the five
-  tools; they are leaf building blocks usable by all of them.
+  units, assign, clip, detect, and stitch helpers MUST NOT depend on any
+  of the five tool packages (`extend`, `match`, `clean`, `change`,
+  `mosaic`); they are leaf building blocks usable by all of them.
 
 ## Coverage-topology checks
 
@@ -57,3 +60,5 @@ CLI maps flags/env vars onto those same kwargs 1:1.
   raise over any gap (see `docs/adr/0027`).
 - `change` performs no topology hard gate at all; it is a read-only
   comparison between two inputs, not a fix.
+- `detect` performs no topology hard gate at all; it is a read-only
+  inspection, not a fix.

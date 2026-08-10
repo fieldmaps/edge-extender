@@ -7,14 +7,19 @@ from duckdb import DuckDBPyConnection
 
 from topo_tools.core.coverage import check_overlaps
 from topo_tools.core.io import export_geometry_table
-
-from ._units import m2_per_deg2_factor
+from topo_tools.core.units import m2_per_deg2_factor
 
 logger = getLogger(__name__)
 
 
 def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
-    """Extend `{name}_02` with what actually happened to each issue during the fix."""
+    """Extend `{name}_02` with what actually happened to each issue during the fix.
+
+    `fixed` is TRUE for every overlap row unconditionally: `check_overlaps`
+    already gated `{name}_03` as overlap-free before this runs, so any
+    overlap reaching here was necessarily resolved. For a gap row it's the
+    same point-in-union containment test `_warn_on_unfilled_gaps` reports on.
+    """
     m2_per_deg2 = m2_per_deg2_factor(conn, f"{name}_01")
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02" AS
@@ -29,6 +34,10 @@ def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
             CASE WHEN i.kind = 'gap'
                  THEN ST_Area(ST_Intersection(i.geom, fixed_union.g)) * {m2_per_deg2}
             END AS filled_area_m2,
+            CASE WHEN i.kind = 'gap'
+                 THEN ST_Contains(fixed_union.g, ST_PointOnSurface(i.geom))
+                 ELSE TRUE
+            END AS fixed,
             i.geom
         FROM "{name}_02" i
         LEFT JOIN before before_a ON before_a.fid = i.unit_a
@@ -40,20 +49,10 @@ def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
 
 
 def _warn_on_unfilled_gaps(conn: DuckDBPyConnection, name: str) -> None:
-    """Log (never raise) how many detected gaps remain uncovered by `{name}_03`."""
-    has_gaps = conn.execute(f"""--sql
-        SELECT EXISTS (SELECT 1 FROM "{name}_02" WHERE kind = 'gap')
-    """).fetchall()[0][0]
-    if not has_gaps:
-        return
-
+    """Log (never raise) the count of gaps `{name}_02.fixed` marks as still unfilled."""
     row = conn.execute(f"""--sql
-        WITH u AS (SELECT ST_Union_Agg(geom) AS g FROM "{name}_03")
-        SELECT
-            COUNT(*) FILTER (WHERE NOT ST_Contains(u.g, ST_PointOnSurface(i.geom))),
-            COUNT(*)
-        FROM "{name}_02" i, u
-        WHERE i.kind = 'gap'
+        SELECT COUNT(*) FILTER (WHERE NOT fixed), COUNT(*)
+        FROM "{name}_02" WHERE kind = 'gap'
     """).fetchall()[0]
     remaining, total = row
     if remaining:
@@ -74,8 +73,8 @@ def main(
 ) -> None:
     """Validate `{name}_03` and export the cleaned dataset + issues report."""
     check_overlaps(conn, f"{name}_03")
-    _warn_on_unfilled_gaps(conn, name)
     _add_outcome_columns(conn, name)
+    _warn_on_unfilled_gaps(conn, name)
 
     export_geometry_table(conn, f"{name}_03", dest)
     export_geometry_table(conn, f"{name}_02", issues_dest, exclude_fid=False)

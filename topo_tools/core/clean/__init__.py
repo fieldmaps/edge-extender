@@ -1,4 +1,4 @@
 """Detects and fixes coverage defects (gaps, overlaps) in a single polygon layer.
 
-See _02_issues.py.
+Detection itself is core.detect's job, called directly by api.clean.
 """

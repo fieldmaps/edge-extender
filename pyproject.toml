@@ -180,3 +180,29 @@ forbidden_modules = [
     "topo_tools.core.change",
     "topo_tools.core.mosaic",
 ]
+
+[[tool.importlinter.contracts]]
+id = "core-detect-is-leaf"
+name = "core.detect must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.detect"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+    "topo_tools.core.mosaic",
+]
+
+[[tool.importlinter.contracts]]
+id = "core-units-is-leaf"
+name = "core.units must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.units"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+    "topo_tools.core.mosaic",
+]

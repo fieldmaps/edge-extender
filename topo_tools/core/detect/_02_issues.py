@@ -7,8 +7,7 @@ from duckdb import DuckDBPyConnection
 
 from topo_tools.core.coverage import has_coverage_violations
 from topo_tools.core.duckdb_utils import bbox_columns_sql
-
-from ._units import METERS_PER_DEGREE, m2_per_deg2_factor
+from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 
 logger = getLogger(__name__)
 

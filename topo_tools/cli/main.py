@@ -9,6 +9,7 @@ import click
 from topo_tools.api import change as _change
 from topo_tools.api import clean as _clean
 from topo_tools.api import clip as _clip
+from topo_tools.api import detect as _detect
 from topo_tools.api import extend as _extend
 from topo_tools.api import match as _match
 from topo_tools.api import mosaic as _mosaic
@@ -87,6 +88,71 @@ def extend(  # noqa: PLR0913, PLR0917
     logger.info("--debug=%s", debug)
     try:
         _extend(
+            Path(input_file),
+            Path(output_file) if output_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command()
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "issues", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def detect(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    output_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Scan a single polygon layer for gap/overlap coverage defects.
+
+    OUTPUT_FILE defaults to INPUT_FILE with an "_issues" suffix if omitted.
+
+    \b
+    Examples:
+      # Basic run, output name chosen automatically
+      topo-tools detect example.geojson
+
+      \b
+      # Explicit output
+      topo-tools detect example.gpkg example_issues.gpkg
+    """
+    logger.info("--debug=%s", debug)
+    try:
+        _detect(
             Path(input_file),
             Path(output_file) if output_file is not None else None,
             threads=threads,

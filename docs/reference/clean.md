@@ -10,24 +10,11 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention.
 
 ## Detecting gaps and overlaps
 
-- `clean` MUST report every fully-enclosed hole in the combined shape of
-  all input polygons as a gap, regardless of its size or the requested
-  gap-fill mode. An open, non-enclosed inlet between two polygons MUST NOT
-  be reported as a gap.
-- `clean` MUST report every case where two polygons' interiors genuinely
-  overlap, or one fully contains the other, as an overlap, regardless of
-  its size, whenever the input has any coverage violation at all. If the
-  input has no coverage violations, `clean` MUST report zero overlaps
-  without running the overlap check. Two polygons that only share a
-  boundary edge MUST NOT be reported as an overlap.
-- If detecting one kind of defect fails, `clean` MUST still report the
-  other kind rather than failing entirely.
-- The issues report MUST list, for every defect: a unique key, whether it
-  is a gap or an overlap, its area, its width, and its geometry. A gap
-  entry MUST also carry a compactness score (how thin and elongated its
-  shape is, as opposed to round and plausible); an overlap entry MUST
-  also identify the two units involved. Neither MUST appear on the other
-  kind's entries.
+`clean` MUST detect gaps and overlaps exactly as `detect` does (see
+`docs/reference/detect.md`, "Detecting gaps and overlaps"): the same
+defect-reporting rules apply unchanged, `clean` calls `detect`'s own
+detection stage directly rather than owning separate logic (see
+`docs/adr/0028`).
 
 ## Fixing gaps and overlaps
 
@@ -70,9 +57,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention.
 - `clean` MUST always produce both the cleaned dataset and the issues
   report, even when the input had zero defects.
 - The issues report MUST also state each issue's actual measured outcome,
-  not just the defect as originally detected: for an overlap, how much
-  each of its two named units' own area actually changed; for a gap, how
-  much of the gap's own area ended up covered (zero if left unfilled).
+  not just the defect as originally detected: whether it was fixed; for
+  an overlap, how much each of its two named units' own area actually
+  changed; for a gap, how much of the gap's own area ended up covered
+  (zero if left unfilled).
 - `clean` MUST report the fixed output's total area change (gained or
   lost) relative to the input.
 

@@ -110,38 +110,15 @@ def test_clean_full_run(synthetic_input, tmp_path):
     assert kinds == {"gap", "overlap"}
 
 
-def test_clean_detects_full_containment_overlap(synthetic_input, tmp_path):
-    """A fully-nested duplicate polygon (id 8 inside id 7) is an overlap.
-
-    Regression for the overlap join predicate: ST_Overlaps alone is false
-    for full containment (OGC: the intersection must differ from both
-    inputs), so this only gets caught via the ST_Contains half. Located by
-    geometry, not unit_a/unit_b: those reference the internal `fid`
-    (row_number() over an unordered scan, since preserve_insertion_order is
-    off), which isn't guaranteed to match the source "id" column.
-    """
-    output_path = tmp_path / "out.parquet"
-    issues_path = tmp_path / "issues.parquet"
-    clean(synthetic_input, output_path, issues_path, overwrite=True)
-
-    with duckdb.connect() as conn:
-        conn.execute("LOAD spatial")
-        area = conn.execute(f"""
-            SELECT ST_Area(geometry) FROM '{issues_path}'
-            WHERE kind = 'overlap'
-              AND ST_Within(geometry, ST_MakeEnvelope(30, 0, 32, 2))
-        """).fetchall()
-    # Full containment: the overlap area equals fid 8's entire 1x1 extent.
-    assert area == [(1.0,)]
-
-
 def test_clean_issues_report_overlap_outcome(synthetic_input, tmp_path):
     """An overlap row reports each unit's own real area change, not just the defect.
 
     fid 8 sits fully inside fid 7: the fix must give fid 8's entire area
     to fid 7, so one unit's change is a large loss and the other is
     untouched. unit_a/unit_b order isn't guaranteed to match which of the
-    two is the swallowed one (see test above), so check the pair unordered.
+    two is the swallowed one, so check the pair unordered. Every overlap
+    row's `fixed` must read True: check_overlaps() already gates the
+    output as overlap-free before this column is computed.
     """
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
@@ -149,8 +126,9 @@ def test_clean_issues_report_overlap_outcome(synthetic_input, tmp_path):
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        a_change, b_change = conn.execute(f"""
-            SELECT unit_a_area_change_m2, unit_b_area_change_m2 FROM '{issues_path}'
+        a_change, b_change, fixed = conn.execute(f"""
+            SELECT unit_a_area_change_m2, unit_b_area_change_m2, fixed
+            FROM '{issues_path}'
             WHERE kind = 'overlap'
               AND ST_Within(geometry, ST_MakeEnvelope(30, 0, 32, 2))
         """).fetchall()[0]
@@ -159,6 +137,7 @@ def test_clean_issues_report_overlap_outcome(synthetic_input, tmp_path):
     swallowed, untouched = sorted([a_change, b_change])
     assert swallowed < clearly_lost_a_lot_m2
     assert untouched == pytest.approx(0.0)
+    assert fixed is True
 
 
 def test_clean_default_output_paths(synthetic_input):
@@ -304,8 +283,17 @@ def test_clean_maximum_gap_width_auto_fills_only_thin_gap(synthetic_input, tmp_p
                    ST_Contains(u.g, ST_Point(55, 1.05))
             FROM u
         """).fetchone()
+        compact_fixed, thin_fixed = (
+            r[0]
+            for r in conn.execute(f"""
+                SELECT fixed FROM '{issues_path}' WHERE kind = 'gap'
+                ORDER BY thinness_ratio DESC
+            """).fetchall()
+        )
     assert compact_filled is False
     assert thin_filled is True
+    assert compact_fixed is False
+    assert thin_fixed is True
 
 
 def test_clean_maximum_gap_width_explicit_degrees(scaled_gap_input, tmp_path):

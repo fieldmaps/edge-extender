@@ -16,6 +16,7 @@ def cos_lat_factor(centroid_lat: float) -> float:
 
 
 def centroid_lat_of(conn: DuckDBPyConnection, table: str) -> float:
+    """Latitude of the table's overall extent centroid, 0 if the table is empty."""
     lat = conn.execute(f"""--sql
         SELECT ST_Y(ST_Centroid(ST_Extent_Agg(geom))) FROM "{table}"
     """).fetchall()[0][0]
