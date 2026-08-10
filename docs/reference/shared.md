@@ -64,9 +64,11 @@ CLI maps flags/env vars onto those same kwargs 1:1.
   country fully enclosing another), not a coverage defect (see
   `docs/adr/0035`). Any such gap MUST still be logged as a warning and
   recorded in the issues report described in each tool's own file.
-- `clean` MUST raise if its final output has any overlap. It MUST NOT raise
-  over an unfilled gap: gaps may legitimately remain by design and are
-  only logged.
+- `clean` MUST raise if its final output has any overlap, or any unfilled
+  gap at or below the `gap_maximum_width` actually used for that run (see
+  `docs/adr/0037`). It MUST NOT raise over a gap wider than that: gaps
+  above the requested fill width may legitimately remain by design and
+  are only logged.
 - `stitch` MUST raise if its final output has any overlap. It MUST NOT
   raise over any gap (see `docs/adr/0027`), but MUST log a warning and
   record it in the issues report described in `docs/reference/stitch.md`

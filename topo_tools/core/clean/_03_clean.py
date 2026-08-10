@@ -5,7 +5,7 @@ from logging import getLogger
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import SNAP_TOLERANCE
-from topo_tools.core.coverage import coverage_clean, has_invalid_edges
+from topo_tools.core.coverage import coverage_clean, has_gaps, has_invalid_edges
 
 from ._constants import (
     AREA_NOISE_FACTOR,
@@ -137,17 +137,23 @@ def main(
     output_area = _total_area(conn, out_table)
     collapsed, drifted = _defect_unrelated_fid_outcomes(conn, name, table, out_table)
     bad_types = _bad_geometry_type_count(conn, out_table)
+    narrow_gap_remains = gap_maximum_width_deg is not None and has_gaps(
+        conn, out_table, max_width=gap_maximum_width_deg
+    )
     if (
         has_invalid_edges(conn, out_table)
+        or narrow_gap_remains
         or output_area < min_area
         or collapsed
         or bad_types
     ):
         msg = (
-            f"invalid or collapsed coverage-clean output (area {output_area} vs "
-            f"input {input_area}, {collapsed} fid(s) with no detected defect "
-            f"collapsed to empty, {bad_types} fid(s) with a non-polygon geometry "
-            f"type) at gap_maximum_width={gap_maximum_width_deg} on {table}"
+            f"invalid, collapsed, or under-filled coverage-clean output (area "
+            f"{output_area} vs input {input_area}, {collapsed} fid(s) with no "
+            f"detected defect collapsed to empty, {bad_types} fid(s) with a "
+            f"non-polygon geometry type, narrow gap remaining: "
+            f"{narrow_gap_remains}) at gap_maximum_width={gap_maximum_width_deg} "
+            f"on {table}"
         )
         raise RuntimeError(msg)
 

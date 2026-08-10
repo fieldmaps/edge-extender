@@ -306,24 +306,30 @@ degree-space geometry via a centroid-latitude `cos_lat_factor`
 large north-south extents, but adequate for a reporting column, not a
 cleaning tolerance.
 
-## `check_gaps` is deliberately not reused as a hard gate
+## The gap gate is bounded by clean's own fill target
 
-Unlike `extend`/`match`, `_04_outputs.py` does **not** call `extend`'s
-`check_gaps()` on the final output: `clean` can legitimately leave gaps
-unfilled by design (a real gap wider than `SNAP_TOLERANCE` under the
-default, `--maximum-gap-width thin` on a compact/non-thin gap, or a numeric
-cap narrower than some detected gap), so raising on any remaining gap would
-make the tool crash on its own default behavior. Instead it logs a warning
-with a count of
-how many detected gaps remain uncovered, tested via `ST_Contains` against a
-point on each gap's surface; visibility for the issues file, not a failure
-condition. `check_invalid_edges()` **is** reused as a hard gate here too, but by
-the time `_04_outputs.py` runs it, `_03_clean.py`'s own validation (see
-above) has already confirmed `{name}_03` has no invalid edges, or raised
-before returning. This check is now a defensive
-double-check, not the primary safety net: any survivor here would mean
-`_03_clean.py`'s own validation had a bug, not that `ST_CoverageClean`
-itself misbehaved.
+`_03_clean.py`'s post-fix validation raises if the output has any overlap,
+or any unfilled gap at or below `gap_maximum_width_deg`, the width it
+actually asked `ST_CoverageClean` to close for this run (`has_gaps(conn,
+out_table, max_width=gap_maximum_width_deg)`, skipped when
+`gap_maximum_width_deg is None`, meaning no fill was requested at all;
+see `docs/adr/0037`). A gap left wider than that by design (a real gap
+under the default, `--maximum-gap-width thin` on a compact/non-thin gap,
+or a numeric cap narrower than some detected gap) does not raise: `clean`
+can legitimately leave those unfilled. `_04_outputs.py` logs a warning
+with a count of how many detected gaps remain uncovered regardless of
+width, tested via `ST_Contains` against a point on each gap's surface;
+visibility for the issues file, not a second failure condition.
+
+`check_invalid_edges()` **is** reused as a hard gate in `_04_outputs.py`
+too, but by the time it runs, `_03_clean.py`'s own validation (above) has
+already confirmed `{name}_03` has no invalid edges, or raised before
+returning. This check is a defensive double-check for `--step outputs`
+(a persisted `_03` table from a prior run), not the primary safety net:
+any survivor here would mean `_03_clean.py`'s own validation had a bug,
+not that `ST_CoverageClean` itself misbehaved. The new gap-width check
+has no such double-check in `_04_outputs.py`: `gap_maximum_width_deg` is
+a `_03_clean.py`-local value with no persisted form to re-check against.
 
 ## Resilience
 
