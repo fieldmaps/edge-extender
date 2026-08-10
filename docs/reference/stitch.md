@@ -19,7 +19,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Outputs
 
 - `stitch`'s final output MUST pass the hard gate in
-  `docs/reference/shared.md` (no overlap, no gap) before export.
+  `docs/reference/shared.md` (no overlap; unlike other tools, an unfilled
+  gap does not block export, see `docs/adr/0027`).
 - `stitch` MUST export the final cleaned layer.
 
 ## Configuration (`api.stitch.stitch()` / CLI)

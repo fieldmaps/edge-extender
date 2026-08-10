@@ -32,8 +32,9 @@ Run `topo-tools stitch --help` for the full, always-current option list.
    below).
 2. **`_02_clean`**: one whole-table `ST_CoverageClean` pass
    (`fids=None`, `gap_maximum_width=SNAP_TOLERANCE`).
-3. **`_03_outputs`**: the same `check_overlaps`/`check_gaps` hard gate
-   every tool's final output goes through, then export.
+3. **`_03_outputs`**: the same `check_overlaps` hard gate every tool's
+   final output goes through, then export. Unlike `extend`/`match`/
+   `mosaic`, `stitch` does not also call `check_gaps` (see `docs/adr/0027`).
 
 ## Why whole-table, never scoped to a fid subset
 
@@ -65,8 +66,8 @@ independent calls.
 ## No coverage pre-check, no issues report
 
 `_01_inputs.py` does not coverage-clean the input, consistent with `clip`
-and `assign`; these are all purely mechanical primitives; the final hard
-gate in `_03_outputs.py` is the correctness guarantee, not an opinion any
-one stage holds about its input's cleanliness. `stitch` also has no issues
-report: unlike `match`/`mosaic`/`clean`, it has no concept of a "dropped"
-row: every input row survives into the cleaned output.
+and `assign`; these are all purely mechanical primitives; the final
+overlap gate in `_03_outputs.py` is the correctness guarantee, not an
+opinion any one stage holds about its input's cleanliness. `stitch` also
+has no issues report: unlike `match`/`mosaic`/`clean`, it has no concept
+of a "dropped" row: every input row survives into the cleaned output.

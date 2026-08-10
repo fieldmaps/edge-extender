@@ -53,5 +53,7 @@ CLI maps flags/env vars onto those same kwargs 1:1.
 - `clean` MUST raise if its final output has any overlap. It MUST NOT raise
   over an unfilled gap: gaps may legitimately remain by design and are
   only logged.
+- `stitch` MUST raise if its final output has any overlap. It MUST NOT
+  raise over any gap (see `docs/adr/0027`).
 - `change` performs no topology hard gate at all; it is a read-only
   comparison between two inputs, not a fix.

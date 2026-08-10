@@ -74,10 +74,16 @@ def test_stitch_closes_small_seam_gap(tiny_gap_input, tmp_path):
     assert row_count == expected_row_count
 
 
-def test_stitch_raises_on_real_gap(large_gap_input, tmp_path):
+def test_stitch_tolerates_unclosed_gap(large_gap_input, tmp_path):
     output_path = tmp_path / "out.parquet"
-    with pytest.raises(RuntimeError, match="GAPS"):
-        stitch(large_gap_input, output_path, overwrite=True)
+    stitch(large_gap_input, output_path, overwrite=True)
+
+    assert output_path.exists()
+    expected_row_count = 4
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        row_count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
+    assert row_count == expected_row_count
 
 
 def test_stitch_default_output_path(tiny_gap_input):
