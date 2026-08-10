@@ -1,13 +1,14 @@
 """Shared utilities: DuckDB connection and pipeline helpers."""
 
 import contextlib
+import multiprocessing
 import re
 import shutil
 import signal
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from logging import FileHandler, Formatter, getLogger
 from pathlib import Path
 from types import FrameType
@@ -128,6 +129,40 @@ def get_connection(
     if threads is not None:
         conn.execute(f"SET threads = {threads}")
     return ProfiledConnection(conn, debug=debug)
+
+
+@contextlib.contextmanager
+def worker_result(result_queue: "multiprocessing.Queue") -> Iterator[None]:
+    """Wrap a spawned worker's body, must not let an exception escape uncaught.
+
+    A freshly-spawned process's exception would otherwise vanish silently
+    instead of surfacing in the parent; puts None on success or an error
+    string on any exception instead.
+    """
+    try:
+        yield
+        result_queue.put(None)
+    except Exception as e:  # noqa: BLE001 (must not raise across the process boundary uncaught)
+        result_queue.put(f"{type(e).__name__}: {e}")
+
+
+def spawn_worker(target: Callable, args: tuple) -> tuple[int | None, str | None]:
+    """Spawn `target(*args, result_queue)` isolated, wait, return (exitcode, error)."""
+    ctx = multiprocessing.get_context("spawn")
+    result_queue = ctx.Queue()
+    process = ctx.Process(target=target, args=(*args, result_queue))
+    process.start()
+    process.join()
+    err = (
+        result_queue.get()
+        if not result_queue.empty()
+        else (
+            f"worker exited with no result (exitcode={process.exitcode}); "
+            "could be OOM/killed, or a spawn startup failure unrelated "
+            "to memory (e.g. the entry point wasn't a real file)"
+        )
+    )
+    return process.exitcode, err
 
 
 def bbox_columns_sql(geom_expr: str) -> str:
