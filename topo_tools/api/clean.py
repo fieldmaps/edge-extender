@@ -25,28 +25,31 @@ _STEP_TABLES = {
 }
 
 
-def _parse_maximum_gap_width(value: str) -> tuple[str, float | None]:
-    if value in ("auto", "all"):
+def _parse_maximum_gap_width(value: str | None) -> tuple[str, float | None]:
+    if value is None:
+        return "default", None
+    if value in ("thin", "all"):
         return value, None
     try:
         return "value", float(value)
     except ValueError:
         msg = (
-            f"--maximum-gap-width must be 'auto', 'all', or a number in "
-            f"decimal degrees, got {value!r}"
+            f"--maximum-gap-width must be 'thin', 'all', or a number in "
+            f"decimal degrees (omit it for the default noise-floor fill), "
+            f"got {value!r}"
         )
         raise ValueError(msg) from None
 
 
-def _parse_snapping_distance(value: str) -> tuple[str, float | None]:
-    if value == "auto":
-        return "auto", None
+def _parse_snapping_distance(value: str | None) -> tuple[str, float | None]:
+    if value is None:
+        return "default", None
     try:
         return "value", float(value)
     except ValueError:
         msg = (
-            f"--snapping-distance must be 'auto' or a number in decimal "
-            f"degrees, got {value!r}"
+            f"--snapping-distance must be a number in decimal degrees (omit "
+            f"it for the default noise-floor snap), got {value!r}"
         )
         raise ValueError(msg) from None
 
@@ -56,8 +59,8 @@ def clean(  # noqa: C901, PLR0913
     output_path: str | Path | None = None,
     issues_path: str | Path | None = None,
     *,
-    maximum_gap_width: str = "auto",
-    snapping_distance: str = "auto",
+    maximum_gap_width: str | None = None,
+    snapping_distance: str | None = None,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
     overwrite: bool = False,

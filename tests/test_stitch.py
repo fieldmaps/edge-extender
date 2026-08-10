@@ -64,9 +64,11 @@ def test_cli_help():
 
 def test_stitch_closes_small_seam_gap(tiny_gap_input, tmp_path):
     output_path = tmp_path / "out.parquet"
-    stitch(tiny_gap_input, output_path, overwrite=True)
+    issues_path = tmp_path / "issues.parquet"
+    stitch(tiny_gap_input, output_path, issues_path, overwrite=True)
 
     assert output_path.exists()
+    assert not issues_path.exists()
     expected_row_count = 4
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
@@ -76,14 +78,20 @@ def test_stitch_closes_small_seam_gap(tiny_gap_input, tmp_path):
 
 def test_stitch_tolerates_unclosed_gap(large_gap_input, tmp_path):
     output_path = tmp_path / "out.parquet"
-    stitch(large_gap_input, output_path, overwrite=True)
+    issues_path = tmp_path / "issues.parquet"
+    stitch(large_gap_input, output_path, issues_path, overwrite=True)
 
     assert output_path.exists()
     expected_row_count = 4
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
         row_count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
+        gap_rows = conn.execute(
+            f"SELECT max_width_m FROM '{issues_path}' WHERE kind = 'gap'"
+        ).fetchall()
     assert row_count == expected_row_count
+    assert len(gap_rows) == 1
+    assert gap_rows[0][0] > 0
 
 
 def test_stitch_default_output_path(tiny_gap_input):
@@ -98,6 +106,23 @@ def test_cli_positional_args(tiny_gap_input, tmp_path):
     result = CliRunner().invoke(cli, ["stitch", str(tiny_gap_input), str(output_path)])
     assert result.exit_code == 0, result.output
     assert output_path.exists()
+
+
+def test_cli_issues_file_option(large_gap_input, tmp_path):
+    output_path = tmp_path / "cli_out.parquet"
+    issues_path = tmp_path / "cli_issues.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "stitch",
+            str(large_gap_input),
+            str(output_path),
+            "--issues-file",
+            str(issues_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert issues_path.exists()
 
 
 def test_cli_clean_error_on_existing_output(tiny_gap_input, tmp_path):

@@ -70,7 +70,7 @@ backs off from 10M points until the operation fits in available memory.
 bbox-self-join rewrite (see below), the stage peaks at ~2.7 GB at 1 thread;
 Voronoi is now the only stage that crosses 6 GB.
 
-**Outputs topology checks**: `check_overlaps` is a self-join that could degrade to O(n²)
+**Outputs topology checks**: `check_invalid_edges` is a self-join that could degrade to O(n²)
 pairs without a spatial index, but DuckDB's `SPATIAL_JOIN` rewrite handles non-overlapping
 polygon sets cheaply via bounding-box rejection. `check_gaps` runs `ST_Union_Agg` on all
 final polygons, the most expensive single query in the outputs phase.
@@ -103,7 +103,7 @@ since-removed budget model, kept for the real measured numbers:
 
 Output: 1,642 fids preserved, 905,538 vertices (down from 13.85M, expected,
 `extend` resamples/simplifies via the Voronoi step). Topology validation
-passed (`check_overlaps`/`check_gaps`), no correctness issues.
+passed (`check_invalid_edges`/`check_gaps`), no correctness issues.
 
 **This run did not exercise the documented ~5.9GB ceiling**: that figure is
 specifically `_01_inputs.py`'s whole-table `ST_CoverageClean` fallback,

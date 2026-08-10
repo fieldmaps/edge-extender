@@ -5,7 +5,7 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.coverage import has_coverage_violations
+from topo_tools.core.coverage import gap_geometries_sql, has_invalid_edges
 from topo_tools.core.duckdb_utils import bbox_columns_sql
 from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 
@@ -32,22 +32,8 @@ def _detect_or_empty(
 def _build_gaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{tmp}" AS
-        WITH union_cte AS (
-            SELECT ST_Union_Agg(geom) AS u FROM "{table}"
-            WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
-        ),
-        parts AS (
-            SELECT (UNNEST(ST_Dump(u))).geom AS poly FROM union_cte WHERE u IS NOT NULL
-        ),
-        holes AS (
-            SELECT UNNEST(ST_Dump(
-                ST_Difference(ST_MakePolygon(ST_ExteriorRing(poly)), poly)
-            )).geom AS geom
-            FROM parts WHERE ST_NumInteriorRings(poly) > 0
-        )
         SELECT row_number() OVER () AS n, geom
-        FROM holes
-        WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+        FROM {gap_geometries_sql(table)}
     """)
 
 
@@ -116,7 +102,7 @@ def main(
         "SELECT NULL::BIGINT AS n, NULL::BIGINT AS unit_a, "
         "NULL::BIGINT AS unit_b, NULL::GEOMETRY AS geom WHERE FALSE"
     )
-    if has_coverage_violations(conn, table):
+    if has_invalid_edges(conn, table):
         _detect_or_empty(
             conn,
             "overlap",

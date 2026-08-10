@@ -13,6 +13,7 @@ from click.testing import CliRunner
 import topo_tools.core.clean._03_clean as clean_stage
 from topo_tools.api.clean import clean
 from topo_tools.cli.main import cli
+from topo_tools.core.constants import SNAP_TOLERANCE
 
 # Two independent groups, spatially separated so each exercises exactly one
 # defect kind without interference:
@@ -30,7 +31,7 @@ from topo_tools.cli.main import cli
 #   - fid 9-12: a second donut, enclosing a 10x0.1 sliver-shaped gap at
 #     (51,1)-(61,1.1), same area (1.0) as the fid 1-4 hole but a thinness
 #     ratio (~0.03) far below DEFAULT_THINNESS_RATIO, unlike fid 1-4's square
-#     hole (~0.785). Distinguishes --maximum-gap-width=auto's shape-based
+#     hole (~0.785). Distinguishes --maximum-gap-width=thin's shape-based
 #     fill from the compact hole it must leave alone.
 _SYNTHETIC_WKT = [
     (1, "POLYGON((0 0, 3 0, 3 1, 2 1, 1 1, 0 1, 0 0))"),
@@ -117,7 +118,7 @@ def test_clean_issues_report_overlap_outcome(synthetic_input, tmp_path):
     to fid 7, so one unit's change is a large loss and the other is
     untouched. unit_a/unit_b order isn't guaranteed to match which of the
     two is the swallowed one, so check the pair unordered. Every overlap
-    row's `fixed` must read True: check_overlaps() already gates the
+    row's `fixed` must read True: check_invalid_edges() already gates the
     output as overlap-free before this column is computed.
     """
     output_path = tmp_path / "out.parquet"
@@ -188,11 +189,11 @@ def gap_only_input(tmp_path):
     Fully noded (each neighbor's shared corner is an explicit vertex on the
     other's ring, same style as `_SYNTHETIC_WKT`'s fid 1-4 group) and scaled
     so the hole is a small fraction of the ring (same reasoning as
-    `scaled_gap_input`), so `has_coverage_violations()`
+    `scaled_gap_input`), so `has_invalid_edges()`
     (`ST_CoverageInvalidEdges_Agg`) is False (confirmed directly) without
     tripping the area-erosion instability a non-noded or too-small-scale
     fixture hits. Regression fixture for `_03_clean.py`'s fix stage: it used
-    to gate the whole `ST_CoverageClean` call on `has_coverage_violations()`,
+    to gate the whole `ST_CoverageClean` call on `has_invalid_edges()`,
     which only detects overlaps/mismatched edges, never gaps, silently
     no-opping on exactly this shape of input.
     """
@@ -213,10 +214,51 @@ def gap_only_input(tmp_path):
     return path
 
 
+@pytest.fixture
+def noise_scale_gap_input(tmp_path):
+    """Reuse gap_only_input's ring/gap topology, gap narrowed below SNAP_TOLERANCE.
+
+    Exercises the default (omitted-flag) noise-floor fill: the gap here must
+    get filled without any explicit --maximum-gap-width, unlike
+    gap_only_input's/scaled_gap_input's real-scale gap. Ring stays at
+    gap_only_input's realistic 0-101 scale, only the gap's own width shrinks:
+    shrinking the whole ring instead (tried first) collapsed the entire
+    output, GEOS's own precision floor at that point, not the intended gap.
+    """
+    path = tmp_path / "noise_scale_gap.parquet"
+    w = SNAP_TOLERANCE / 2
+    wkt = [
+        (1, f"POLYGON((0 0, 101 0, 101 50, {50 + w} 50, 50 50, 0 50, 0 0))"),
+        (
+            2,
+            (
+                f"POLYGON((0 {50 + w}, 50 {50 + w}, {50 + w} {50 + w}, "
+                f"101 {50 + w}, 101 101, 0 101, 0 {50 + w}))"
+            ),
+        ),
+        (3, f"POLYGON((0 50, 50 50, 50 {50 + w}, 0 {50 + w}, 0 50))"),
+        (
+            4,
+            (
+                f"POLYGON(({50 + w} 50, 101 50, 101 {50 + w}, "
+                f"{50 + w} {50 + w}, {50 + w} 50))"
+            ),
+        ),
+    ]
+    values = ", ".join(f"({fid}, ST_GeomFromText('{wkt_}'))" for fid, wkt_ in wkt)
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t(id, geom)"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+    return path
+
+
 def test_clean_fills_gap_with_no_coverage_violations(gap_only_input, tmp_path):
     """`--maximum-gap-width all` must still fill a gap when nothing overlaps.
 
-    Regression for the `_03_clean.py` gate bug: has_coverage_violations()
+    Regression for the `_03_clean.py` gate bug: has_invalid_edges()
     is False for this fixture (no overlaps/mismatched edges), but a real
     fully-enclosed gap exists and must still get filled.
     """
@@ -263,15 +305,15 @@ def test_clean_maximum_gap_width_all_fills_gap(scaled_gap_input, tmp_path):
     assert filled > 0
 
 
-def test_clean_maximum_gap_width_auto_fills_only_thin_gap(synthetic_input, tmp_path):
-    """Auto fills the fid 9-12 sliver but leaves the fid 1-4 compact square alone."""
-    output_path = tmp_path / "auto.parquet"
-    issues_path = tmp_path / "auto_issues.parquet"
+def test_clean_maximum_gap_width_thin_fills_only_thin_gap(synthetic_input, tmp_path):
+    """Thin fills the fid 9-12 sliver but leaves the fid 1-4 compact square alone."""
+    output_path = tmp_path / "thin.parquet"
+    issues_path = tmp_path / "thin_issues.parquet"
     clean(
         synthetic_input,
         output_path,
         issues_path,
-        maximum_gap_width="auto",
+        maximum_gap_width="thin",
         overwrite=True,
     )
 
@@ -294,6 +336,28 @@ def test_clean_maximum_gap_width_auto_fills_only_thin_gap(synthetic_input, tmp_p
     assert thin_filled is True
     assert compact_fixed is False
     assert thin_fixed is True
+
+
+def test_clean_maximum_gap_width_default_leaves_real_gap_unfilled(
+    scaled_gap_input, tmp_path
+):
+    """Omitting --maximum-gap-width must not fill a real-scale gap."""
+    output_path = tmp_path / "default.parquet"
+    issues_path = tmp_path / "default_issues.parquet"
+    clean(scaled_gap_input, output_path, issues_path, overwrite=True)
+
+    assert _real_hole_area(output_path) == pytest.approx(1.0, rel=1e-6)
+
+
+def test_clean_maximum_gap_width_default_fills_noise_scale_gap(
+    noise_scale_gap_input, tmp_path
+):
+    """Omitting --maximum-gap-width must still fill a sub-SNAP_TOLERANCE gap."""
+    output_path = tmp_path / "default_noise.parquet"
+    issues_path = tmp_path / "default_noise_issues.parquet"
+    clean(noise_scale_gap_input, output_path, issues_path, overwrite=True)
+
+    assert _real_hole_area(output_path) == pytest.approx(0.0, abs=1e-20)
 
 
 def test_clean_maximum_gap_width_explicit_degrees(scaled_gap_input, tmp_path):
@@ -322,12 +386,26 @@ def test_clean_maximum_gap_width_explicit_degrees(scaled_gap_input, tmp_path):
     assert _real_hole_area(wide_output) == pytest.approx(0.0, abs=1e-9)
 
 
-def test_clean_invalid_maximum_gap_width_value(synthetic_input, tmp_path):
+@pytest.mark.parametrize("value", ["potato", "auto"])
+def test_clean_invalid_maximum_gap_width_value(value, synthetic_input, tmp_path):
+    """'auto' is rejected: the noise-floor default is only reachable by omission."""
     with pytest.raises(ValueError, match="maximum-gap-width"):
         clean(
             synthetic_input,
             tmp_path / "bad.parquet",
-            maximum_gap_width="potato",
+            maximum_gap_width=value,
+            overwrite=True,
+        )
+
+
+@pytest.mark.parametrize("value", ["potato", "auto"])
+def test_clean_invalid_snapping_distance_value(value, synthetic_input, tmp_path):
+    """'auto' is rejected: the noise-floor default is only reachable by omission."""
+    with pytest.raises(ValueError, match="snapping-distance"):
+        clean(
+            synthetic_input,
+            tmp_path / "bad.parquet",
+            snapping_distance=value,
             overwrite=True,
         )
 
@@ -386,14 +464,14 @@ def test_clean_raises_immediately_on_coverage_clean_failure(monkeypatch):
             conn,
             "stage",
             gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
+            snapping_distance=("default", None),
         )
 
 
 def test_clean_rejects_eroded_output(monkeypatch):
     """A totally empty coverage_clean() result must not be accepted as success.
 
-    Regression: has_coverage_violations() alone passes an empty result as
+    Regression: has_invalid_edges() alone passes an empty result as
     "no violations", the area-sanity check must catch it too.
     """
 
@@ -414,7 +492,7 @@ def test_clean_rejects_eroded_output(monkeypatch):
             conn,
             "stage",
             gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
+            snapping_distance=("default", None),
         )
 
 
@@ -454,7 +532,7 @@ def test_clean_rejects_collapsed_fid(monkeypatch):
             conn,
             "stage",
             gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
+            snapping_distance=("default", None),
         )
 
 
@@ -499,7 +577,7 @@ def test_clean_rejects_bad_geometry_type(monkeypatch):
             conn,
             "stage",
             gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
+            snapping_distance=("default", None),
         )
 
 
@@ -510,7 +588,7 @@ def test_clean_logs_area_change_on_success(caplog):
             conn,
             "stage",
             gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
+            snapping_distance=("default", None),
         )
 
     messages = [r.message for r in caplog.records if "total area" in r.message]
@@ -550,7 +628,7 @@ def test_clean_overlap_exemption_is_unconditional(monkeypatch):
             conn,
             "stage",
             gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
+            snapping_distance=("default", None),
         )
         row_count = conn.execute("SELECT COUNT(*) FROM stage_03").fetchone()[0]
 
@@ -598,7 +676,7 @@ def test_clean_logs_defect_unrelated_drift_without_rejecting(monkeypatch, caplog
             conn,
             "stage",
             gap_maximum_width=("value", 0.5),
-            snapping_distance=("auto", None),
+            snapping_distance=("default", None),
         )
         row_count = conn.execute("SELECT COUNT(*) FROM stage_03").fetchone()[0]
 

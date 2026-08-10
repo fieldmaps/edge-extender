@@ -26,6 +26,7 @@ _STEP_TABLES = {
 def stitch(  # noqa: PLR0913
     input_path: str | Path,
     output_path: str | Path | None = None,
+    issues_path: str | Path | None = None,
     *,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
@@ -48,8 +49,16 @@ def stitch(  # noqa: PLR0913
         if output_path is not None
         else input_path.with_stem(input_path.stem + "_stitched")
     )
+    issues_path = (
+        Path(issues_path)
+        if issues_path is not None
+        else output_path.with_stem(output_path.stem + "_issues")
+    )
     if output_path.exists() and not overwrite:
         msg = f"output already exists: {output_path}"
+        raise FileExistsError(msg)
+    if issues_path.exists() and not overwrite:
+        msg = f"output already exists: {issues_path}"
         raise FileExistsError(msg)
 
     # "_stitch" keeps every table/file this call creates distinct from
@@ -73,7 +82,7 @@ def stitch(  # noqa: PLR0913
             elif s == "clean":
                 clean.main(conn, f"{name}_01", f"{name}_02")
             elif s == "outputs":
-                outputs.main(conn, name, output_path, debug=debug)
+                outputs.main(conn, name, output_path, issues_path, debug=debug)
         maybe_export_debug_tables(
             conn, tmp_dir_path, name, step, _STEP_TABLES, debug=debug
         )

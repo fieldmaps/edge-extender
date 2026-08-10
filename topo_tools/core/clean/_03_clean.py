@@ -5,7 +5,7 @@ from logging import getLogger
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import SNAP_TOLERANCE
-from topo_tools.core.coverage import coverage_clean, has_coverage_violations
+from topo_tools.core.coverage import coverage_clean, has_invalid_edges
 
 from ._constants import (
     AREA_NOISE_FACTOR,
@@ -29,7 +29,12 @@ def _resolve_gap_maximum_width_deg(
             SELECT EXISTS (SELECT 1 FROM "{name}_02" WHERE kind = 'gap')
         """).fetchall()[0][0]
         return GAP_MAXIMUM_WIDTH_ALL_DEG if has_gap else None
-    if mode == "auto":
+    if mode == "default":
+        has_gap = conn.execute(f"""--sql
+            SELECT EXISTS (SELECT 1 FROM "{name}_02" WHERE kind = 'gap')
+        """).fetchall()[0][0]
+        return SNAP_TOLERANCE if has_gap else None
+    if mode == "thin":
         widest_deg = conn.execute(f"""--sql
             SELECT MAX((ST_MaximumInscribedCircle(geom)).radius * 2)
             FROM "{name}_02"
@@ -105,15 +110,15 @@ def main(
     gap_maximum_width_deg = _resolve_gap_maximum_width_deg(
         conn, name, gap_maximum_width
     )
-    # has_coverage_violations() never detects gaps.
-    if not has_coverage_violations(conn, table) and gap_maximum_width_deg is None:
+    # has_invalid_edges() never detects gaps.
+    if not has_invalid_edges(conn, table) and gap_maximum_width_deg is None:
         conn.execute(
             f'CREATE OR REPLACE TABLE "{out_table}" AS SELECT * FROM "{table}"'
         )
         return
 
     snap_mode, snap_value = snapping_distance
-    snapping_distance_deg = SNAP_TOLERANCE if snap_mode == "auto" else snap_value
+    snapping_distance_deg = SNAP_TOLERANCE if snap_mode == "default" else snap_value
     input_area = _total_area(conn, table)
     overlap_area = _overlap_area(conn, name)
     min_area = (
@@ -133,7 +138,7 @@ def main(
     collapsed, drifted = _defect_unrelated_fid_outcomes(conn, name, table, out_table)
     bad_types = _bad_geometry_type_count(conn, out_table)
     if (
-        has_coverage_violations(conn, out_table)
+        has_invalid_edges(conn, out_table)
         or output_area < min_area
         or collapsed
         or bad_types

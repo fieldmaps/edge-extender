@@ -37,7 +37,7 @@ Run `topo-tools detect --help` for the full, always-current option list.
    not a table `ST_CoverageClean` has already silently rewritten.
 2. **`_02_issues`**: detects gap/overlap regions, writing one issues table
    (`{name}_02`). Gap detection always runs; overlap detection is skipped
-   (written empty directly) whenever `has_coverage_violations()` is
+   (written empty directly) whenever `has_invalid_edges()` is
    already False, see "Skipping overlap detection when the coverage is
    already valid" below.
 3. **`_03_outputs`**: exports `{name}_02` to the issues file. No hard
@@ -47,7 +47,7 @@ Run `topo-tools detect --help` for the full, always-current option list.
 
 ## Skipping overlap detection when the coverage is already valid
 
-`main()` checks `has_coverage_violations()` (`ST_CoverageInvalidEdges_Agg`,
+`main()` checks `has_invalid_edges()` (`ST_CoverageInvalidEdges_Agg`,
 the shared `core/coverage.py`) before running `_build_overlaps`
 (`_02_issues.py`'s bbox-prefiltered O(n^2) self-join), and writes an empty
 overlaps table directly when it's already `False`: a coverage with no
@@ -64,7 +64,7 @@ once per row, which hangs indefinitely on a table with even a few
 very-high-vertex-count polygons. See
 `docs/adr/0014-bbox-inline-recompute-in-join.md`.
 
-`has_coverage_violations()` alone cannot stand in for gap detection: it
+`has_invalid_edges()` alone cannot stand in for gap detection: it
 only detects overlaps/mismatched edges, never gaps (see
 `docs/reference/shared.md`).
 

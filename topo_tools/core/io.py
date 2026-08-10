@@ -75,3 +75,16 @@ def export_geometry_table(
             SELECT {select} RENAME (geom AS geometry) FROM "{table}"
         ) TO '{dest}' {COPY_OPTS[dest.suffix]}
     """)
+
+
+def export_issues_table(conn: DuckDBPyConnection, table: str, dest: Path) -> None:
+    """Export an issues table to dest, or remove any stale file there if it's empty.
+
+    Never writes an empty issues file: a prior run's stale file at dest is
+    deleted instead of being left behind looking like unresolved issues.
+    """
+    count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+    if count == 0:
+        dest.unlink(missing_ok=True)
+        return
+    export_geometry_table(conn, table, dest, exclude_fid=False)

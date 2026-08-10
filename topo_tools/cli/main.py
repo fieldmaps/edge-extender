@@ -178,20 +178,19 @@ def detect(  # noqa: PLR0913, PLR0917
     "--maximum-gap-width",
     envvar="MAXIMUM_GAP_WIDTH",
     type=str,
-    default="auto",
-    show_default=True,
-    help="'auto' (fill only thin/sliver-shaped gaps), 'all' (fill every detected "
-    "gap), or a number in decimal degrees (the layer's EPSG:4326 units, "
-    "matches GDAL/OGR convention, not meters).",
+    default=None,
+    help="'thin' (fill thin/sliver-shaped gaps regardless of width), 'all' "
+    "(fill every detected gap), or a number in decimal degrees (the layer's "
+    "EPSG:4326 units, matches GDAL/OGR convention, not meters). Omit to fill "
+    "only floating-point-noise-scale gaps (the default).",
 )
 @click.option(
     "--snapping-distance",
     envvar="SNAPPING_DISTANCE",
     type=str,
-    default="auto",
-    show_default=True,
-    help="'auto' (GEOS's computed default) or a number in decimal degrees. Noding "
-    "robustness knob only.",
+    default=None,
+    help="A number in decimal degrees. Omit to snap at SNAP_TOLERANCE (the "
+    "default). Noding robustness knob only.",
 )
 @click.option(
     "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
@@ -222,8 +221,8 @@ def clean(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     issues_file: str | None,
-    maximum_gap_width: str,
-    snapping_distance: str,
+    maximum_gap_width: str | None,
+    snapping_distance: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
@@ -236,8 +235,12 @@ def clean(  # noqa: PLR0913, PLR0917
 
     \b
     Examples:
-      # Basic run: auto-fill only thin/sliver-shaped gaps, leave the rest for review
+      # Basic run: fills only floating-point-noise-scale gaps (the default)
       topo-tools clean example.geojson
+
+      \b
+      # Fill thin/sliver-shaped gaps regardless of width
+      topo-tools clean example.gpkg --maximum-gap-width thin
 
       \b
       # Fill every detected gap, not just slivers
@@ -620,6 +623,12 @@ def mosaic(  # noqa: PLR0913, PLR0917
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
+    "--issues-file",
+    envvar="ISSUES_FILE",
+    default=None,
+    help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
+)
+@click.option(
     "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
 )
 @click.option(
@@ -647,6 +656,7 @@ def mosaic(  # noqa: PLR0913, PLR0917
 def stitch(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
+    issues_file: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
@@ -675,6 +685,7 @@ def stitch(  # noqa: PLR0913, PLR0917
         _stitch(
             Path(input_file),
             Path(output_file) if output_file is not None else None,
+            Path(issues_file) if issues_file is not None else None,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,

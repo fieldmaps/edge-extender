@@ -22,13 +22,22 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   `docs/reference/shared.md` (no overlap; unlike other tools, an unfilled
   gap does not block export, see `docs/adr/0027`).
 - `stitch` MUST export the final cleaned layer.
+- `stitch` MUST also export an issues report alongside it, using the
+  shared schema in `docs/reference/shared.md`, listing every leftover gap
+  wider than `SNAP_TOLERANCE`, so a human can audit what may need review.
+  `area_m2`, `max_width_m`, and `thinness_ratio` MUST be populated for
+  each row; every other column MUST be null.
+- `stitch` MUST produce the issues report only when it has at least one
+  row; when it would be empty, no file MUST be written (and a stale file
+  from a previous run at that path MUST be removed).
 
 ## Configuration (`api.stitch.stitch()` / CLI)
 
 - `stitch` MUST process exactly one input file per call.
 - The output path MUST default to the input path with a `_stitched`
-  suffix.
-- `stitch` MUST raise `FileExistsError` if the output exists and
-  overwriting wasn't requested.
+  suffix. The issues-report path MUST default to the output path with an
+  `_issues` suffix.
+- `stitch` MUST raise `FileExistsError` if either output path already
+  exists and overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `clean`, `outputs`; any other
   value MUST raise `ValueError`.

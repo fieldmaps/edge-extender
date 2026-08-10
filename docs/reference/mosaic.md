@@ -60,18 +60,24 @@ tools.
 
 ## Outputs
 
-- `mosaic`'s final output MUST pass the hard gate in `docs/reference/shared.md`
-  (no overlap, no gap) before export.
+- `mosaic`'s final output MUST pass the hard gate in
+  `docs/reference/shared.md` (no overlap, no gap at or below
+  `SNAP_TOLERANCE`) before export. A wider leftover gap does not block
+  export (see `docs/adr/0035`).
 - `mosaic` MUST export the final merged layer.
-- `mosaic` MUST also export an issues report alongside it, listing every
-  unassigned child, so a human can audit what didn't make it into the
-  output.
-- The issues report MUST list, for every entry: a unique key, the kind
-  (`unassigned`), the child's own fid and geometry. Parent id and reason
-  fields MUST be absent (null), since `mosaic` has no per-group failure
-  concept.
-- `mosaic` MUST always produce the issues report, even when there are zero
-  unassigned children.
+- `mosaic` MUST also export an issues report alongside it, using the
+  shared schema in `docs/reference/shared.md`, listing every unassigned
+  child and every leftover gap wider than `SNAP_TOLERANCE`, so a human can
+  audit what didn't make it into the output or what may need review.
+- For an `unassigned` row, `unit_a` MUST hold the child's own fid and
+  `source_file` MUST record its origin file; parent id and reason fields
+  MUST be null, since `mosaic` has no per-group failure concept. For a
+  `gap` row, `area_m2`, `max_width_m`, and `thinness_ratio` MUST be
+  populated instead. A field that doesn't apply to a row's kind MUST be
+  null.
+- `mosaic` MUST produce the issues report only when it has at least one
+  row; when it would be empty, no file MUST be written (and a stale file
+  from a previous run at that path MUST be removed).
 
 ## Configuration (`api.mosaic.mosaic()` / CLI)
 

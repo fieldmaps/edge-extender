@@ -56,19 +56,24 @@ tools.
 
 ## Outputs
 
-- `match`'s final output MUST pass the hard gate in `docs/reference/shared.md` (no
-  overlap, no gap) before export.
+- `match`'s final output MUST pass the hard gate in
+  `docs/reference/shared.md` (no overlap, no gap at or below
+  `SNAP_TOLERANCE`) before export. A wider leftover gap does not block
+  export (see `docs/adr/0035`).
 - `match` MUST export the final merged layer.
-- `match` MUST also export an issues report alongside it, listing every
-  dropped child and every child belonging to a dropped group, so a human
-  can audit what didn't make it into the output.
-- The issues report MUST list, for every entry: a unique key, whether it
-  is an unassigned child or a dropped-group child, the child's own fid and
-  geometry, and, for a dropped-group child, the parent id its group was
-  assigned to and the reason its group was dropped. A field that doesn't
-  apply to an entry's kind MUST be absent.
-- `match` MUST always produce the issues report, even when there are zero
-  dropped children and zero dropped groups.
+- `match` MUST also export an issues report alongside it, using the shared
+  schema in `docs/reference/shared.md`, listing every dropped child, every
+  child belonging to a dropped group, and every leftover gap wider than
+  `SNAP_TOLERANCE`, so a human can audit what didn't make it into the
+  output or what may need review.
+- For an `unassigned`/`dropped_group` row, `unit_a` MUST hold the child's
+  own fid; for a `dropped_group` row, `parent_fid` and `reason` MUST record
+  the group's assigned parent and drop reason. For a `gap` row, `area_m2`,
+  `max_width_m`, and `thinness_ratio` MUST be populated instead. A field
+  that doesn't apply to a row's kind MUST be null.
+- `match` MUST produce the issues report only when it has at least one
+  row; when it would be empty, no file MUST be written (and a stale file
+  from a previous run at that path MUST be removed).
 
 ## Configuration (`api.match.match()` / CLI)
 

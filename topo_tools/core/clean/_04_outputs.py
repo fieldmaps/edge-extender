@@ -5,8 +5,8 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.coverage import check_overlaps
-from topo_tools.core.io import export_geometry_table
+from topo_tools.core.coverage import check_invalid_edges
+from topo_tools.core.io import export_geometry_table, export_issues_table
 from topo_tools.core.units import m2_per_deg2_factor
 
 logger = getLogger(__name__)
@@ -15,7 +15,7 @@ logger = getLogger(__name__)
 def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
     """Extend `{name}_02` with what actually happened to each issue during the fix.
 
-    `fixed` is TRUE for every overlap row unconditionally: `check_overlaps`
+    `fixed` is TRUE for every overlap row unconditionally: `check_invalid_edges`
     already gated `{name}_03` as overlap-free before this runs, so any
     overlap reaching here was necessarily resolved. For a gap row it's the
     same point-in-union containment test `_warn_on_unfilled_gaps` reports on.
@@ -38,6 +38,8 @@ def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
                  THEN ST_Contains(fixed_union.g, ST_PointOnSurface(i.geom))
                  ELSE TRUE
             END AS fixed,
+            NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason,
+            NULL::VARCHAR AS source_file,
             i.geom
         FROM "{name}_02" i
         LEFT JOIN before before_a ON before_a.fid = i.unit_a
@@ -72,12 +74,12 @@ def main(
     debug: bool = False,
 ) -> None:
     """Validate `{name}_03` and export the cleaned dataset + issues report."""
-    check_overlaps(conn, f"{name}_03")
+    check_invalid_edges(conn, f"{name}_03")
     _add_outcome_columns(conn, name)
     _warn_on_unfilled_gaps(conn, name)
 
     export_geometry_table(conn, f"{name}_03", dest)
-    export_geometry_table(conn, f"{name}_02", issues_dest, exclude_fid=False)
+    export_issues_table(conn, f"{name}_02", issues_dest)
 
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_01"')

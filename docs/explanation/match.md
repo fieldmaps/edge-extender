@@ -66,9 +66,11 @@ Run `topo-tools match --help` for the full, always-current option list.
 5. **`_04_stitch`**: calls `core.stitch._02_clean.main()` directly: a
    single whole-table `ST_CoverageClean` pass over the clipped output to
    close cross-group seams. See `docs/explanation/stitch.md`.
-6. **`_05_outputs`**: validates topology, builds the issues report from the
-   dropped children collected in stages 2/3, and exports both the final
-   layer and the issues report.
+6. **`_05_outputs`**: validates topology (any overlap, or a gap at or below
+   `SNAP_TOLERANCE`, raises), builds the issues report from the dropped
+   children collected in stages 2/3 plus any leftover gap wider than
+   `SNAP_TOLERANCE`, logs a warning if any such gap remains, and exports
+   both the final layer and the issues report (only when it has rows).
 
 ## Two subprocess generations: extend, then batched clip
 
@@ -204,15 +206,27 @@ exactly what `stitch`'s whole-table `ST_CoverageClean` pass is for (see
 `docs/explanation/stitch.md`). Reverted both variants; the clip step stays
 a plain `ST_Intersection`.
 
-## `check_gaps` and parent-layer gaps
+## `check_valid_topology` and parent-layer gaps
 
-`_05_outputs.py` reuses `check_overlaps`/`check_gaps` from the shared
-`topo_tools/core/coverage.py` unmodified, on the final `{name}_05` table.
-This cannot distinguish a gap `match`'s own clip step introduced from a gap
-the parent/clip layer already had between two different parents' territories
-(e.g. a world ADM0 layer with disputed or unclaimed areas). This is
-intentional: a gap here is a real signal that the clip layer itself needs
-`extend` treatment first, not something `match` should silently paper over.
+`_05_outputs.py` calls `check_valid_topology(conn, f"{name}_05",
+max_gap_width=SNAP_TOLERANCE)`: it still raises on any overlap or
+mismatched edge, but only raises on a gap at or below `SNAP_TOLERANCE`
+now, not any gap.
+
+A zero-tolerance gate here breaks on a real case: matching South Africa's
+admin4 into South Africa's own admin0 boundary correctly reproduces the
+interior hole for Lesotho, a country fully enclosed by South Africa's
+territory. That hole isn't a defect `match` introduced, it's the parent
+layer's own legitimate shape, and the old strict gate raised
+`RuntimeError` over it. `match` has no way to distinguish that case from
+an actual coverage defect by size alone (both can be wide), so instead of
+guessing, it stops treating "wide gap" as fatal and reports it: any gap
+wider than `SNAP_TOLERANCE` gets a `kind='gap'` row in the issues report
+(width, area, thinness ratio) and a warning log, for a human to review.
+Only a leftover gap at or below `SNAP_TOLERANCE` still raises, since
+nothing that small should ever survive the pipeline's own noise-floor
+cleaning passes; a leftover one there is unambiguously a bug, not a real
+absence. See `docs/adr/0035`.
 
 ## Debug tables
 

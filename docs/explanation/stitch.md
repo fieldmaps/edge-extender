@@ -32,9 +32,12 @@ Run `topo-tools stitch --help` for the full, always-current option list.
    below).
 2. **`_02_clean`**: one whole-table `ST_CoverageClean` pass
    (`fids=None`, `gap_maximum_width=SNAP_TOLERANCE`).
-3. **`_03_outputs`**: the same `check_overlaps` hard gate every tool's
+3. **`_03_outputs`**: the same `check_invalid_edges` hard gate every tool's
    final output goes through, then export. Unlike `extend`/`match`/
-   `mosaic`, `stitch` does not also call `check_gaps` (see `docs/adr/0027`).
+   `mosaic`, `stitch` does not also call `check_gaps`/`check_valid_topology`
+   as a hard gate (see `docs/adr/0027`); it does report any gap wider than
+   `SNAP_TOLERANCE` in its issues report and log a warning, without
+   raising.
 
 ## Why whole-table, never scoped to a fid subset
 
@@ -63,11 +66,18 @@ difference, confirming the gap is a real geometric disagreement between
 tiles, not float noise from a shared vertex computed twice by two
 independent calls.
 
-## No coverage pre-check, no issues report
+## No coverage pre-check; issues report is gap-only
 
 `_01_inputs.py` does not coverage-clean the input, consistent with `clip`
 and `assign`; these are all purely mechanical primitives; the final
 overlap gate in `_03_outputs.py` is the correctness guarantee, not an
-opinion any one stage holds about its input's cleanliness. `stitch` also
-has no issues report: unlike `match`/`mosaic`/`clean`, it has no concept
-of a "dropped" row: every input row survives into the cleaned output.
+opinion any one stage holds about its input's cleanliness. Unlike
+`match`/`mosaic`/`clean`, `stitch` has no concept of a "dropped" row:
+every input row survives into the cleaned output. Its issues report,
+using the shared schema in `docs/reference/shared.md`, exists only to
+surface leftover gaps: any interior hole wider than `SNAP_TOLERANCE`
+after the coverage-clean pass gets a `kind='gap'` row (width, area,
+thinness ratio) and a warning log, the same generalization of ADR-0027's
+"a hole may be a legitimate absence, not a defect" reasoning that
+`docs/adr/0035` applies to `match`/`mosaic`. No file is written at all
+when the pass leaves zero such gaps.

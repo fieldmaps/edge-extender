@@ -29,9 +29,14 @@ docs); `mosaic` is a thin wrapper chaining `assign-one` → `clip` → `stitch`.
 4. **`_02_stitch`**: calls `core.stitch._02_clean.main()` directly, the
    same whole-table `ST_CoverageClean` pass `stitch` exposes standalone,
    see `docs/explanation/stitch.md`.
-5. **`_03_outputs`**: the same `check_overlaps`/`check_gaps` hard gate,
-   an issues report listing only unassigned children (no dropped-group
-   kind, since there are no groups), and export.
+5. **`_03_outputs`**: the same `check_valid_topology()` hard gate as
+   `match`, relaxed to `max_gap_width=SNAP_TOLERANCE` for the same
+   parent-layer-hole reason (see `docs/explanation/match.md`'s
+   "`check_valid_topology` and parent-layer gaps", `docs/adr/0035`), an
+   issues report listing unassigned children (no dropped-group kind, since
+   there are no groups) plus any leftover gap wider than `SNAP_TOLERANCE`,
+   a warning log if any such gap remains, and export (only when the
+   issues report has rows).
 
 ## Multi-file children
 
@@ -51,7 +56,7 @@ paths are passed, since there's no single filename to default one from.
 
 Neither the parent nor the child layer is checked or cleaned for coverage
 violations before assign/clip runs (see ADR-0018). `_03_outputs.py`'s hard
-`check_overlaps`/`check_gaps` gate on the final stitched output already
+`check_valid_topology()` gate on the final stitched output already
 guarantees correctness regardless: there is no path where a dirty parent
 or child silently reaches export undetected, only a loud failure. The
 child layer is additionally assumed to already be a finished `extend()`
@@ -84,7 +89,7 @@ tool versions or vintages (the portolan catalog has per-country pipeline
 drift, e.g. `phl` has v01 through v03), with no guarantee that any two
 `extended.parquet` files being combined into one `mosaic()` input were even
 produced by compatible `extend()` versions (only empirically-confirmed
-schema/CRS compatibility). The `check_gaps`/`check_overlaps` hard gate
+schema/CRS compatibility). The `check_valid_topology()` hard gate
 still runs and raises before export, but a multi-provenance mosaic run
 should have its parent-parent boundaries spot-checked visually (e.g. via
 the `geo-preview` skill), not just trusted because the hard gate passed.

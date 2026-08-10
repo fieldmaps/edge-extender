@@ -11,6 +11,9 @@ from click.testing import CliRunner
 
 from topo_tools.api.extend import extend
 from topo_tools.cli.main import cli
+from topo_tools.core.constants import SNAP_TOLERANCE
+from topo_tools.core.coverage import has_gaps
+from topo_tools.core.extend import _01_inputs as inputs
 from topo_tools.core.extend import _04_voronoi as voronoi
 
 # fid 4 is a MULTIPOLYGON (two disjoint parts) to exercise multipolygon
@@ -122,6 +125,42 @@ _DEGENERATE_POINTS = [
     (8, -0.985618322, 0.0),
     (9, -0.95793148, 9.6833e-08),
 ]
+
+
+def test_inputs_closes_noise_scale_gap(tmp_path):
+    """A sub-SNAP_TOLERANCE gap has no overlaps, so has_gaps() must be checked too."""
+    path = tmp_path / "noise_gap.parquet"
+    w = SNAP_TOLERANCE / 2
+    wkt = [
+        (1, f"POLYGON((0 0, 101 0, 101 50, {50 + w} 50, 50 50, 0 50, 0 0))"),
+        (
+            2,
+            (
+                f"POLYGON((0 {50 + w}, 50 {50 + w}, {50 + w} {50 + w}, "
+                f"101 {50 + w}, 101 101, 0 101, 0 {50 + w}))"
+            ),
+        ),
+        (3, f"POLYGON((0 50, 50 50, 50 {50 + w}, 0 {50 + w}, 0 50))"),
+        (
+            4,
+            (
+                f"POLYGON(({50 + w} 50, 101 50, 101 {50 + w}, "
+                f"{50 + w} {50 + w}, {50 + w} 50))"
+            ),
+        ),
+    ]
+    values = ", ".join(f"({fid}, ST_GeomFromText('{wkt_}'))" for fid, wkt_ in wkt)
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t(id, geom)"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        inputs.main(conn, "synth", path)
+        assert not has_gaps(conn, "synth_01")
 
 
 def test_voronoi_raises_on_incomplete_assignment():

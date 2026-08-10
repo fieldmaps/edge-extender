@@ -21,19 +21,25 @@ detection stage directly rather than owning separate logic (see
 - `clean` MUST attempt to fix the input whenever it contains any overlap,
   or any detected gap that qualifies to be filled under the requested
   mode.
-- The default gap-fill mode (`auto`) MUST fill a gap only if its
-  compactness score marks it as a thin, elongated digitization sliver
-  rather than a plausible real feature (e.g. a pond or a strait),
-  regardless of the gap's absolute size.
+- The default gap-fill behavior (reached by omitting `--maximum-gap-width`,
+  not a named mode) MUST fill a gap only if its width is at or below
+  `SNAP_TOLERANCE`, regardless of shape.
+- The `thin` mode MUST fill a gap only if its compactness score marks it as
+  a thin, elongated digitization sliver rather than a plausible real
+  feature (e.g. a pond or a strait), regardless of the gap's absolute size.
 - The `all` mode MUST fill every detected gap, regardless of shape.
 - A user-supplied numeric width MUST be honored directly, in decimal
   degrees, with no unit conversion. Requesting any gap-fill mode other
-  than `auto`, `all`, or a number MUST raise `ValueError`.
-- The default snapping mode (`auto`) MUST use `SNAP_TOLERANCE`, not
-  `ST_CoverageClean`'s own extent-relative computed default; a
-  user-supplied numeric distance, in decimal degrees, MUST be honored
-  directly. Requesting any snapping mode other than `auto` or a number
-  MUST raise `ValueError`.
+  than `thin`, `all`, or a number MUST raise `ValueError`; requesting the
+  literal string `auto` MUST also raise `ValueError`, the default is only
+  reachable by omitting the flag.
+- The default snapping behavior (reached by omitting `--snapping-distance`,
+  not a named mode) MUST use `SNAP_TOLERANCE`, not `ST_CoverageClean`'s own
+  extent-relative computed default; a user-supplied numeric distance, in
+  decimal degrees, MUST be honored directly. Requesting any snapping mode
+  other than a number MUST raise `ValueError`; requesting the literal
+  string `auto` MUST also raise `ValueError`, the default is only
+  reachable by omitting the flag.
 - `clean` MUST attempt the fix exactly once, at the width resolved from
   the requested mode. There is no retry and no escalation to a wider
   value.
@@ -55,8 +61,11 @@ detection stage directly rather than owning separate logic (see
   any overlap.
 - `clean` MUST NOT raise an error over a gap left unfilled by design. It
   MUST only log a warning naming how many gaps are still unfilled.
-- `clean` MUST always produce both the cleaned dataset and the issues
-  report, even when the input had zero defects.
+- `clean` MUST always produce the cleaned dataset. It MUST produce the
+  issues report, using the shared schema in `docs/reference/shared.md`,
+  only when the input had at least one detected defect; when it would be
+  empty, no file MUST be written (and a stale file from a previous run at
+  that path MUST be removed).
 - The issues report MUST also state each issue's actual measured outcome,
   not just the defect as originally detected: whether it was fixed; for
   an overlap, how much each of its two named units' own area actually

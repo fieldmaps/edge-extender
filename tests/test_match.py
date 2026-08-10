@@ -128,14 +128,14 @@ def test_match_issues_file_records_unassigned_child(
     assert len(rows) == 1
     row = dict(zip(cols, rows[0], strict=True))
     assert row["kind"] == "unassigned"
-    assert row["child_fid"] == unassigned_child_fid
+    assert row["unit_a"] == unassigned_child_fid
     assert row["parent_fid"] is None
     assert row["reason"] is None
     assert row["geometry"] is not None
 
 
-def test_match_issues_file_empty_when_nothing_dropped(tmp_path):
-    """Parent B's single-child group succeeds cleanly, so the issues file is empty."""
+def test_match_issues_file_absent_when_nothing_dropped(tmp_path):
+    """Parent B's single-child group succeeds cleanly, so no issues file is written."""
     children_path = tmp_path / "children_single.parquet"
     parents_path = tmp_path / "parents_single.parquet"
     _write_synthetic(children_path, [_CHILD_WKT[2]])  # fid 3 only
@@ -145,10 +145,40 @@ def test_match_issues_file_empty_when_nothing_dropped(tmp_path):
     issues_path = tmp_path / "issues.parquet"
     match(children_path, parents_path, output_path, issues_path, overwrite=True)
 
+    assert not issues_path.exists()
+
+
+# A parent with a real interior hole (e.g. an enclosed country like Lesotho
+# inside South Africa): two children exactly tile the outer square, so the
+# hole survives clipping without any gap the children themselves created.
+_ENCLAVE_PARENT_WKT = [
+    (1, "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (4 4, 6 4, 6 6, 4 6, 4 4))"),
+]
+_ENCLAVE_CHILD_WKT = [
+    (1, "POLYGON((0 0, 5 0, 5 10, 0 10, 0 0))"),
+    (2, "POLYGON((5 0, 10 0, 10 10, 5 10, 5 0))"),
+]
+
+
+def test_match_tolerates_parent_layer_enclave(tmp_path):
+    """A real hole in the parent's own shape must not raise, only be reported."""
+    children_path = tmp_path / "children_enclave.parquet"
+    parents_path = tmp_path / "parents_enclave.parquet"
+    _write_synthetic(children_path, _ENCLAVE_CHILD_WKT)
+    _write_synthetic(parents_path, _ENCLAVE_PARENT_WKT)
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(children_path, parents_path, output_path, issues_path, overwrite=True)
+
+    assert output_path.exists()
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        count = conn.execute(f"SELECT COUNT(*) FROM '{issues_path}'").fetchone()[0]
-    assert count == 0
+        gap_rows = conn.execute(
+            f"SELECT max_width_m FROM '{issues_path}' WHERE kind = 'gap'"
+        ).fetchall()
+    assert len(gap_rows) == 1
+    assert gap_rows[0][0] > 0
 
 
 def test_record_dropped_group():
