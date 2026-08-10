@@ -69,10 +69,10 @@ CLI maps flags/env vars onto those same kwargs 1:1.
   `docs/adr/0037`). It MUST NOT raise over a gap wider than that: gaps
   above the requested fill width may legitimately remain by design and
   are only logged.
-- `stitch` MUST raise if its final output has any overlap. It MUST NOT
-  raise over any gap (see `docs/adr/0027`), but MUST log a warning and
-  record it in the issues report described in `docs/reference/stitch.md`
-  if a gap wider than `SNAP_TOLERANCE` remains.
+- `stitch` MUST raise if its final output has any overlap, or any gap at
+  or below `SNAP_TOLERANCE` (see `docs/adr/0038`). It MUST NOT raise over
+  a wider gap, but MUST log a warning and record it in the issues report
+  described in `docs/reference/stitch.md`.
 - `clip` performs no topology hard gate at all: it clips a child to its
   assigned parent's geometry one `parent_fid` at a time and does not
   itself validate whole-layer coverage.

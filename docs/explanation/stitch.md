@@ -32,12 +32,12 @@ Run `topo-tools stitch --help` for the full, always-current option list.
    below).
 2. **`_02_clean`**: one whole-table `ST_CoverageClean` pass
    (`fids=None`, `gap_maximum_width=SNAP_TOLERANCE`).
-3. **`_03_outputs`**: the same `check_invalid_edges` hard gate every tool's
-   final output goes through, then export. Unlike `extend`/`match`/
-   `mosaic`, `stitch` does not also call `check_gaps`/`check_valid_topology`
-   as a hard gate (see `docs/adr/0027`); it does report any gap wider than
-   `SNAP_TOLERANCE` in its issues report and log a warning, without
-   raising.
+3. **`_03_outputs`**: `check_valid_topology()`, passing
+   `max_gap_width=SNAP_TOLERANCE`, the same call `match`/`mosaic` make
+   (see `docs/adr/0038`), then export: raises on any overlap or a gap at
+   or below `SNAP_TOLERANCE`, tolerates a wider one. A tolerated gap
+   still gets reported as a `kind='gap'` row in the issues report and a
+   warning log.
 
 ## Why whole-table, never scoped to a fid subset
 

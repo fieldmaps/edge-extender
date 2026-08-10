@@ -6,7 +6,7 @@ from pathlib import Path
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import SNAP_TOLERANCE
-from topo_tools.core.coverage import check_invalid_edges, gap_geometries_sql
+from topo_tools.core.coverage import check_valid_topology, gap_geometries_sql
 from topo_tools.core.io import export_geometry_table, export_issues_table
 from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 
@@ -44,7 +44,7 @@ def main(
     debug: bool = False,
 ) -> None:
     """Output the stitched layer + issues report to dest/issues_dest."""
-    check_invalid_edges(conn, f"{name}_02")
+    check_valid_topology(conn, f"{name}_02", max_gap_width=SNAP_TOLERANCE)
 
     _build_issues(conn, name)
 
