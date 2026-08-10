@@ -1,5 +1,7 @@
 """Non-user-configurable constants for the change pipeline."""
 
+from topo_tools.core.constants import SNAP_TOLERANCE
+
 # Minimum max(coverage_a, coverage_b) for two units to be spatially linked
 # (union-find edge). Ported from topo-tools-js's current default (bumped in
 # commit 420f2ad).
@@ -9,10 +11,9 @@ TAU_MATCH_DEFAULT = 0.8
 # than modified. Ported from topo-tools-js's current App.svelte default.
 TAU_SAME_DEFAULT = 0.98
 
-# Intersection crumbs below this area (deg^2, ~1cm^2) are dropped as noise
-# before shared-area aggregation. Ported as-is from topo-tools-js's
-# src/lib/db/overlap.ts SLIVER constant.
-INTERSECTION_SLIVER_DEG2 = 1e-12
+# Intersection crumbs below this area are dropped as noise before shared-area
+# aggregation: the area-equivalent of the shared SNAP_TOLERANCE noise floor.
+INTERSECTION_SLIVER_DEG2 = SNAP_TOLERANCE**2
 
 # Tabular changelog export has no geometry column, so extend's GDAL-vector
 # COPY_OPTS doesn't apply: FORMAT CSV/PARQUET need no spatial extension.

@@ -99,4 +99,5 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         f"{name}_05",
         fids=None,
         gap_maximum_width=SNAP_TOLERANCE,
+        snapping_distance=SNAP_TOLERANCE,
     )

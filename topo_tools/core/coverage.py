@@ -4,13 +4,15 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.constants import SNAP_TOLERANCE
+
 logger = getLogger(__name__)
 
 
 def has_coverage_violations(conn: DuckDBPyConnection, table: str) -> bool:
     """Return True if `table.geom` has any overlaps or unmatched shared edges."""
     return conn.execute(f"""--sql
-        SELECT ST_CoverageInvalidEdges_Agg(geom) IS NOT NULL
+        SELECT ST_CoverageInvalidEdges_Agg(geom, {SNAP_TOLERANCE}) IS NOT NULL
         FROM (SELECT UNNEST(ST_Dump(geom)).geom AS geom FROM "{table}")
     """).fetchall()[0][0]
 
