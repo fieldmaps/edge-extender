@@ -77,9 +77,9 @@ Settings flow in as plain keyword arguments on each tool's own `api.*()`
 function, mapped 1:1 from CLI flags/env vars. There's no module-level `argparse`/env
 parsing anywhere. Common settings (`tmp_dir`, `threads`, `overwrite`,
 `debug`, `step`) are in `docs/reference/shared.md`; per-tool
-paths/arguments/`step` values are in `docs/reference/{tool}.md`
-(`docs/explanation/change.md` pending its own reference file). Pure literals
-live in `topo_tools/core/{tool}/_constants.py` and `topo_tools/core/constants.py`.
+paths/arguments/`step` values are in `docs/reference/{tool}.md`. Pure
+literals live in `topo_tools/core/{tool}/_constants.py` and
+`topo_tools/core/constants.py`.
 
 Tables are named `{name}_{stage}[suffix]`: no suffix means one persistent
 table; a letter suffix (`_03a`, `_03b`) means multiple and **all** get a
