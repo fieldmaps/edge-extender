@@ -8,14 +8,18 @@
 ![World ADM0 boundaries extended with Voronoi-filled coastline](https://raw.githubusercontent.com/OCHA-DAP/topo-tools-py/main/img/wld_01.png)
 
 `topo-tools` is a collection of DuckDB-powered geospatial topology utilities
-for cleaning and reconciling administrative boundary polygons. It ships four
+for cleaning and reconciling administrative boundary polygons. It ships eight
 tools, usable from the CLI or as a Python package:
 
 | Tool | What it does | Usage |
 | --- | --- | --- |
-| **clean** | Detects and fixes gap/overlap defects in a single polygon layer, reporting issues for manual review. | [`docs/explanation/clean.md`](docs/explanation/clean.md) |
 | **extend** | Fills gaps around a polygon layer (missing coastline, disputed areas, water bodies) with a Voronoi extension, producing full coverage. | [`docs/explanation/extend.md`](docs/explanation/extend.md) |
+| **clip** | Assigns each child to its parent, then clips it to that parent's geometry. | [`docs/explanation/clip.md`](docs/explanation/clip.md) |
+| **stitch** | Closes seams in an already-tiled polygon layer with one whole-table coverage-clean pass. | [`docs/explanation/stitch.md`](docs/explanation/stitch.md) |
+| **detect** | Scans a single polygon layer for gap/overlap coverage defects and reports them, without fixing anything. | [`docs/explanation/detect.md`](docs/explanation/detect.md) |
 | **match** | Fits a finer child polygon layer into a coarser parent layer, grouping and extending each child to fill gaps within its own parent. | [`docs/explanation/match.md`](docs/explanation/match.md) |
+| **mosaic** | Re-clips an already-extended child layer into a new/different parent layer, skipping Voronoi extension entirely. | [`docs/explanation/mosaic.md`](docs/explanation/mosaic.md) |
+| **clean** | Detects and fixes gap/overlap defects in a single polygon layer, reporting issues for manual review. | [`docs/explanation/clean.md`](docs/explanation/clean.md) |
 | **change** | Compares two versions of a polygon layer and classifies every unit as unchanged, renamed, modified, split, merged, created, or removed. | [`docs/explanation/change.md`](docs/explanation/change.md) |
 
 ## Installation
