@@ -29,8 +29,9 @@ detection stage directly rather than owning separate logic (see
 - A user-supplied numeric width MUST be honored directly, in decimal
   degrees, with no unit conversion. Requesting any gap-fill mode other
   than `auto`, `all`, or a number MUST raise `ValueError`.
-- The default snapping mode (`auto`) MAY use a computed default distance;
-  a user-supplied numeric distance, in decimal degrees, MUST be honored
+- The default snapping mode (`auto`) MUST use `SNAP_TOLERANCE`, not
+  `ST_CoverageClean`'s own extent-relative computed default; a
+  user-supplied numeric distance, in decimal degrees, MUST be honored
   directly. Requesting any snapping mode other than `auto` or a number
   MUST raise `ValueError`.
 - `clean` MUST attempt the fix exactly once, at the width resolved from

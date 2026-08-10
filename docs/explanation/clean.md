@@ -35,7 +35,7 @@ clean("example.geojson")
 | --- | --- |
 | `--issues-file` | Issues report path. Defaults to `OUTPUT_FILE` with an `_issues` suffix. |
 | `--maximum-gap-width` | `auto` (fill only thin/sliver-shaped gaps, default), `all` (fill every detected gap), or a number in decimal degrees. |
-| `--snapping-distance` | `auto` (GEOS's computed default, default) or a number in decimal degrees. Noding robustness knob only. |
+| `--snapping-distance` | `auto` (`SNAP_TOLERANCE`, default) or a number in decimal degrees. Noding robustness knob only. |
 | `--overwrite` | Overwrite an existing output file. |
 | `--threads` | DuckDB thread count. |
 | `--debug` | Keep intermediate tables, export to Parquet, log timing/memory per query. |
@@ -112,8 +112,9 @@ own `include/geos/coverage/CoverageCleaner.h`/`src/coverage/CoverageCleaner.cpp`
   up to 2x the widest detected gap" was purely a client-side slider-seeding
   heuristic, not anything GEOS computes on its own. It's also why `clean`'s
   own `--maximum-gap-width auto` has to compute a real width itself (see
-  below) rather than leaning on any GEOS-side default the way
-  `--snapping-distance auto` can.
+  below): there's no GEOS-side default to lean on the way this codebase's
+  own fixed `SNAP_TOLERANCE` stands in for `snapping_distance`'s (see
+  `docs/adr/0032`).
 - **Naming**: `coverage_clean()` (the shared `core/coverage.py`) calls
   `ST_CoverageClean` positionally (`geoms, snapping_distance,
   gap_maximum_width`), passing `-1` for either argument a Python `None`
@@ -236,11 +237,14 @@ another) and gap-neighborhood redistribution are both legitimate
 
 ## `--snapping-distance auto|<degrees>`
 
-`auto` passes `-1` positionally to `ST_CoverageClean`, a no-op that keeps
-GEOS's real computed default. An explicit value (decimal degrees, passed
-straight through) overrides it. This is a **noding-robustness knob only**, per
-GEOS's own doc comment, "a large snapping distance may introduce
-undesirable data alteration."
+`auto` resolves to `SNAP_TOLERANCE`, not `ST_CoverageClean`'s own
+extent-relative computed default (`extent_diameter / 1e8`): that default
+scales with the whole input's bounding-box diagonal, undershooting
+`SNAP_TOLERANCE` on small territory files and ballooning to hundreds of
+meters on country- or continent-scale ones, see `docs/adr/0032`. An
+explicit value (decimal degrees, passed straight through) overrides it.
+This is a **noding-robustness knob only**, per GEOS's own doc comment, "a
+large snapping distance may introduce undesirable data alteration."
 
 ## Issues file schema
 

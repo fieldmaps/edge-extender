@@ -4,6 +4,7 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.constants import SNAP_TOLERANCE
 from topo_tools.core.coverage import coverage_clean, has_coverage_violations
 
 from ._constants import (
@@ -112,7 +113,7 @@ def main(
         return
 
     snap_mode, snap_value = snapping_distance
-    snapping_distance_deg = None if snap_mode == "auto" else snap_value
+    snapping_distance_deg = SNAP_TOLERANCE if snap_mode == "auto" else snap_value
     input_area = _total_area(conn, table)
     overlap_area = _overlap_area(conn, name)
     min_area = (
