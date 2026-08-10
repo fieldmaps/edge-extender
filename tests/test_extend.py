@@ -160,7 +160,7 @@ def test_inputs_closes_noise_scale_gap(tmp_path):
     with duckdb.connect() as conn:
         conn.execute("INSTALL spatial; LOAD spatial;")
         inputs.main(conn, "synth", path)
-        assert not has_gaps(conn, "synth_01")
+        assert not has_gaps(conn, "synth_01", gap_maximum_width=0)
 
 
 def test_voronoi_raises_on_incomplete_assignment():

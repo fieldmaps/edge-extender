@@ -12,7 +12,7 @@ def main(
     conn: DuckDBPyConnection, name: str, dest: Path, *, debug: bool = False
 ) -> None:
     """Output results to dest."""
-    check_valid_topology(conn, f"{name}_05")
+    check_valid_topology(conn, f"{name}_05", gap_maximum_width=0)
 
     export_geometry_table(conn, f"{name}_05", dest)
 

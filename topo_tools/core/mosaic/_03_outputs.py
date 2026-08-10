@@ -56,7 +56,7 @@ def main(
     debug: bool = False,
 ) -> None:
     """Output the mosaicked layer + issues report to dest/issues_dest."""
-    check_valid_topology(conn, f"{name}_04", max_gap_width=SNAP_TOLERANCE)
+    check_valid_topology(conn, f"{name}_04")
 
     _build_issues(conn, name)
 

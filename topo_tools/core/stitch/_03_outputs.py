@@ -44,7 +44,7 @@ def main(
     debug: bool = False,
 ) -> None:
     """Output the stitched layer + issues report to dest/issues_dest."""
-    check_valid_topology(conn, f"{name}_02", max_gap_width=SNAP_TOLERANCE)
+    check_valid_topology(conn, f"{name}_02")
 
     _build_issues(conn, name)
 

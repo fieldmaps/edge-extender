@@ -138,7 +138,7 @@ def main(
     collapsed, drifted = _defect_unrelated_fid_outcomes(conn, name, table, out_table)
     bad_types = _bad_geometry_type_count(conn, out_table)
     narrow_gap_remains = gap_maximum_width_deg is not None and has_gaps(
-        conn, out_table, max_width=gap_maximum_width_deg
+        conn, out_table, gap_maximum_width=gap_maximum_width_deg
     )
     if (
         has_invalid_edges(conn, out_table)

@@ -311,7 +311,7 @@ cleaning tolerance.
 `_03_clean.py`'s post-fix validation raises if the output has any overlap,
 or any unfilled gap at or below `gap_maximum_width_deg`, the width it
 actually asked `ST_CoverageClean` to close for this run (`has_gaps(conn,
-out_table, max_width=gap_maximum_width_deg)`, skipped when
+out_table, gap_maximum_width=gap_maximum_width_deg)`, skipped when
 `gap_maximum_width_deg is None`, meaning no fill was requested at all;
 see `docs/adr/0037`). A gap left wider than that by design (a real gap
 under the default, `--maximum-gap-width thin` on a compact/non-thin gap,

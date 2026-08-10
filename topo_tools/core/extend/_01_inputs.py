@@ -17,7 +17,7 @@ def main(conn: DuckDBPyConnection, name: str, path: Path) -> None:
     read_and_reproject(conn, name, path)
 
     table = f"{name}_01"
-    if not has_valid_topology(conn, table):
+    if not has_valid_topology(conn, table, gap_maximum_width=0):
         logger.info("cleaning coverage: invalid edges or gaps detected")
         coverage_clean(
             conn,

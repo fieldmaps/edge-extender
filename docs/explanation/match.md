@@ -208,10 +208,10 @@ a plain `ST_Intersection`.
 
 ## `check_valid_topology` and parent-layer gaps
 
-`_05_outputs.py` calls `check_valid_topology(conn, f"{name}_05",
-max_gap_width=SNAP_TOLERANCE)`: it still raises on any overlap or
-mismatched edge, but only raises on a gap at or below `SNAP_TOLERANCE`
-now, not any gap.
+`_05_outputs.py` calls `check_valid_topology(conn, f"{name}_05")`, relying
+on its default `gap_maximum_width=SNAP_TOLERANCE` (see `docs/adr/0039`): it
+still raises on any overlap or mismatched edge, but only raises on a gap
+at or below `SNAP_TOLERANCE`, not any gap.
 
 A zero-tolerance gate here breaks on a real case: matching South Africa's
 admin4 into South Africa's own admin0 boundary correctly reproduces the

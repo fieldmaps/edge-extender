@@ -51,15 +51,15 @@ def gap_geometries_sql(table: str) -> str:
 
 
 def has_gaps(
-    conn: DuckDBPyConnection, table: str, *, max_width: float | None = None
+    conn: DuckDBPyConnection, table: str, *, gap_maximum_width: float = SNAP_TOLERANCE
 ) -> bool:
-    """Return True if the union of `table.geom` has a fully-enclosed interior hole.
+    """Return True if `table.geom` has an interior hole at or below gap_maximum_width.
 
-    If max_width is given, only a hole at or below that width counts: a
-    wider hole may be a real geographic absence (e.g. one country fully
-    enclosing another), not a coverage defect.
+    A wider hole may be a real geographic absence (e.g. one country fully
+    enclosing another), not a coverage defect. gap_maximum_width=0
+    tolerates no hole of any size.
     """
-    if max_width is None:
+    if gap_maximum_width == 0:
         max_interior_rings = conn.execute(f"""--sql
             WITH u AS (
                 SELECT ST_Union_Agg(geom) AS g
@@ -73,16 +73,16 @@ def has_gaps(
     return conn.execute(f"""--sql
         SELECT EXISTS (
             SELECT 1 FROM {gap_geometries_sql(table)} h
-            WHERE (ST_MaximumInscribedCircle(h.geom)).radius * 2 <= {max_width}
+            WHERE (ST_MaximumInscribedCircle(h.geom)).radius * 2 <= {gap_maximum_width}
         )
     """).fetchall()[0][0]
 
 
 def check_gaps(
-    conn: DuckDBPyConnection, table: str, *, max_width: float | None = None
+    conn: DuckDBPyConnection, table: str, *, gap_maximum_width: float = SNAP_TOLERANCE
 ) -> None:
     """Raise RuntimeError if `table.geom`'s union has a qualifying interior hole."""
-    if has_gaps(conn, table, max_width=max_width):
+    if has_gaps(conn, table, gap_maximum_width=gap_maximum_width):
         error = f"GAPS: {table}"
         logger.error(error)
         raise RuntimeError(error)
@@ -97,20 +97,20 @@ def count_gaps(conn: DuckDBPyConnection, table: str, *, min_width: float = 0) ->
 
 
 def has_valid_topology(
-    conn: DuckDBPyConnection, table: str, *, max_gap_width: float | None = None
+    conn: DuckDBPyConnection, table: str, *, gap_maximum_width: float = SNAP_TOLERANCE
 ) -> bool:
     """Return True if `table.geom` has no overlaps, unmatched shared edges, or gaps."""
     return not has_invalid_edges(conn, table) and not has_gaps(
-        conn, table, max_width=max_gap_width
+        conn, table, gap_maximum_width=gap_maximum_width
     )
 
 
 def check_valid_topology(
-    conn: DuckDBPyConnection, table: str, *, max_gap_width: float | None = None
+    conn: DuckDBPyConnection, table: str, *, gap_maximum_width: float = SNAP_TOLERANCE
 ) -> None:
     """Raise RuntimeError if `table.geom` has any overlaps, edge mismatch, or gaps."""
     check_invalid_edges(conn, table)
-    check_gaps(conn, table, max_width=max_gap_width)
+    check_gaps(conn, table, gap_maximum_width=gap_maximum_width)
 
 
 def coverage_clean(  # noqa: PLR0913 (each param is a distinct required input, not decomposable)

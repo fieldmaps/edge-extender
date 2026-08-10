@@ -25,8 +25,8 @@ def test_has_gaps_tolerates_wide_hole_when_scoped():
     with duckdb.connect() as conn:
         conn.execute("INSTALL spatial; LOAD spatial;")
         _write_polygon_with_hole(conn, hole_width=2.0)
-        assert has_gaps(conn, "synth")
-        assert not has_gaps(conn, "synth", max_width=SNAP_TOLERANCE)
+        assert has_gaps(conn, "synth", gap_maximum_width=0)
+        assert not has_gaps(conn, "synth", gap_maximum_width=SNAP_TOLERANCE)
 
 
 def test_check_valid_topology_raises_on_micro_gap_even_when_scoped():
@@ -35,14 +35,14 @@ def test_check_valid_topology_raises_on_micro_gap_even_when_scoped():
         conn.execute("INSTALL spatial; LOAD spatial;")
         _write_polygon_with_hole(conn, hole_width=SNAP_TOLERANCE / 2)
         with pytest.raises(RuntimeError, match="GAPS"):
-            check_valid_topology(conn, "synth", max_gap_width=SNAP_TOLERANCE)
+            check_valid_topology(conn, "synth", gap_maximum_width=SNAP_TOLERANCE)
 
 
 def test_check_valid_topology_tolerates_wide_gap_when_scoped():
     with duckdb.connect() as conn:
         conn.execute("INSTALL spatial; LOAD spatial;")
         _write_polygon_with_hole(conn, hole_width=2.0)
-        check_valid_topology(conn, "synth", max_gap_width=SNAP_TOLERANCE)
+        check_valid_topology(conn, "synth", gap_maximum_width=SNAP_TOLERANCE)
 
 
 def test_count_gaps_respects_min_width():

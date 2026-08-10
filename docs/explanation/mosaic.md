@@ -30,9 +30,10 @@ docs); `mosaic` is a thin wrapper chaining `assign-one` → `clip` → `stitch`.
    same whole-table `ST_CoverageClean` pass `stitch` exposes standalone,
    see `docs/explanation/stitch.md`.
 5. **`_03_outputs`**: the same `check_valid_topology()` hard gate as
-   `match`, relaxed to `max_gap_width=SNAP_TOLERANCE` for the same
+   `match`, using its default `gap_maximum_width=SNAP_TOLERANCE` for the same
    parent-layer-hole reason (see `docs/explanation/match.md`'s
-   "`check_valid_topology` and parent-layer gaps", `docs/adr/0035`), an
+   "`check_valid_topology` and parent-layer gaps", `docs/adr/0035`,
+   `docs/adr/0039`), an
    issues report listing unassigned children (no dropped-group kind, since
    there are no groups) plus any leftover gap wider than `SNAP_TOLERANCE`,
    a warning log if any such gap remains, and export (only when the
