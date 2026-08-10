@@ -138,9 +138,8 @@ def _circle_wkt(cx, cy, r, n):
 def test_clip_heavy_parent_tiling_finds_real_overlap(tmp_path):
     """A parent part at/above CLIP_TILE_MIN_VERTICES takes assign-one's grid-tiled path.
 
-    Regression test for a bug where the tiled parts' bbox columns were
-    inserted into a mismatched positional schema, silently corrupting the
-    bbox prefilter and dropping every real overlap against a heavy part.
+    Regression test: a heavy tile's bbox columns must survive the join
+    that finds its real overlaps.
     """
     n_points = CLIP_TILE_MIN_VERTICES + 200
     parents_path = tmp_path / "heavy_parents.parquet"

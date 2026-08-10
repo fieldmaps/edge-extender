@@ -14,10 +14,8 @@ logger = getLogger(__name__)
 def prepare_parent_tiles(conn: DuckDBPyConnection, name: str) -> None:
     """Precompute the parent's part/tile decomposition, independent of any children.
 
-    A caller processing many children files against one unchanging parent
-    (api.clip._clip_each_file()) calls this once and passes
-    use_cached_tiles=True to every main()/_build_pairs() call afterward,
-    instead of re-tiling the same high-vertex parent parts on every file.
+    Callers with many children files against one parent build this once and
+    reuse it via use_cached_tiles, instead of re-tiling it per file.
     """
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_parent_parts" AS
@@ -68,11 +66,8 @@ def _build_pairs(
 ) -> None:
     """Bbox-prefiltered overlap-area join, tiling any oversized parent part first.
 
-    A parent part at or above CLIP_TILE_MIN_VERTICES is grid-tiled before
-    intersecting, instead of one ST_Intersection call against the whole thing.
-    use_cached_tiles=True skips that tiling, reusing whatever a prior
-    prepare_parent_tiles() call already left in {name}_02_parent_parts/
-    {name}_02_parent_tiles.
+    use_cached_tiles=True reuses a prior prepare_parent_tiles() call's tiles
+    instead of rebuilding them.
     """
     if not use_cached_tiles:
         prepare_parent_tiles(conn, name)

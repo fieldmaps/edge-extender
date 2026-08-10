@@ -177,16 +177,8 @@ def _clip_each_file(  # noqa: PLR0913, PLR0917
 ) -> None:
     """Clip one children file at a time, sharing one already-loaded parent.
 
-    Keeps only one file's geometry resident alongside the shared parent at
-    any time, rather than unioning every children file into one table
-    first. The parent's tile decomposition (assign_stage.prepare_parent_tiles)
-    is built once before the loop and reused by every iteration, since it
-    depends only on the parent, not on which children are loaded (see
-    docs/adr/0024). Staged writes preserve the "fully succeed or write
-    nothing" contract without holding every file's clipped result in
-    memory at once: each export goes to a hidden temp file next to its
-    real destination, promoted only once every file in the batch has
-    succeeded.
+    Keeps only one file's geometry resident alongside the shared parent at a
+    time, instead of unioning every children file into one table first.
     """
     inputs.load_parent(conn, name, parent_path)
     conn.execute(f"""--sql
