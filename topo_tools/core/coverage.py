@@ -119,8 +119,8 @@ def coverage_clean(  # noqa: PLR0913 (each param is a distinct required input, n
     table_out: str,
     *,
     fids: list[int] | None,
-    gap_maximum_width: float | None,
-    snapping_distance: float | None = None,
+    gap_maximum_width: float | None = SNAP_TOLERANCE,
+    snapping_distance: float | None = SNAP_TOLERANCE,
 ) -> None:
     """Write table_out from table_in with ST_CoverageClean applied to a subset (or all).
 

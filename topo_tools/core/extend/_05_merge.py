@@ -93,11 +93,4 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     # construction every point of the extent belongs to exactly one fid here,
     # so there's no real feature left to protect from swallowing: anything
     # CoverageClean finds to close is seam noise, not a real gap.
-    coverage_clean(
-        conn,
-        f"{name}_05_tmp3",
-        f"{name}_05",
-        fids=None,
-        gap_maximum_width=SNAP_TOLERANCE,
-        snapping_distance=SNAP_TOLERANCE,
-    )
+    coverage_clean(conn, f"{name}_05_tmp3", f"{name}_05", fids=None)

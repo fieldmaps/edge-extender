@@ -5,7 +5,6 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.constants import SNAP_TOLERANCE
 from topo_tools.core.coverage import coverage_clean, has_valid_topology
 from topo_tools.core.io import read_and_reproject
 
@@ -19,11 +18,4 @@ def main(conn: DuckDBPyConnection, name: str, path: Path) -> None:
     table = f"{name}_01"
     if not has_valid_topology(conn, table, gap_maximum_width=0):
         logger.info("cleaning coverage: invalid edges or gaps detected")
-        coverage_clean(
-            conn,
-            table,
-            table,
-            fids=None,
-            gap_maximum_width=SNAP_TOLERANCE,
-            snapping_distance=SNAP_TOLERANCE,
-        )
+        coverage_clean(conn, table, table, fids=None)

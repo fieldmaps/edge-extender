@@ -30,8 +30,9 @@ Run `topo-tools stitch --help` for the full, always-current option list.
 1. **`_01_inputs`**: loads and reprojects the input via
    `core.io.read_and_reproject`, without coverage-cleaning it first (see
    below).
-2. **`_02_clean`**: one whole-table `ST_CoverageClean` pass
-   (`fids=None`, `gap_maximum_width=SNAP_TOLERANCE`).
+2. **`_02_clean`**: one whole-table `ST_CoverageClean` pass (`fids=None`),
+   relying on `coverage_clean()`'s default
+   `gap_maximum_width=snapping_distance=SNAP_TOLERANCE` (`docs/adr/0040`).
 3. **`_03_outputs`**: `check_valid_topology()`, relying on its default
    `gap_maximum_width=SNAP_TOLERANCE`, the same call `match`/`mosaic` make
    (see `docs/adr/0038`, `docs/adr/0039`), then export: raises on any
