@@ -5,10 +5,8 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.constants import SNAP_TOLERANCE
-from topo_tools.core.coverage import check_valid_topology, gap_geometries_sql
+from topo_tools.core.coverage import check_valid_topology, gap_issues_sql
 from topo_tools.core.io import export_geometry_table, export_issues_table
-from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 
 logger = getLogger(__name__)
 
@@ -23,9 +21,6 @@ _ISSUE_COLUMNS = """
 def _build_issues(conn: DuckDBPyConnection, name: str) -> None:
     """Build `{name}_06`: unassigned/dropped-group children, plus non-noise gaps."""
     table = f"{name}_05"
-    m2_per_deg2 = m2_per_deg2_factor(conn, table)
-    width_m = f"(ST_MaximumInscribedCircle(geom)).radius * 2 * {METERS_PER_DEGREE}"
-    thinness_ratio = "4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2)"
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_06" AS
         SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
@@ -37,17 +32,7 @@ def _build_issues(conn: DuckDBPyConnection, name: str) -> None:
                child_fid AS unit_a, parent_fid, reason, {_ISSUE_COLUMNS}, geom
         FROM "{name}_03b"
         UNION ALL BY NAME
-        SELECT 'gap-' || row_number() OVER () AS key, 'gap' AS kind,
-               NULL::BIGINT AS unit_a, NULL::BIGINT AS parent_fid,
-               NULL::VARCHAR AS reason,
-               ST_Area(geom) * {m2_per_deg2} AS area_m2, {width_m} AS max_width_m,
-               {thinness_ratio} AS thinness_ratio, NULL::BIGINT AS unit_b,
-               NULL::DOUBLE AS unit_a_area_change_m2,
-               NULL::DOUBLE AS unit_b_area_change_m2,
-               NULL::DOUBLE AS filled_area_m2, FALSE AS fixed,
-               NULL::VARCHAR AS source_file, geom
-        FROM {gap_geometries_sql(table)}
-        WHERE (ST_MaximumInscribedCircle(geom)).radius * 2 > {SNAP_TOLERANCE}
+        {gap_issues_sql(conn, table)}
     """)
 
 

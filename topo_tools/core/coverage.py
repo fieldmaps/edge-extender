@@ -5,6 +5,7 @@ from logging import getLogger
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import SNAP_TOLERANCE
+from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 
 logger = getLogger(__name__)
 
@@ -48,6 +49,31 @@ def gap_geometries_sql(table: str) -> str:
         )
         SELECT geom FROM holes WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
     )"""
+
+
+def gap_issues_sql(
+    conn: DuckDBPyConnection, table: str, *, min_width: float = SNAP_TOLERANCE
+) -> str:
+    """Build SQL for `table.geom`'s gap-kind issue rows, in the shared issues schema.
+
+    Standalone or as one arm of a `UNION ALL BY NAME` with other issue kinds.
+    """
+    m2_per_deg2 = m2_per_deg2_factor(conn, table)
+    width_m = f"(ST_MaximumInscribedCircle(geom)).radius * 2 * {METERS_PER_DEGREE}"
+    thinness_ratio = "4 * pi() * ST_Area(geom) / POWER(ST_Perimeter(geom), 2)"
+    return f"""
+        SELECT 'gap-' || row_number() OVER () AS key, 'gap' AS kind,
+               NULL::BIGINT AS unit_a, NULL::BIGINT AS unit_b,
+               NULL::BIGINT AS parent_fid, NULL::VARCHAR AS reason,
+               ST_Area(geom) * {m2_per_deg2} AS area_m2, {width_m} AS max_width_m,
+               {thinness_ratio} AS thinness_ratio,
+               NULL::DOUBLE AS unit_a_area_change_m2,
+               NULL::DOUBLE AS unit_b_area_change_m2,
+               NULL::DOUBLE AS filled_area_m2, FALSE AS fixed,
+               NULL::VARCHAR AS source_file, geom
+        FROM {gap_geometries_sql(table)}
+        WHERE (ST_MaximumInscribedCircle(geom)).radius * 2 > {min_width}
+    """
 
 
 def has_gaps(
