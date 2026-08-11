@@ -36,8 +36,13 @@ def default_output_path(input_path: Path | str, suffix: str) -> Path:
     return directory / base.with_stem(base.stem + suffix).name
 
 
-def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path | str) -> None:
-    """Read geodata, reproject to EPSG:4326, store as canonical table `{name}_01`."""
+def reproject_select_sql(conn: DuckDBPyConnection, path: Path | str) -> str:
+    """Build the read+reproject-to-EPSG:4326 SELECT for one file, as unexecuted SQL.
+
+    Composable as a subquery, so multiple files' worth can be combined with
+    `UNION ALL BY NAME` inside one `CREATE TABLE ... AS SELECT` call instead
+    of materializing a table per file first (see `docs/adr/0044`).
+    """
     read_expr = (
         f"SELECT * FROM '{path}'"
         if Path(input_basename(path)).suffix == ".parquet"
@@ -77,16 +82,23 @@ def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path | str) ->
         else f'ST_Force2D(ST_MakeValid("{geom_col}"))'
     )
 
-    # Reproject to EPSG:4326 and store as the canonical input table. ST_MakeValid
-    # repairs broken ring orientations or self-intersections before transform.
-    # ST_Force2D drops any Z/M coordinates that downstream GEOS operations
-    # don't handle correctly. Parquet inputs skip ST_Transform (already WGS84).
-    conn.execute(f"""--sql
-        CREATE OR REPLACE TABLE "{name}_01" AS
+    # ST_MakeValid repairs broken ring orientations or self-intersections
+    # before transform. ST_Force2D drops any Z/M coordinates that downstream
+    # GEOS operations don't handle correctly. Parquet inputs skip
+    # ST_Transform (already WGS84).
+    return f"""
         SELECT * EXCLUDE ({exclude_sql}){rename_sql},
                row_number() OVER () AS fid,
                {geom_expr} AS geom
         FROM ({read_expr})
+    """
+
+
+def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path | str) -> None:
+    """Read geodata, reproject to EPSG:4326, store as canonical table `{name}_01`."""
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{name}_01" AS
+        {reproject_select_sql(conn, path)}
     """)
 
 

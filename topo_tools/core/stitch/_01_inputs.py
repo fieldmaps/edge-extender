@@ -4,9 +4,27 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.io import read_and_reproject
+from topo_tools.core.io import read_and_reproject, reproject_select_sql
 
 
-def main(conn: DuckDBPyConnection, name: str, path: Path | str) -> None:
-    """Import geodata into DuckDB; cleanliness is the stitch stage's own job."""
-    read_and_reproject(conn, name, path)
+def main(
+    conn: DuckDBPyConnection, name: str, path: Path | str | list[Path | str]
+) -> None:
+    """Import geodata into DuckDB; cleanliness is the stitch stage's own job.
+
+    A list of paths is combined into one table before returning, via one
+    query (see `docs/adr/0044`), since the whole-table coverage-clean pass
+    downstream needs a single tiled layer.
+    """
+    if isinstance(path, (str, Path)):
+        read_and_reproject(conn, name, path)
+        return
+
+    union_sql = " UNION ALL BY NAME ".join(
+        f"({reproject_select_sql(conn, p)})" for p in path
+    )
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{name}_01" AS
+        SELECT * EXCLUDE (fid), row_number() OVER () AS fid
+        FROM ({union_sql})
+    """)

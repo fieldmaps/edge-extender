@@ -55,6 +55,17 @@ def large_gap_input(tmp_path):
     return path
 
 
+@pytest.fixture
+def tiny_gap_split(tmp_path):
+    """Build the same tiny-gap frame as tiny_gap_input, split across two files."""
+    rows = _frame_wkt(1e-9)
+    path_a = tmp_path / "part_a.parquet"
+    path_b = tmp_path / "part_b.parquet"
+    _write_synthetic(path_a, rows[:2])
+    _write_synthetic(path_b, rows[2:])
+    return [path_a, path_b]
+
+
 def test_cli_help():
     result = CliRunner().invoke(cli, ["stitch", "--help"])
     assert result.exit_code == 0
@@ -141,3 +152,61 @@ def test_stitch_steps(tiny_gap_input, tmp_path):
     for step in _STEPS:
         stitch(tiny_gap_input, output_path, tmp_dir=work_dir, step=step, overwrite=True)
     assert output_path.exists()
+
+
+def test_stitch_multi_file_api(tiny_gap_split, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    stitch(tiny_gap_split, output_path, issues_path, overwrite=True)
+
+    assert output_path.exists()
+    assert not issues_path.exists()
+    expected_row_count = 4
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        row_count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
+    assert row_count == expected_row_count
+
+
+def test_stitch_multi_file_requires_output_path(tiny_gap_split):
+    with pytest.raises(ValueError, match="output_path is required"):
+        stitch(tiny_gap_split)
+
+
+def test_cli_glob_expansion(
+    tiny_gap_split,  # noqa: ARG001 (write side effect is the point)
+    tmp_path,
+):
+    output_path = tmp_path / "out.parquet"
+    pattern = str(tmp_path / "part_*.parquet")
+    result = CliRunner().invoke(cli, ["stitch", pattern, str(output_path)])
+    assert result.exit_code == 0, result.output
+
+    expected_row_count = 4
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        row_count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
+    assert row_count == expected_row_count
+
+
+def test_cli_extra_input_flag_combines_with_glob(tiny_gap_split, tmp_path):
+    """One positional file + a --input-flagged file both feed one combined run."""
+    file_a, file_b = tiny_gap_split
+    output_path = tmp_path / "out.parquet"
+    result = CliRunner().invoke(
+        cli, ["stitch", str(file_a), str(output_path), "--input", str(file_b)]
+    )
+    assert result.exit_code == 0, result.output
+
+    expected_row_count = 4
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        row_count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
+    assert row_count == expected_row_count
+
+
+def test_cli_glob_no_matches(tmp_path):
+    pattern = str(tmp_path / "nomatch_*.parquet")
+    result = CliRunner().invoke(cli, ["stitch", pattern, str(tmp_path / "out.parquet")])
+    assert result.exit_code != 0
+    assert "no files matched" in result.output

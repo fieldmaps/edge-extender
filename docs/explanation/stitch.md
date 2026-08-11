@@ -29,7 +29,13 @@ Run `topo-tools stitch --help` for the full, always-current option list.
 
 1. **`_01_inputs`**: loads and reprojects the input via
    `core.io.read_and_reproject`, without coverage-cleaning it first (see
-   below).
+   below). A list of input files is combined into one table via a single
+   query built from `core.io.reproject_select_sql()` per file
+   (`UNION ALL BY NAME`, fresh `row_number()` fid, no per-file
+   materialization, see `docs/adr/0044`), the same shape
+   `core.assign.load_children` uses for its own multi-file combine, since
+   the whole-table clean pass in `_02_clean` needs a single tiled layer to
+   work over.
 2. **`_02_clean`**: one whole-table `ST_CoverageClean` pass (`fids=None`),
    relying on `coverage_clean()`'s default
    `gap_maximum_width=snapping_distance=SNAP_TOLERANCE` (`docs/adr/0040`).

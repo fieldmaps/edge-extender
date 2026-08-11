@@ -4,7 +4,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.io import read_and_reproject
+from topo_tools.core.io import read_and_reproject, reproject_select_sql
 
 
 def load_children(
@@ -14,21 +14,17 @@ def load_children(
 
     Each child part is tagged with its own full path as `source_file`, since
     basename alone can't distinguish same-named files across directories.
+    Combined via one query (see `docs/adr/0044`), not a table per file.
     """
-    for i, path in enumerate(input_paths):
-        read_and_reproject(conn, f"{name}_childpart{i}", path)
-
     union_sql = " UNION ALL BY NAME ".join(
-        f"SELECT *, '{path}' AS source_file FROM \"{name}_childpart{i}_01\""
-        for i, path in enumerate(input_paths)
+        f"(SELECT *, '{path}' AS source_file FROM ({reproject_select_sql(conn, path)}))"
+        for path in input_paths
     )
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_child_01" AS
         SELECT * EXCLUDE (fid), row_number() OVER () AS fid
         FROM ({union_sql})
     """)
-    for i in range(len(input_paths)):
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_childpart{i}_01"')
 
 
 def load_parent(conn: DuckDBPyConnection, name: str, clip_path: Path | str) -> None:

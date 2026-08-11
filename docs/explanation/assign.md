@@ -31,12 +31,15 @@ below is called directly by another tool's own `api.*()` orchestrator
 (`api.mosaic`, `api.clip`, `api.match`), never from inside
 `core.mosaic`/`core.match` themselves.
 
-`core/assign/_inputs.py` loads the (possibly multi-file) child layer
-and the single parent/clip layer raw via `core.io.read_and_reproject`,
-neither coverage-checked nor -cleaned (consistent with `clip`/`stitch`;
-these are all purely mechanical primitives). Every child row is tagged
-with a `source_file` column recording the exact path it came from
-(basename alone can't distinguish same-named files across directories).
+`core/assign/_inputs.py` loads the single parent/clip layer raw via
+`core.io.read_and_reproject`, and the (possibly multi-file) child layer via
+one combined query built from `core.io.reproject_select_sql()` per file
+(`UNION ALL BY NAME`, no table-per-file materialization, see
+`docs/adr/0044`); neither is coverage-checked nor -cleaned (consistent
+with `clip`/`stitch`; these are all purely mechanical primitives). Every
+child row is tagged with a `source_file` column recording the exact path
+it came from (basename alone can't distinguish same-named files across
+directories).
 `api.mosaic` and standalone `api.clip` (its multi-file loop, see
 `docs/explanation/clip.md`) both call its `load_children()`/
 `load_parent()` directly, since ADR-0023 split those apart; `api.match`

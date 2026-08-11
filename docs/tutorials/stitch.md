@@ -14,3 +14,7 @@ pass.
 ### Example 3: custom issues report path
 
     topo-tools stitch tiled.parquet stitched.parquet --issues-file stitch_report.parquet
+
+### Example 4: combine every already-clipped file into one global output
+
+    topo-tools stitch "tmp/clipped/*.parquet" stitched.parquet

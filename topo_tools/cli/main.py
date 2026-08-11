@@ -623,6 +623,16 @@ def mosaic(  # noqa: PLR0913, PLR0917
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
+    "--input",
+    "extra_inputs",
+    envvar="EXTRA_INPUTS",
+    multiple=True,
+    help=(
+        "Additional already-tiled file beyond INPUT_FILE, combined with it "
+        "[may be repeated, and each value MAY be comma-separated]."
+    ),
+)
+@click.option(
     "--issues-file",
     envvar="ISSUES_FILE",
     default=None,
@@ -656,6 +666,7 @@ def mosaic(  # noqa: PLR0913, PLR0917
 def stitch(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
+    extra_inputs: tuple[str, ...],
     issues_file: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
@@ -665,7 +676,9 @@ def stitch(  # noqa: PLR0913, PLR0917
 ) -> None:
     r"""Close seams in an already-tiled polygon layer via coverage-clean.
 
-    OUTPUT_FILE defaults to INPUT_FILE with a "_stitched" suffix if omitted.
+    OUTPUT_FILE defaults to INPUT_FILE with a "_stitched" suffix if omitted;
+    it is required when INPUT_FILE is a glob matching more than one file, or
+    when --input is given.
 
     \b
     Examples:
@@ -677,13 +690,34 @@ def stitch(  # noqa: PLR0913, PLR0917
       topo-tools stitch tiled.gpkg stitched.gpkg
 
       \b
+      # Combine every already-clipped file into one global stitched output
+      topo-tools stitch "tmp/clipped/*.parquet" stitched.parquet
+
+      \b
+      # Combine explicit files instead of a glob (--input MAY be repeated
+      # and/or comma-separated)
+      topo-tools stitch afg.parquet stitched.parquet --input ago.parquet,are.parquet
+
+      \b
       # Rerun and overwrite a previous output
       topo-tools stitch tiled.parquet stitched.parquet --overwrite
     """
     logger.info("--debug=%s", debug)
+    if any(ch in input_file for ch in "*?["):
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 (arbitrary pattern, not anchored to one Path)
+        if not matches:
+            msg = f"no files matched: {input_file}"
+            raise click.ClickException(msg)
+        base_inputs = [Path(p) for p in matches]
+    else:
+        base_inputs = [input_file]
+    all_inputs = base_inputs + list(_split_commas(extra_inputs))
+    resolved_input: str | Path | list[str | Path] = (
+        all_inputs[0] if len(all_inputs) == 1 else all_inputs
+    )
     try:
         _stitch(
-            input_file,
+            resolved_input,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
             threads=threads,
@@ -692,7 +726,7 @@ def stitch(  # noqa: PLR0913, PLR0917
             debug=debug,
             step=step,
         )
-    except (FileExistsError, RuntimeError) as e:
+    except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
 

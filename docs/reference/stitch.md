@@ -33,10 +33,15 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Configuration (`api.stitch.stitch()` / CLI)
 
-- `stitch` MUST process exactly one input file per call.
-- The output path MUST default to the input path with a `_stitched`
-  suffix. The issues-report path MUST default to the output path with an
-  `_issues` suffix.
+- `stitch`'s input role MAY span multiple already-tiled files, combined
+  internally into one table before the clean pass. The CLI additionally
+  accepts `--input` (repeatable and comma-separable) alongside the
+  glob-capable `INPUT_FILE` positional, matching `mosaic`'s own `--input`
+  idiom.
+- With a single input file, the output path MUST default to that input
+  path with a `_stitched` suffix. With multiple input files, `output_path`
+  MUST be given explicitly. The issues-report path MUST default to the
+  output path with an `_issues` suffix.
 - `stitch` MUST raise `FileExistsError` if either output path already
   exists and overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `clean`, `outputs`; any other

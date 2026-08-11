@@ -24,8 +24,8 @@ _STEP_TABLES = {
 }
 
 
-def stitch(  # noqa: PLR0913
-    input_path: str | Path,
+def stitch(  # noqa: C901, PLR0912, PLR0913
+    input_path: str | Path | list[str | Path],
     output_path: str | Path | None = None,
     issues_path: str | Path | None = None,
     *,
@@ -37,19 +37,29 @@ def stitch(  # noqa: PLR0913
 ) -> None:
     """Close seams in an already-tiled polygon layer via coverage-clean.
 
-    Processes exactly one file per call. If output_path is omitted, it
-    defaults to input_path with a "_stitched" suffix in the same directory.
+    input_path MAY be a list of multiple already-tiled files, combined
+    internally into one layer before the clean pass; output_path is then
+    required, since there's no single filename to default from. With a
+    single input_path, output_path defaults to it with a "_stitched" suffix.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
 
-    input_path = resolve_input_path(input_path)
-    output_path = (
-        Path(output_path)
-        if output_path is not None
-        else default_output_path(input_path, "_stitched")
-    )
+    if isinstance(input_path, (str, Path)):
+        paths = [resolve_input_path(input_path)]
+        single_path = paths[0]
+    else:
+        paths = [resolve_input_path(p) for p in input_path]
+        single_path = None
+
+    if output_path is not None:
+        output_path = Path(output_path)
+    elif single_path is not None:
+        output_path = default_output_path(single_path, "_stitched")
+    else:
+        msg = "output_path is required when multiple input_paths are given"
+        raise ValueError(msg)
     issues_path = (
         Path(issues_path)
         if issues_path is not None
@@ -64,7 +74,11 @@ def stitch(  # noqa: PLR0913
 
     # "_stitch" keeps every table/file this call creates distinct from
     # another tool's run against the same input_path/tmp_dir.
-    name = input_basename(input_path).replace(".", "_") + "_stitch"
+    name = (
+        input_basename(single_path).replace(".", "_") + "_stitch"
+        if single_path is not None
+        else output_path.name.replace(".", "_") + "_stitch"
+    )
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,
@@ -79,7 +93,9 @@ def stitch(  # noqa: PLR0913
             if debug:
                 logger.info("=== %s ===", s)
             if s == "inputs":
-                inputs.main(conn, name, input_path)
+                inputs.main(
+                    conn, name, single_path if single_path is not None else paths
+                )
             elif s == "clean":
                 clean.main(conn, f"{name}_01", f"{name}_02")
             elif s == "outputs":
