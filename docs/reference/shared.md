@@ -47,6 +47,13 @@ tool-specific settings (see the tool's own file for those):
 - `step`: if given, MUST run only the one named stage; any value outside
   that tool's own stage names MUST raise `ValueError`.
 
+A read-role file argument (children, parent/clip, old/new) MAY be an
+`http://`/`https://` URL to a `.parquet` file, resolved via
+`core.io.resolve_input_path()`/`input_basename()` (see `docs/adr/0043`);
+behavior for a non-parquet remote URL is unverified. An output-role
+argument (`output_path`, `issues_path`, `overlay_path`) MUST always be a
+local filesystem path.
+
 No module-level `argparse`/env parsing exists anywhere; settings flow in
 as plain keyword arguments on each tool's own `api.*()` function, and the
 CLI maps flags/env vars onto those same kwargs 1:1.

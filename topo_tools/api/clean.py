@@ -12,6 +12,7 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
+from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
 
 logger = getLogger(__name__)
 
@@ -78,11 +79,11 @@ def clean(  # noqa: C901, PLR0913
     parsed_maximum_gap_width = _parse_maximum_gap_width(maximum_gap_width)
     parsed_snapping_distance = _parse_snapping_distance(snapping_distance)
 
-    input_path = Path(input_path)
+    input_path = resolve_input_path(input_path)
     output_path = (
         Path(output_path)
         if output_path is not None
-        else input_path.with_stem(input_path.stem + "_cleaned")
+        else default_output_path(input_path, "_cleaned")
     )
     issues_path = (
         Path(issues_path)
@@ -96,7 +97,7 @@ def clean(  # noqa: C901, PLR0913
         msg = f"output already exists: {issues_path}"
         raise FileExistsError(msg)
 
-    name = input_path.name.replace(".", "_") + "_clean"
+    name = input_basename(input_path).replace(".", "_") + "_clean"
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,

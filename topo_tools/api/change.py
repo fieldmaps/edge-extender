@@ -21,6 +21,7 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
+from topo_tools.core.io import input_basename, resolve_input_path
 
 logger = getLogger(__name__)
 
@@ -82,13 +83,15 @@ def change(  # noqa: C901, PLR0912, PLR0913
         msg = f"link_mode must be 'either' or 'both', got {link_mode!r}"
         raise ValueError(msg)
 
-    old_path = Path(old_path)
-    new_path = Path(new_path)
-    output_path = (
-        Path(output_path)
-        if output_path is not None
-        else old_path.parent / f"{old_path.stem}_{new_path.stem}_changelog.csv"
-    )
+    old_path = resolve_input_path(old_path)
+    new_path = resolve_input_path(new_path)
+    if output_path is not None:
+        output_path = Path(output_path)
+    else:
+        old_stem = Path(input_basename(old_path)).stem
+        new_stem = Path(input_basename(new_path)).stem
+        directory = old_path.parent if isinstance(old_path, Path) else Path()
+        output_path = directory / f"{old_stem}_{new_stem}_changelog.csv"
     if output_path.suffix not in TABLE_COPY_OPTS:
         msg = (
             f"output file must be one of {sorted(TABLE_COPY_OPTS)} (a tabular "
@@ -100,7 +103,7 @@ def change(  # noqa: C901, PLR0912, PLR0913
         Path(overlay_path)
         if overlay_path is not None
         else output_path.with_stem(output_path.stem + "_overlay").with_suffix(
-            old_path.suffix
+            Path(input_basename(old_path)).suffix
         )
     )
     if overlay_path.suffix not in COPY_OPTS:
@@ -119,7 +122,7 @@ def change(  # noqa: C901, PLR0912, PLR0913
     # "_changelog" keeps every table/file this call creates distinct from an
     # extend()/match()/clean() run against the same old_path/tmp_dir, same
     # collision-avoidance reasoning as match's "_match" and clean's "_clean".
-    name = old_path.name.replace(".", "_") + "_changelog"
+    name = input_basename(old_path).replace(".", "_") + "_changelog"
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,

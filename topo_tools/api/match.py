@@ -9,6 +9,7 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
+from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
 from topo_tools.core.match import _01_inputs as inputs
 from topo_tools.core.match import _02_groups as groups
 from topo_tools.core.match import _03_clip as clip
@@ -52,12 +53,12 @@ def match(  # noqa: C901, PLR0913
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
 
-    input_path = Path(input_path)
-    clip_path = Path(clip_path)
+    input_path = resolve_input_path(input_path)
+    clip_path = resolve_input_path(clip_path)
     output_path = (
         Path(output_path)
         if output_path is not None
-        else input_path.with_stem(input_path.stem + "_matched")
+        else default_output_path(input_path, "_matched")
     )
     issues_path = (
         Path(issues_path)
@@ -76,7 +77,7 @@ def match(  # noqa: C901, PLR0913
     # "{name}_04" (Voronoi cells) would otherwise collide with match's own
     # bare "{name}_04" (final coverage-cleaned output) if both tools shared a
     # tmp_dir and were run with --debug for side-by-side inspection.
-    name = input_path.name.replace(".", "_") + "_match"
+    name = input_basename(input_path).replace(".", "_") + "_match"
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,

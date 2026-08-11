@@ -13,6 +13,7 @@ from topo_tools.core.extend import _02_lines as lines
 from topo_tools.core.extend import _05_merge as merge
 from topo_tools.core.extend import _06_outputs as outputs
 from topo_tools.core.extend import attempt
+from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
 
 logger = getLogger(__name__)
 
@@ -56,17 +57,17 @@ def extend(  # noqa: C901, PLR0913
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
 
-    input_path = Path(input_path)
+    input_path = resolve_input_path(input_path)
     output_path = (
         Path(output_path)
         if output_path is not None
-        else input_path.with_stem(input_path.stem + "_extended")
+        else default_output_path(input_path, "_extended")
     )
     if output_path.exists() and not overwrite:
         msg = f"output already exists: {output_path}"
         raise FileExistsError(msg)
 
-    name = input_path.name.replace(".", "_")
+    name = input_basename(input_path).replace(".", "_")
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,

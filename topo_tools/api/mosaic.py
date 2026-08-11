@@ -9,6 +9,7 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
+from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
 from topo_tools.core.mosaic import _01_clip as clip
 from topo_tools.core.mosaic import _02_stitch as stitch
 from topo_tools.core.mosaic import _03_outputs as outputs
@@ -48,17 +49,17 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
         raise ValueError(msg)
 
     if isinstance(input_paths, (str, Path)):
-        paths = [Path(input_paths)]
-        single_path = Path(input_paths)
+        paths = [resolve_input_path(input_paths)]
+        single_path = resolve_input_path(input_paths)
     else:
-        paths = [Path(p) for p in input_paths]
+        paths = [resolve_input_path(p) for p in input_paths]
         single_path = None
 
-    clip_path = Path(clip_path)
+    clip_path = resolve_input_path(clip_path)
     if output_path is not None:
         output_path = Path(output_path)
     elif single_path is not None:
-        output_path = single_path.with_stem(single_path.stem + "_mosaicked")
+        output_path = default_output_path(single_path, "_mosaicked")
     else:
         msg = "output_path is required when multiple input_paths are given"
         raise ValueError(msg)
@@ -78,7 +79,7 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
     # "_mosaic" keeps every table/file this call creates distinct from an
     # extend()/match() run against the same input_path/tmp_dir.
     name = (
-        single_path.name.replace(".", "_") + "_mosaic"
+        input_basename(single_path).replace(".", "_") + "_mosaic"
         if single_path is not None
         else output_path.name.replace(".", "_") + "_mosaic"
     )

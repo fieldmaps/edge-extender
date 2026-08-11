@@ -88,7 +88,7 @@ def extend(  # noqa: PLR0913, PLR0917
     logger.info("--debug=%s", debug)
     try:
         _extend(
-            Path(input_file),
+            input_file,
             Path(output_file) if output_file is not None else None,
             threads=threads,
             tmp_dir=tmp_dir,
@@ -153,7 +153,7 @@ def detect(  # noqa: PLR0913, PLR0917
     logger.info("--debug=%s", debug)
     try:
         _detect(
-            Path(input_file),
+            input_file,
             Path(output_file) if output_file is not None else None,
             threads=threads,
             tmp_dir=tmp_dir,
@@ -258,7 +258,7 @@ def clean(  # noqa: PLR0913, PLR0917
     )
     try:
         _clean(
-            Path(input_file),
+            input_file,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
             maximum_gap_width=maximum_gap_width,
@@ -413,8 +413,8 @@ def change(  # noqa: PLR0913, PLR0917
     logger.info("--tau-match=%s --tau-same=%s --debug=%s", tau_match, tau_same, debug)
     try:
         _change(
-            Path(old_file),
-            Path(new_file),
+            old_file,
+            new_file,
             Path(output_file) if output_file is not None else None,
             Path(overlay_file) if overlay_file is not None else None,
             tau_match=tau_match,
@@ -498,8 +498,8 @@ def match(  # noqa: PLR0913, PLR0917
     logger.info("--debug=%s", debug)
     try:
         _match(
-            Path(input_file),
-            Path(clip_file),
+            input_file,
+            clip_file,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
             threads=threads,
@@ -598,15 +598,15 @@ def mosaic(  # noqa: PLR0913, PLR0917
             raise click.ClickException(msg)
         base_inputs = [Path(p) for p in matches]
     else:
-        base_inputs = [Path(input_file)]
-    all_inputs = base_inputs + [Path(p) for p in _split_commas(extra_inputs)]
-    resolved_input: Path | list[Path] = (
+        base_inputs = [input_file]
+    all_inputs = base_inputs + list(_split_commas(extra_inputs))
+    resolved_input: str | Path | list[str | Path] = (
         all_inputs[0] if len(all_inputs) == 1 else all_inputs
     )
     try:
         _mosaic(
             resolved_input,
-            Path(clip_file),
+            clip_file,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
             threads=threads,
@@ -683,7 +683,7 @@ def stitch(  # noqa: PLR0913, PLR0917
     logger.info("--debug=%s", debug)
     try:
         _stitch(
-            Path(input_file),
+            input_file,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
             threads=threads,
@@ -804,13 +804,13 @@ def clip(  # noqa: PLR0913, PLR0917
             *extra_outputs_split,
         ]
     else:
-        children = Path(input_file)
+        children = input_file
         outputs = Path(output_file) if output_file is not None else None
 
     try:
         _clip(
             children,
-            Path(clip_file),
+            clip_file,
             outputs,
             name=name,
             threads=threads,

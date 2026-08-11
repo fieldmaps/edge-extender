@@ -7,7 +7,9 @@ from duckdb import DuckDBPyConnection
 from topo_tools.core.io import read_and_reproject
 
 
-def load_children(conn: DuckDBPyConnection, name: str, input_paths: list[Path]) -> None:
+def load_children(
+    conn: DuckDBPyConnection, name: str, input_paths: list[Path | str]
+) -> None:
     """Load/combine the (possibly multi-file) children, uncleaned.
 
     Each child part is tagged with its own full path as `source_file`, since
@@ -29,6 +31,6 @@ def load_children(conn: DuckDBPyConnection, name: str, input_paths: list[Path]) 
         conn.execute(f'DROP TABLE IF EXISTS "{name}_childpart{i}_01"')
 
 
-def load_parent(conn: DuckDBPyConnection, name: str, clip_path: Path) -> None:
+def load_parent(conn: DuckDBPyConnection, name: str, clip_path: Path | str) -> None:
     """Load the parent/clip layer, uncleaned."""
     read_and_reproject(conn, f"{name}_parent", clip_path)

@@ -8,7 +8,7 @@ from topo_tools.core.io import read_reproject_and_clean
 
 
 def main(
-    conn: DuckDBPyConnection, name: str, input_path: Path, clip_path: Path
+    conn: DuckDBPyConnection, name: str, input_path: Path | str, clip_path: Path | str
 ) -> None:
     """Load and coverage-clean both the child and parent/clip layers."""
     read_reproject_and_clean(conn, f"{name}_child", input_path)

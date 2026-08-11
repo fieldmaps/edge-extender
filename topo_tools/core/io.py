@@ -2,6 +2,7 @@
 
 from logging import getLogger
 from pathlib import Path
+from urllib.parse import urlparse
 
 from duckdb import DuckDBPyConnection
 
@@ -11,11 +12,35 @@ from .coverage import coverage_clean, has_valid_topology
 logger = getLogger(__name__)
 
 
-def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path) -> None:
+def resolve_input_path(path: str | Path) -> Path | str:
+    """Keep an http(s):// URL as a raw string; `Path()` mangles its "//"."""
+    return path if str(path).startswith(("http://", "https://")) else Path(path)
+
+
+def input_basename(path: Path | str) -> str:
+    """Filesystem-safe basename, for a local `Path` or a remote URL alike."""
+    if isinstance(path, Path):
+        return path.name
+    return Path(urlparse(path).path).name
+
+
+def default_output_path(input_path: Path | str, suffix: str) -> Path:
+    """Default output path: input's own directory (CWD if remote), stem + suffix.
+
+    For a local `Path` input this reproduces `input_path.with_stem(...)`
+    exactly; only a remote `input_path` (no directory of its own) is new
+    behavior, defaulting to the current working directory.
+    """
+    directory = input_path.parent if isinstance(input_path, Path) else Path()
+    base = Path(input_basename(input_path))
+    return directory / base.with_stem(base.stem + suffix).name
+
+
+def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path | str) -> None:
     """Read geodata, reproject to EPSG:4326, store as canonical table `{name}_01`."""
     read_expr = (
         f"SELECT * FROM '{path}'"
-        if path.suffix == ".parquet"
+        if Path(input_basename(path)).suffix == ".parquet"
         else f"SELECT * FROM ST_Read('{path}')"
     )
 
@@ -65,7 +90,9 @@ def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path) -> None:
     """)
 
 
-def read_reproject_and_clean(conn: DuckDBPyConnection, name: str, path: Path) -> None:
+def read_reproject_and_clean(
+    conn: DuckDBPyConnection, name: str, path: Path | str
+) -> None:
     """Read, reproject, and coverage-clean geodata into table `{name}_01`."""
     read_and_reproject(conn, name, path)
 

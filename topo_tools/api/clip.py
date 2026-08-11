@@ -18,7 +18,12 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.io import export_geometry_table
+from topo_tools.core.io import (
+    default_output_path,
+    export_geometry_table,
+    input_basename,
+    resolve_input_path,
+)
 
 logger = getLogger(__name__)
 
@@ -64,23 +69,23 @@ def clip(  # noqa: C901, PLR0912, PLR0913
         raise ValueError(msg)
 
     if isinstance(children_paths, (str, Path)):
-        children = [Path(children_paths)]
-        single_path = Path(children_paths)
+        children = [resolve_input_path(children_paths)]
+        single_path = resolve_input_path(children_paths)
     else:
-        children = [Path(p) for p in children_paths]
+        children = [resolve_input_path(p) for p in children_paths]
         single_path = None
 
     if single_path is None and step is not None:
         msg = "step is not supported when multiple children_paths are given"
         raise ValueError(msg)
 
-    parent_path = Path(parent_path)
+    parent_path = resolve_input_path(parent_path)
 
     if output_paths is None:
         if single_path is None:
             msg = "output_paths is required when multiple children_paths are given"
             raise ValueError(msg)
-        outputs_list = [single_path.with_stem(single_path.stem + "_clipped")]
+        outputs_list = [default_output_path(single_path, "_clipped")]
     elif isinstance(output_paths, (str, Path)):
         outputs_list = [Path(output_paths)]
     else:
@@ -97,7 +102,7 @@ def clip(  # noqa: C901, PLR0912, PLR0913
         if single_path is None:
             msg = "name is required when multiple children_paths are given"
             raise ValueError(msg)
-        name = single_path.name.replace(".", "_") + "_clip"
+        name = input_basename(single_path).replace(".", "_") + "_clip"
 
     if step in (None, "outputs"):
         for out in outputs_list:
@@ -141,8 +146,8 @@ def clip(  # noqa: C901, PLR0912, PLR0913
 def _clip_single_file(  # noqa: PLR0913, PLR0917
     conn: DuckDBPyConnection,
     name: str,
-    children: list[Path],
-    parent_path: Path,
+    children: list[Path | str],
+    parent_path: Path | str,
     output_path: Path,
     tmp_dir_path: Path,
     *,
@@ -172,8 +177,8 @@ def _clip_single_file(  # noqa: PLR0913, PLR0917
 def _clip_each_file(  # noqa: PLR0913, PLR0917
     conn: DuckDBPyConnection,
     name: str,
-    children: list[Path],
-    parent_path: Path,
+    children: list[Path | str],
+    parent_path: Path | str,
     outputs_list: list[Path],
     tmp_dir_path: Path,
     *,

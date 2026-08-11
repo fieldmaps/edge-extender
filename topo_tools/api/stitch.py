@@ -8,6 +8,7 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
+from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
 from topo_tools.core.stitch import _01_inputs as inputs
 from topo_tools.core.stitch import _02_clean as clean
 from topo_tools.core.stitch import _03_outputs as outputs
@@ -43,11 +44,11 @@ def stitch(  # noqa: PLR0913
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
 
-    input_path = Path(input_path)
+    input_path = resolve_input_path(input_path)
     output_path = (
         Path(output_path)
         if output_path is not None
-        else input_path.with_stem(input_path.stem + "_stitched")
+        else default_output_path(input_path, "_stitched")
     )
     issues_path = (
         Path(issues_path)
@@ -63,7 +64,7 @@ def stitch(  # noqa: PLR0913
 
     # "_stitch" keeps every table/file this call creates distinct from
     # another tool's run against the same input_path/tmp_dir.
-    name = input_path.name.replace(".", "_") + "_stitch"
+    name = input_basename(input_path).replace(".", "_") + "_stitch"
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,

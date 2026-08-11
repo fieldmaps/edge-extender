@@ -7,6 +7,6 @@ from duckdb import DuckDBPyConnection
 from topo_tools.core.io import read_reproject_and_clean
 
 
-def main(conn: DuckDBPyConnection, name: str, path: Path) -> None:
+def main(conn: DuckDBPyConnection, name: str, path: Path | str) -> None:
     """Import geodata into DuckDB tables, then clean coverage topology violations."""
     read_reproject_and_clean(conn, name, path)
