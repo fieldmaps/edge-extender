@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-11
+
 ### Added
 
 - `clean`: the fix-stage escalation loop now also rejects a rung if any fid
@@ -106,5 +108,6 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OCHA-DAP/topo-tools-py/releases/tag/v0.1.0
