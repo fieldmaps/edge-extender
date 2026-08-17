@@ -33,7 +33,7 @@ _STEP_TABLES = {
 }
 
 
-def match(  # noqa: C901, PLR0913
+def match(  # noqa: C901, PLR0912, PLR0913
     input_path: str | Path,
     clip_path: str | Path,
     output_path: str | Path | None = None,
@@ -44,11 +44,31 @@ def match(  # noqa: C901, PLR0913
     overwrite: bool = False,
     debug: bool = False,
     step: str | None = None,
+    match_column: str | None = None,
+    parent_match_column: str | None = None,
+    child_match_column: str | None = None,
 ) -> None:
     """Match child polygons to their best-overlapping parent, then extend to fill gaps.
 
     Processes exactly one child file + one parent/clip file per call.
+
+    match_column names one column shared by both layers to use as an exact
+    code join (e.g. a pcode), winning over the spatial plurality pick where
+    the two disagree; parent_match_column/child_match_column do the same
+    with two differently-named columns. match_column is mutually exclusive
+    with the pair. A child whose code has no match falls back to the
+    spatial pick. Both outcomes are recorded as issue rows
+    ('code-mismatch'/'code-fallback') alongside match's usual issues report.
     """
+    if match_column is not None and (parent_match_column or child_match_column):
+        msg = "match_column is mutually exclusive with parent/child_match_column"
+        raise ValueError(msg)
+    if bool(parent_match_column) != bool(child_match_column):
+        msg = "parent_match_column and child_match_column must be given together"
+        raise ValueError(msg)
+    if match_column is not None:
+        parent_match_column = child_match_column = match_column
+
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
@@ -94,7 +114,12 @@ def match(  # noqa: C901, PLR0913
             if s == "inputs":
                 inputs.main(conn, name, input_path, clip_path)
             elif s == "assign":
-                assign_many(conn, name)
+                assign_many(
+                    conn,
+                    name,
+                    parent_match_column=parent_match_column,
+                    child_match_column=child_match_column,
+                )
             elif s == "groups":
                 groups.main(
                     conn,
@@ -108,7 +133,14 @@ def match(  # noqa: C901, PLR0913
             elif s == "stitch":
                 stitch.main(conn, name, debug=debug)
             elif s == "outputs":
-                outputs.main(conn, name, output_path, issues_path, debug=debug)
+                outputs.main(
+                    conn,
+                    name,
+                    output_path,
+                    issues_path,
+                    code_join=bool(parent_match_column and child_match_column),
+                    debug=debug,
+                )
         maybe_export_debug_tables(
             conn, tmp_dir_path, name, step, _STEP_TABLES, debug=debug
         )

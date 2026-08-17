@@ -441,3 +441,101 @@ def test_cli_glob_no_matches(synthetic_parents, tmp_path):
     )
     assert result.exit_code != 0
     assert "no files matched" in result.output
+
+
+def _write_with_code(path, rows):
+    """rows: list of (fid, wkt, pcode)."""
+    values = ", ".join(
+        f"({fid}, ST_GeomFromText('{wkt}'), '{code}')" for fid, wkt, code in rows
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE synth AS
+            SELECT * FROM (VALUES {values}) AS t(id, geom, pcode)
+        """)
+        conn.execute(f"COPY synth TO '{path}'")
+
+
+def test_match_overrides_spatial_and_reports_mismatch(tmp_path):
+    """A child's own file mostly overlaps parent A, but its code says B."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        [(1, "POLYGON((1 0, 10.5 0, 10.5 1, 1 1, 1 0))", "P2")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    mosaic(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        match_column="pcode",
+        overwrite=True,
+    )
+
+    assert output_path.exists()
+    assert issues_path.exists()
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        area = conn.execute(
+            f"SELECT ST_Area(geometry) FROM '{output_path}'"
+        ).fetchone()[0]
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+    # Clipped to parent B's sliver (x:10-10.5), not parent A's larger x:1-3.
+    assert area == pytest.approx(0.5, abs=1e-6)
+    assert kinds == ["code-mismatch"]
+
+
+def test_match_falls_back_when_code_unmatched(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))", "NOPE")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    mosaic(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        match_column="pcode",
+        overwrite=True,
+    )
+
+    assert output_path.exists()
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+    assert kinds == ["code-fallback"]
+
+
+def test_cli_match_help():
+    result = CliRunner().invoke(cli, ["mosaic", "--help"])
+    assert result.exit_code == 0
+    assert "--match-column" in result.output
+    assert "--parent-match-column" in result.output
+    assert "--child-match-column" in result.output

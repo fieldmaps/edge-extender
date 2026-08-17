@@ -27,7 +27,7 @@ _STEP_TABLES = {
 }
 
 
-def mosaic(  # noqa: C901, PLR0912, PLR0913
+def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
     input_paths: str | Path | list[str | Path],
     clip_path: str | Path,
     output_path: str | Path | None = None,
@@ -38,12 +38,32 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
     overwrite: bool = False,
     debug: bool = False,
     step: str | None = None,
+    match_column: str | None = None,
+    parent_match_column: str | None = None,
+    child_match_column: str | None = None,
 ) -> None:
     """Fit one or more already-extended children layers into a new parent/clip layer.
 
     input_paths MAY be a list; output_path is then required, since there's
     no single filename to default from.
+
+    match_column names one column shared by both layers to use as an exact
+    code join (e.g. a pcode), winning over the spatial file-vote pick where
+    the two disagree; parent_match_column/child_match_column do the same
+    with two differently-named columns. match_column is mutually exclusive
+    with the pair. A file with no code matches at all falls back to the
+    spatial pick. Both outcomes are recorded as issue rows
+    ('code-mismatch'/'code-fallback') alongside mosaic's usual issues report.
     """
+    if match_column is not None and (parent_match_column or child_match_column):
+        msg = "match_column is mutually exclusive with parent/child_match_column"
+        raise ValueError(msg)
+    if bool(parent_match_column) != bool(child_match_column):
+        msg = "parent_match_column and child_match_column must be given together"
+        raise ValueError(msg)
+    if match_column is not None:
+        parent_match_column = child_match_column = match_column
+
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
@@ -100,13 +120,25 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
                 load_children(conn, name, paths)
                 load_parent(conn, name, clip_path)
             elif s == "assign":
-                assign_one(conn, name)
+                assign_one(
+                    conn,
+                    name,
+                    parent_match_column=parent_match_column,
+                    child_match_column=child_match_column,
+                )
             elif s == "clip":
                 clip.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
             elif s == "stitch":
                 stitch.main(conn, name, debug=debug)
             elif s == "outputs":
-                outputs.main(conn, name, output_path, issues_path, debug=debug)
+                outputs.main(
+                    conn,
+                    name,
+                    output_path,
+                    issues_path,
+                    code_join=bool(parent_match_column and child_match_column),
+                    debug=debug,
+                )
         maybe_export_debug_tables(
             conn, tmp_dir_path, name, step, _STEP_TABLES, debug=debug
         )

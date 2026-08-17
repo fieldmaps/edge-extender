@@ -66,6 +66,83 @@ def test_cli_help():
     assert result.exit_code == 0
     assert "Match children to parents" in result.output
     assert "Examples:" in result.output
+    assert "--match-column" in result.output
+    assert "--parent-match-column" in result.output
+    assert "--child-match-column" in result.output
+
+
+def test_match_mutually_exclusive_with_pair(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        match(
+            synthetic_children,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            match_column="pcode",
+            parent_match_column="pcode",
+        )
+
+
+def test_match_agrees_with_spatial_is_a_noop(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    """Code agreeing with spatial everywhere must reproduce the default run exactly."""
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        parent_by_child = dict(
+            conn.execute(f"""--sql
+                SELECT c.id, p.id FROM '{synthetic_children}' c, '{synthetic_parents}' p
+                WHERE ST_Intersects(c.geom, p.geom)
+            """).fetchall()
+        )
+    children_with_code = tmp_path / "children_coded.parquet"
+    parents_with_code = tmp_path / "parents_coded.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        conn.execute(f"""--sql
+            COPY (SELECT *, CAST(id AS VARCHAR) AS pcode FROM '{synthetic_parents}')
+            TO '{parents_with_code}'
+        """)
+        rows = ", ".join(
+            f"({fid}, '{parent_by_child.get(fid, 0)}')" for fid in parent_by_child
+        )
+        conn.execute(f"""--sql
+            COPY (
+                SELECT c.*, m.pcode FROM '{synthetic_children}' c
+                JOIN (SELECT * FROM (VALUES {rows}) AS v(id, pcode)) m ON m.id = c.id
+            ) TO '{children_with_code}'
+        """)
+
+    match(
+        children_with_code,
+        parents_with_code,
+        output_path,
+        issues_path,
+        match_column="pcode",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+        kinds = (
+            [
+                row[0]
+                for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+            ]
+            if issues_path.exists()
+            else []
+        )
+    assert ids == [1, 2, 3]
+    assert "code-mismatch" not in kinds
 
 
 def test_match_full_run(synthetic_children, synthetic_parents, tmp_path):

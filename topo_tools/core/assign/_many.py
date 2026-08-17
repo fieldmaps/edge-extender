@@ -10,12 +10,26 @@ from topo_tools.core.duckdb_utils import bbox_columns_sql
 logger = getLogger(__name__)
 
 
-def assign_many(conn: DuckDBPyConnection, name: str) -> None:
+def assign_many(
+    conn: DuckDBPyConnection,
+    name: str,
+    *,
+    parent_match_column: str | None = None,
+    child_match_column: str | None = None,
+) -> None:
     """Assign each child to its plurality-overlap parent; drop and log the rest.
 
     Each child decides independently, so one file's children MAY scatter
     across many different parents, correct for raw/unextended geometry,
     where overshoot can't misassign anything.
+
+    parent_match_column/child_match_column, when both given, make an exact
+    code match (e.g. a shared pcode) win over the spatial plurality pick for
+    any child where the two disagree; a child whose code has no match, or
+    whose code-matched parent it doesn't overlap at all, falls back to the
+    spatial pick. Either way, the winning `assignment_method`
+    ('code'/'spatial_fallback') and a `spatial_agrees` flag land on the
+    output so callers can report disagreements/fallbacks for review.
     """
     # Bbox columns precomputed here, not called inline in the join below:
     # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
@@ -59,7 +73,7 @@ def assign_many(conn: DuckDBPyConnection, name: str) -> None:
 
     # Plurality pick per child, ties broken by lowest parent fid.
     conn.execute(f"""--sql
-        CREATE OR REPLACE TABLE "{name}_02_assign" AS
+        CREATE OR REPLACE TABLE "{name}_02_tmp3" AS
         SELECT child_fid, parent_fid FROM (
             SELECT child_fid, parent_fid,
                    ROW_NUMBER() OVER (
@@ -69,6 +83,50 @@ def assign_many(conn: DuckDBPyConnection, name: str) -> None:
             WHERE shared_area > 0
         ) WHERE rn = 1
     """)
+
+    if parent_match_column and child_match_column:
+        # Code candidate per child, restricted to a parent it overlaps at
+        # all (guards against a stale/wrong code pointing at an unrelated
+        # parent); ties (a code shared by more than one parent) broken by
+        # lowest parent fid.
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{name}_02_tmp4" AS
+            SELECT child_fid, parent_fid FROM (
+                SELECT j.child_fid, j.parent_fid,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY j.child_fid ORDER BY j.parent_fid ASC
+                       ) AS rn
+                FROM (
+                    SELECT c.fid AS child_fid, p.fid AS parent_fid
+                    FROM "{name}_child_01" c
+                    JOIN "{name}_parent_01" p
+                      ON c."{child_match_column}" = p."{parent_match_column}"
+                ) j
+                JOIN "{name}_02_pairs" pr
+                  ON pr.child_fid = j.child_fid
+                 AND pr.parent_fid = j.parent_fid
+                 AND pr.shared_area > 0
+            ) WHERE rn = 1
+        """)
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{name}_02_assign" AS
+            SELECT
+                child_fid,
+                COALESCE(code.parent_fid, spatial.parent_fid) AS parent_fid,
+                CASE WHEN code.parent_fid IS NOT NULL THEN 'code'
+                     ELSE 'spatial_fallback' END AS assignment_method,
+                CASE WHEN code.parent_fid IS NOT NULL
+                     THEN code.parent_fid = spatial.parent_fid END AS spatial_agrees
+            FROM "{name}_02_tmp4" code
+            FULL OUTER JOIN "{name}_02_tmp3" spatial USING (child_fid)
+        """)
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_tmp4"')
+    else:
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{name}_02_assign" AS
+            SELECT * FROM "{name}_02_tmp3"
+        """)
+    conn.execute(f'DROP TABLE IF EXISTS "{name}_02_tmp3"')
 
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_unassigned" AS

@@ -105,6 +105,34 @@ group. This guards against cross-country border overshoot misassigning a
 file by per-child area alone; see `docs/adr/0019-mosaic-per-file-majority-vote.md`
 for why a per-child rule isn't enough and what it was measured to break.
 
+## Code-column join (optional)
+
+Both `assign_many` and `assign_one` accept optional `parent_match_column`/
+`child_match_column` kwargs. `None` (the default) keeps `_02_assign`'s
+schema and values exactly as before, `child_fid`/`parent_fid` only, no
+behavior change. When both are given, the existing spatial result above is
+still always computed (it's needed as the cross-check), alongside an exact
+code join restricted to `(child, parent)` pairs that actually overlap (a
+code match against a non-overlapping parent doesn't count). The code result
+wins whenever one exists; `_02_assign` gains two more columns recording
+which path won:
+
+- `assignment_method`: `'code'` when a code match existed, `'spatial_fallback'`
+  when it fell back to the spatial result.
+- `spatial_agrees`: for `method='code'` rows, whether the spatial result
+  agreed (`True`)/disagreed (`False`) with the code match; `NULL` for
+  `spatial_fallback` rows.
+
+`assign_many` computes this per child (its usual per-child plurality feeds
+the cross-check); `assign_one` computes it per source file (its usual
+per-file majority vote feeds the cross-check, so every child in a
+code-mismatched or code-fallback file shares the same `assignment_method`).
+Neither function derives issues rows itself; that's each calling
+`api.*()`'s job (`kind='code-mismatch'`/`'code-fallback'`, see
+`docs/reference/shared.md`). See `docs/adr/0045` for why code wins on
+disagreement instead of spatial, and why an unmatched code falls back
+instead of dropping the child/file.
+
 ## Comparison
 
 | | `assign-many` | `assign-one` |

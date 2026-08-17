@@ -93,3 +93,6 @@ tools.
   exists and overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `assign`, `clip`, `stitch`,
   `outputs`; any other value MUST raise `ValueError`.
+- `mosaic` MAY accept `match_column`/`parent_match_column`/`child_match_column`
+  to override spatial assignment with an exact code join (see
+  `docs/reference/shared.md`, `docs/explanation/assign.md`).

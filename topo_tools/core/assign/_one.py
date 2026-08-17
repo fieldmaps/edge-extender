@@ -130,7 +130,12 @@ def _build_pairs(
 
 
 def assign_one(
-    conn: DuckDBPyConnection, name: str, *, use_cached_tiles: bool = False
+    conn: DuckDBPyConnection,
+    name: str,
+    *,
+    use_cached_tiles: bool = False,
+    parent_match_column: str | None = None,
+    child_match_column: str | None = None,
 ) -> None:
     """Force every child in a source_file onto that file's single majority-vote parent.
 
@@ -138,6 +143,15 @@ def assign_one(
     independently routed to whichever parent each one individually overlaps
     most, guards against already-extended/overshoot geometry crossing
     borders. Every child in one file lands on one shared parent.
+
+    parent_match_column/child_match_column, when both given, make a
+    per-file code majority (the parent most of the file's children's codes
+    point to, each restricted to a parent it overlaps at all) win over the
+    spatial file-vote winner when the two disagree; a file with no code
+    matches at all falls back to the spatial winner. Same
+    `assignment_method`/`spatial_agrees` reporting as `assign_many`, applied
+    per source_file rather than per child, preserving the
+    one-parent-per-file invariant above.
     """
     _build_pairs(conn, name, use_cached_tiles=use_cached_tiles)
 
@@ -159,16 +173,65 @@ def assign_one(
             FROM "{name}_02_file_votes"
         ) WHERE rn = 1
     """)
+    if parent_match_column and child_match_column:
+        # Per-child code candidate, restricted to a parent it overlaps at
+        # all, then rolled up to a per-file majority (mirrors the spatial
+        # file-vote above), preserving one-parent-per-file.
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{name}_02_tmp3" AS
+            SELECT c.source_file, p.fid AS parent_fid,
+                   COUNT(DISTINCT c.fid) AS n_children
+            FROM "{name}_child_01" c
+            JOIN "{name}_parent_01" p
+              ON c."{child_match_column}" = p."{parent_match_column}"
+            JOIN "{name}_02_pairs" pr
+              ON pr.child_fid = c.fid AND pr.parent_fid = p.fid AND pr.shared_area > 0
+            GROUP BY c.source_file, p.fid
+        """)
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{name}_02_tmp4" AS
+            SELECT source_file, parent_fid FROM (
+                SELECT source_file, parent_fid,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY source_file
+                           ORDER BY n_children DESC, parent_fid ASC
+                       ) AS rn
+                FROM "{name}_02_tmp3"
+            ) WHERE rn = 1
+        """)
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{name}_02_file_final" AS
+            SELECT
+                source_file,
+                COALESCE(code.parent_fid, spatial.parent_fid) AS parent_fid,
+                CASE WHEN code.parent_fid IS NOT NULL THEN 'code'
+                     ELSE 'spatial_fallback' END AS assignment_method,
+                CASE WHEN code.parent_fid IS NOT NULL
+                     THEN code.parent_fid = spatial.parent_fid END AS spatial_agrees
+            FROM "{name}_02_tmp4" code
+            FULL OUTER JOIN "{name}_02_file_winner" spatial USING (source_file)
+        """)
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_tmp3"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_tmp4"')
+        winner_table = f"{name}_02_file_final"
+        extra_cols = ", w.assignment_method, w.spatial_agrees"
+    else:
+        winner_table = f"{name}_02_file_winner"
+        extra_cols = ""
+
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_assign" AS
-        SELECT c.fid AS child_fid, w.parent_fid
+        SELECT c.fid AS child_fid, w.parent_fid{extra_cols}
         FROM "{name}_child_01" c
-        JOIN "{name}_02_file_winner" w ON w.source_file = c.source_file
+        JOIN "{winner_table}" w ON w.source_file = c.source_file
         JOIN "{name}_02_pairs" pr
           ON pr.child_fid = c.fid
          AND pr.parent_fid = w.parent_fid
          AND pr.shared_area > 0
     """)
+    if parent_match_column and child_match_column:
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_file_final"')
+
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_unassigned" AS
         SELECT fid AS child_fid, source_file, geom

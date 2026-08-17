@@ -76,6 +76,47 @@ def gap_issues_sql(
     """
 
 
+def assign_issue_rows_sql(name: str, *, source_file_expr: str = "NULL::VARCHAR") -> str:
+    """Build SQL for `{name}_02_assign`'s code-join issue rows, in the shared schema.
+
+    Only valid when `assign_many`/`assign_one` was called with
+    `parent_match_column`/`child_match_column` (the `assignment_method`/
+    `spatial_agrees` columns those add to `{name}_02_assign` are required
+    here). `source_file_expr` MUST be a real column reference (e.g.
+    `c.source_file`) when the caller's child table carries one, else the
+    default null literal.
+
+    Standalone or as one arm of a `UNION ALL BY NAME` with other issue kinds.
+    """
+    return f"""
+        SELECT 'code-mismatch-' || a.child_fid AS key, 'code-mismatch' AS kind,
+               a.child_fid AS unit_a, NULL::BIGINT AS unit_b, a.parent_fid,
+               'code join picked a different parent than spatial majority' AS reason,
+               NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
+               NULL::DOUBLE AS thinness_ratio,
+               NULL::DOUBLE AS unit_a_area_change_m2,
+               NULL::DOUBLE AS unit_b_area_change_m2,
+               NULL::DOUBLE AS filled_area_m2, FALSE AS fixed,
+               {source_file_expr} AS source_file, c.geom
+        FROM "{name}_02_assign" a
+        JOIN "{name}_child_01" c ON c.fid = a.child_fid
+        WHERE a.assignment_method = 'code' AND a.spatial_agrees IS NOT TRUE
+        UNION ALL BY NAME
+        SELECT 'code-fallback-' || a.child_fid AS key, 'code-fallback' AS kind,
+               a.child_fid AS unit_a, NULL::BIGINT AS unit_b, a.parent_fid,
+               'no matching code; fell back to spatial majority' AS reason,
+               NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
+               NULL::DOUBLE AS thinness_ratio,
+               NULL::DOUBLE AS unit_a_area_change_m2,
+               NULL::DOUBLE AS unit_b_area_change_m2,
+               NULL::DOUBLE AS filled_area_m2, FALSE AS fixed,
+               {source_file_expr} AS source_file, c.geom
+        FROM "{name}_02_assign" a
+        JOIN "{name}_child_01" c ON c.fid = a.child_fid
+        WHERE a.assignment_method = 'spatial_fallback'
+    """
+
+
 def has_gaps(
     conn: DuckDBPyConnection, table: str, *, gap_maximum_width: float = SNAP_TOLERANCE
 ) -> bool:

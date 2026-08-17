@@ -424,3 +424,117 @@ def test_cli_single_file_unchanged(synthetic_children, synthetic_parents, tmp_pa
             SELECT ST_Area(geometry) FROM '{output_path}' WHERE id = 1
         """).fetchone()[0]
     assert area == pytest.approx(_PARENT_A_AREA, abs=1e-6)
+
+
+def _write_with_code(path, rows):
+    """rows: list of (fid, wkt, pcode)."""
+    values = ", ".join(
+        f"({fid}, ST_GeomFromText('{wkt}'), '{code}')" for fid, wkt, code in rows
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE synth AS
+            SELECT * FROM (VALUES {values}) AS t(id, geom, pcode)
+        """)
+        conn.execute(f"COPY synth TO '{path}'")
+
+
+def test_match_overrides_spatial_and_reports_mismatch(tmp_path):
+    """A child mostly inside parent A but coded to parent B ends up clipped to B."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        # Overlaps parent A (area 2) far more than parent B (area 0.5), but
+        # its code points to B, which it does overlap, so code wins.
+        [(1, "POLYGON((1 0, 10.5 0, 10.5 1, 1 1, 1 0))", "P2")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    clip(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        match_column="pcode",
+        overwrite=True,
+    )
+
+    assert output_path.exists()
+    assert issues_path.exists()
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        area = conn.execute(
+            f"SELECT ST_Area(geometry) FROM '{output_path}'"
+        ).fetchone()[0]
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+    # Clipped to parent B (only the child's x:10-10.5 sliver survives), not
+    # parent A, where clipping would have kept the much larger x:1-3 slice.
+    assert area == pytest.approx(0.5, abs=1e-6)
+    assert kinds == ["code-mismatch"]
+
+
+def test_match_falls_back_when_code_unmatched(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))", "NOPE")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    clip(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        match_column="pcode",
+        overwrite=True,
+    )
+
+    assert output_path.exists()
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+    assert kinds == ["code-fallback"]
+
+
+def test_match_mutually_exclusive_with_pair(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        clip(
+            synthetic_children,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            match_column="pcode",
+            parent_match_column="pcode",
+        )
+
+
+def test_cli_match_help():
+    result = CliRunner().invoke(cli, ["clip", "--help"])
+    assert result.exit_code == 0
+    assert "--match-column" in result.output
+    assert "--parent-match-column" in result.output
+    assert "--child-match-column" in result.output

@@ -80,7 +80,8 @@ CLI maps flags/env vars onto those same kwargs 1:1.
   described in `docs/reference/stitch.md`.
 - `clip` performs no topology hard gate at all: it clips a child to its
   assigned parent's geometry one `parent_fid` at a time and does not
-  itself validate whole-layer coverage.
+  itself validate whole-layer coverage. It MAY still produce an issues
+  report when a match column is supplied (see below).
 - `change` performs no topology hard gate at all; it is a read-only
   comparison between two inputs, not a fix.
 - `detect` performs no topology hard gate at all; it is a read-only
@@ -102,3 +103,27 @@ other side of an overlap).
 A tool MUST NOT write an issues file at all when the run produced zero
 issues rows; if a file already exists at the destination path from a
 previous run, it MUST be deleted rather than left in place.
+
+## Code-based assignment override
+
+`match`, `mosaic`, and standalone `clip` all MAY accept a `match_column`
+name (same column on both layers) or a `parent_match_column`/
+`child_match_column` pair (different names), mutually exclusive with each
+other; supplying only one of the pair MUST raise `ValueError`. When given,
+`core/assign`'s exact code join wins over the
+default spatial-overlap assignment wherever a code match exists, even when
+it disagrees with the spatial result, and falls back to the spatial result
+when a child's (or, for `assign-one`, a file's) code has no
+overlapping-parent match at all (see `docs/adr/0045`,
+`docs/explanation/assign.md`). Both outcomes MUST be recorded as issues
+rows, reusing the schema above:
+
+- `kind='code-mismatch'`: the code match won but disagreed with the spatial
+  result. `unit_a` MUST hold the child's own fid, `parent_fid` the code
+  match's parent.
+- `kind='code-fallback'`: no code match existed; the spatial result was
+  used instead. `unit_a` and `parent_fid` MUST be populated the same way.
+
+This gives standalone `clip` its only issues-report capability: it produces
+one only when `match_column`/`parent_match_column`/`child_match_column` is
+supplied and it yields at least one row (see `docs/reference/clip.md`).

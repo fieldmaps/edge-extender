@@ -79,3 +79,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - The CLI additionally accepts `--input`/`--output` (each repeatable and
   comma-separable), appending more children/output pairs beyond the first
   positional pair; `--name` is required whenever `--input` is given.
+- `clip` MAY accept `match_column`/`parent_match_column`/`child_match_column`
+  to override spatial assignment with an exact code join (see
+  `docs/reference/shared.md`, `docs/explanation/assign.md`); doing so gives
+  `clip` its only issues report, `issues_paths` (same shape as
+  `output_paths`, defaulting to each output path with an `_issues` suffix).

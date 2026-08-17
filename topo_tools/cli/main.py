@@ -471,6 +471,28 @@ def change(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
+@click.option(
+    "--match-column",
+    envvar="MATCH_COLUMN",
+    default=None,
+    help=(
+        "Column name shared by both layers, used as an exact code join "
+        "(e.g. a pcode) that wins over spatial overlap on disagreement. "
+        "Mutually exclusive with --parent-match-column/--child-match-column."
+    ),
+)
+@click.option(
+    "--parent-match-column",
+    envvar="PARENT_MATCH_COLUMN",
+    default=None,
+    help="Parent-side code column, when it's named differently than the child's.",
+)
+@click.option(
+    "--child-match-column",
+    envvar="CHILD_MATCH_COLUMN",
+    default=None,
+    help="Child-side code column, when it's named differently than the parent's.",
+)
 def match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -481,6 +503,9 @@ def match(  # noqa: PLR0913, PLR0917
     debug: bool,  # noqa: FBT001
     tmp_dir: str | None,
     step: str | None,
+    match_column: str | None,
+    parent_match_column: str | None,
+    child_match_column: str | None,
 ) -> None:
     r"""Match children to parents by largest overlap, then extend to fill gaps.
 
@@ -494,6 +519,10 @@ def match(  # noqa: PLR0913, PLR0917
       \b
       # Fit admin3 into admin2 groups, each cleaned against its own parent
       topo-tools match adm3.gpkg adm2.gpkg adm3_matched.gpkg
+
+      \b
+      # Prefer an existing pcode join over spatial overlap where they disagree
+      topo-tools match adm3.gpkg adm2.gpkg --match-column pcode
     """
     logger.info("--debug=%s", debug)
     try:
@@ -507,8 +536,11 @@ def match(  # noqa: PLR0913, PLR0917
             overwrite=overwrite,
             debug=debug,
             step=step,
+            match_column=match_column,
+            parent_match_column=parent_match_column,
+            child_match_column=child_match_column,
         )
-    except (FileExistsError, RuntimeError) as e:
+    except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -557,6 +589,28 @@ def match(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
+@click.option(
+    "--match-column",
+    envvar="MATCH_COLUMN",
+    default=None,
+    help=(
+        "Column name shared by both layers, used as an exact code join "
+        "(e.g. a pcode) that wins over spatial overlap on disagreement. "
+        "Mutually exclusive with --parent-match-column/--child-match-column."
+    ),
+)
+@click.option(
+    "--parent-match-column",
+    envvar="PARENT_MATCH_COLUMN",
+    default=None,
+    help="Parent-side code column, when it's named differently than the child's.",
+)
+@click.option(
+    "--child-match-column",
+    envvar="CHILD_MATCH_COLUMN",
+    default=None,
+    help="Child-side code column, when it's named differently than the parent's.",
+)
 def mosaic(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -568,6 +622,9 @@ def mosaic(  # noqa: PLR0913, PLR0917
     debug: bool,  # noqa: FBT001
     tmp_dir: str | None,
     step: str | None,
+    match_column: str | None,
+    parent_match_column: str | None,
+    child_match_column: str | None,
 ) -> None:
     r"""Fit an already-extended children layer into a new parent/clip layer.
 
@@ -589,6 +646,10 @@ def mosaic(  # noqa: PLR0913, PLR0917
       # and/or comma-separated)
       topo-tools mosaic afg.parquet world_adm0.geojson out.parquet \
         --input ago.parquet,are.parquet
+
+      \b
+      # Prefer an existing pcode join over spatial overlap where they disagree
+      topo-tools mosaic adm3_extended.parquet adm0_new.geojson --match-column pcode
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -614,6 +675,9 @@ def mosaic(  # noqa: PLR0913, PLR0917
             overwrite=overwrite,
             debug=debug,
             step=step,
+            match_column=match_column,
+            parent_match_column=parent_match_column,
+            child_match_column=child_match_column,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -755,6 +819,25 @@ def stitch(  # noqa: PLR0913, PLR0917
     ),
 )
 @click.option(
+    "--issues-file",
+    envvar="ISSUES_FILE",
+    default=None,
+    help=(
+        "Issues report path, only used with --match-column/--parent-match-column. "
+        'Defaults to OUTPUT_FILE with an "_issues" suffix.'
+    ),
+)
+@click.option(
+    "--issues",
+    "extra_issues",
+    envvar="EXTRA_ISSUES",
+    multiple=True,
+    help=(
+        "Additional issues report beyond --issues-file, paired by order with "
+        "--input/--output [may be repeated, and each value MAY be comma-separated]."
+    ),
+)
+@click.option(
     "--name",
     envvar="NAME",
     default=None,
@@ -785,18 +868,45 @@ def stitch(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
+@click.option(
+    "--match-column",
+    envvar="MATCH_COLUMN",
+    default=None,
+    help=(
+        "Column name shared by both layers, used as an exact code join "
+        "(e.g. a pcode) that wins over spatial overlap on disagreement. "
+        "Mutually exclusive with --parent-match-column/--child-match-column."
+    ),
+)
+@click.option(
+    "--parent-match-column",
+    envvar="PARENT_MATCH_COLUMN",
+    default=None,
+    help="Parent-side code column, when it's named differently than the child's.",
+)
+@click.option(
+    "--child-match-column",
+    envvar="CHILD_MATCH_COLUMN",
+    default=None,
+    help="Child-side code column, when it's named differently than the parent's.",
+)
 def clip(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
     extra_inputs: tuple[str, ...],
     extra_outputs: tuple[str, ...],
+    issues_file: str | None,
+    extra_issues: tuple[str, ...],
     name: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
     tmp_dir: str | None,
     step: str | None,
+    match_column: str | None,
+    parent_match_column: str | None,
+    child_match_column: str | None,
 ) -> None:
     r"""Assign each child to its parent, then clip it to that parent's geometry.
 
@@ -820,6 +930,10 @@ def clip(  # noqa: PLR0913, PLR0917
       topo-tools clip afg.parquet world_adm0.geojson afg_out.parquet \
         --input ago.parquet,are.parquet --output ago_out.parquet,are_out.parquet \
         --name portolan_batch
+
+      \b
+      # Prefer an existing pcode join over spatial overlap where they disagree
+      topo-tools clip children.parquet adm1.geojson --match-column pcode
     """
     logger.info("--debug=%s", debug)
     if extra_inputs and output_file is None:
@@ -828,6 +942,7 @@ def clip(  # noqa: PLR0913, PLR0917
 
     extra_inputs_split = _split_commas(extra_inputs)
     extra_outputs_split = _split_commas(extra_outputs)
+    extra_issues_split = _split_commas(extra_issues)
     if extra_inputs_split:
         children: str | Path | list[str | Path] = [
             input_file,
@@ -837,21 +952,29 @@ def clip(  # noqa: PLR0913, PLR0917
             output_file,
             *extra_outputs_split,
         ]
+        issues: str | Path | list[str | Path] | None = (
+            [issues_file, *extra_issues_split] if issues_file is not None else None
+        )
     else:
         children = input_file
         outputs = Path(output_file) if output_file is not None else None
+        issues = Path(issues_file) if issues_file is not None else None
 
     try:
         _clip(
             children,
             clip_file,
             outputs,
+            issues,
             name=name,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,
             debug=debug,
             step=step,
+            match_column=match_column,
+            parent_match_column=parent_match_column,
+            child_match_column=child_match_column,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
