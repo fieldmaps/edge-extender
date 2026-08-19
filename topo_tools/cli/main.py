@@ -10,9 +10,12 @@ from topo_tools.api import change as _change
 from topo_tools.api import clean as _clean
 from topo_tools.api import clip as _clip
 from topo_tools.api import detect as _detect
+from topo_tools.api import dissolve as _dissolve
 from topo_tools.api import extend as _extend
 from topo_tools.api import match as _match
 from topo_tools.api import mosaic as _mosaic
+from topo_tools.api import schema_apply as _schema_apply
+from topo_tools.api import schema_propose as _schema_propose
 from topo_tools.api import stitch as _stitch
 from topo_tools.core.change._constants import TAU_MATCH_DEFAULT, TAU_SAME_DEFAULT
 
@@ -162,6 +165,92 @@ def detect(  # noqa: PLR0913, PLR0917
             step=step,
         )
     except (FileExistsError, RuntimeError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command()
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--group-by",
+    "group_by",
+    envvar="GROUP_BY",
+    required=True,
+    multiple=True,
+    help="Column name(s) to group by [may be repeated, and each value MAY be "
+    "comma-separated].",
+)
+@click.option(
+    "--issues-file",
+    envvar="ISSUES_FILE",
+    default=None,
+    help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
+)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "dissolve", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def dissolve(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    output_file: str | None,
+    group_by: tuple[str, ...],
+    issues_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Aggregate a polygon layer into a coarser one by grouping on attribute columns.
+
+    OUTPUT_FILE defaults to INPUT_FILE with a "_dissolved" suffix if omitted.
+    Every column not in --group-by is kept via any_value if it's actually
+    constant within every group, dropped (with a warning) if not. A NULL
+    value in a --group-by column forms its own group like any other value,
+    matching GDAL's `combine --group-by`.
+
+    \b
+    Examples:
+      # Dissolve admin3 into admin2; ancestor columns constant per group
+      # (e.g. adm1_name) are kept automatically, adm3's own columns are
+      # dropped automatically since they vary within each admin2 group
+      topo-tools dissolve adm3.geojson --group-by adm2_pcode
+    """
+    logger.info("--debug=%s", debug)
+    try:
+        _dissolve(
+            input_file,
+            Path(output_file) if output_file is not None else None,
+            Path(issues_file) if issues_file is not None else None,
+            group_by=_split_commas(group_by),
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
 
 
@@ -784,6 +873,162 @@ def stitch(  # noqa: PLR0913, PLR0917
             resolved_input,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command(name="schema-propose")
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("target_schema_file", envvar="TARGET_SCHEMA_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--own-level",
+    envvar="OWN_LEVEL",
+    type=int,
+    default=None,
+    help="This file's own admin level (e.g. 3 for an admin3 file). Anchors "
+    "the finest column in a validated nesting chain to a concrete level; "
+    "omit to leave every level in that chain as a relative placeholder for "
+    "review.",
+)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "propose", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def schema_propose(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    target_schema_file: str,
+    output_file: str | None,
+    own_level: int | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Propose a source-column -> target-schema crosswalk for one input file.
+
+    TARGET_SCHEMA_FILE is a YAML config of canonical target fields (see
+    docs/examples/target-schemas/cod-ab.yaml for an example). OUTPUT_FILE
+    defaults to INPUT_FILE with a "_crosswalk.json" name if omitted. Never
+    renames anything itself; review/edit the crosswalk, then run
+    schema-apply.
+
+    \b
+    Examples:
+      # Basic run, output name chosen automatically
+      topo-tools schema-propose example.geojson target-schema.yaml
+
+      \b
+      # Anchor this file's own (finest) admin level
+      topo-tools schema-propose example.geojson target-schema.yaml --own-level 3
+    """
+    logger.info("--own-level=%s --debug=%s", own_level, debug)
+    try:
+        _schema_propose(
+            input_file,
+            target_schema_file,
+            Path(output_file) if output_file is not None else None,
+            own_level=own_level,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command(name="schema-apply")
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument("crosswalk_file", envvar="CROSSWALK_FILE")
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "rename", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def schema_apply(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    crosswalk_file: str,
+    output_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Rename/drop columns per a crosswalk from schema-propose (possibly edited).
+
+    CROSSWALK_FILE is the JSON crosswalk schema-propose wrote (or a
+    hand-edited copy of it). Raises if the crosswalk's columns don't
+    exactly match INPUT_FILE's, catching a stale crosswalk or wrong input
+    file. OUTPUT_FILE defaults to INPUT_FILE with a "_mapped" suffix if
+    omitted.
+
+    \b
+    Examples:
+      # Basic run, output name chosen automatically
+      topo-tools schema-apply example.geojson crosswalk.json
+
+      \b
+      # Explicit output
+      topo-tools schema-apply example.gpkg crosswalk.json example_mapped.gpkg
+    """
+    logger.info("--debug=%s", debug)
+    try:
+        _schema_apply(
+            input_file,
+            crosswalk_file,
+            Path(output_file) if output_file is not None else None,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,

@@ -6,7 +6,12 @@ readme = "README.md"
 license = "MIT"
 authors = [{ name = "fieldmaps.io" }]
 requires-python = ">=3.10"
-dependencies = ["click", "duckdb>=1.5.5", "psutil"]
+dependencies = [
+    "click",
+    "duckdb>=1.5.5",
+    "psutil",
+    "pyyaml>=6.0.3",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -198,6 +203,19 @@ id = "core-units-is-leaf"
 name = "core.units must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.units"]
+forbidden_modules = [
+    "topo_tools.core.extend",
+    "topo_tools.core.match",
+    "topo_tools.core.clean",
+    "topo_tools.core.change",
+    "topo_tools.core.mosaic",
+]
+
+[[tool.importlinter.contracts]]
+id = "core-dissolve-is-leaf"
+name = "core.dissolve must not depend on any tool package"
+type = "forbidden"
+source_modules = ["topo_tools.core.dissolve"]
 forbidden_modules = [
     "topo_tools.core.extend",
     "topo_tools.core.match",

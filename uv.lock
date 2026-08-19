@@ -544,6 +544,7 @@ dependencies = [
     { name = "click" },
     { name = "duckdb" },
     { name = "psutil" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -559,6 +560,7 @@ requires-dist = [
     { name = "click" },
     { name = "duckdb", specifier = ">=1.5.5" },
     { name = "psutil" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [package.metadata.requires-dev]

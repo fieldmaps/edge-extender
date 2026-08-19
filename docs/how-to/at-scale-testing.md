@@ -30,3 +30,17 @@ session scratchpad or `/tmp`), never back into `portolan/`.
 timing/memory numbers from Philippines admin3 (`v02`->`v03`), Ethiopia
 admin3 (`v01`->`v04`), and Ukraine admin3 (`v01`->`v05`) runs, plus a
 `--link-by-code` footgun found on the Philippines pair.
+`docs/explanation/dissolve.md`'s own "Portolan-scale profiling" section has
+a global admin4->admin3 run.
+
+## Prefer the catalog's own GeoParquet over a freshly-converted GDB export
+
+If a global/combined export (e.g. an `.gdb.zip`) exists outside the
+catalog for the same content, use the catalog's own per-country/per-level
+GeoParquet instead for topology-sensitive testing. An ad hoc
+`gdal vector convert` from a zipped FileGDB (OpenFileGDB driver) was found
+to introduce real topology defects (`has_invalid_edges()` true) not present
+in the canonical portolan GeoParquet of the same 213,503-row dataset,
+likely from OGR's `organizePolygons()` part-reassembly heuristic on
+many-part multipolygons (see `docs/explanation/dissolve.md`'s profiling
+section for the full comparison).

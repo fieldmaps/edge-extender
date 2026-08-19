@@ -165,6 +165,11 @@ def spawn_worker(target: Callable, args: tuple) -> tuple[int | None, str | None]
     return process.exitcode, err
 
 
+def quote_identifier(name: str) -> str:
+    """Double-quote a SQL identifier, escaping any embedded double-quote."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def bbox_columns_sql(geom_expr: str) -> str:
     """Build a bbox column list, to precompute once rather than inline in a JOIN."""
     return (

@@ -4,21 +4,24 @@
 
 `topo-tools` is a Python package of DuckDB-powered geospatial topology utilities,
 `pip install`-able and importable, mirroring the organization of the sister JS app
-at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships eight
+at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships eleven
 tools, all used for improving administrative boundary datasets and matching
 sub-national boundaries to national boundaries (import-linter contracts
 governing which tool may depend on which are in `docs/reference/shared.md`).
-Four are primitives, each standalone AND reused internally by the composite
+Five are primitives, each standalone AND reused internally by the composite
 tools below them:
 
 - **extend**: extends polygon boundaries outward using Voronoi diagrams, producing a complete coverage layer that fills gaps (coastlines, disputed areas, water bodies).
 - **clip**: assigns each child to its parent (always `assign-one`), then clips it to that parent's geometry, one `parent_fid` at a time in its own subprocess; the children role MAY span multiple files sharing one parent load. See `docs/explanation/clip.md`.
 - **stitch**: closes seams in an already-tiled layer with one whole-table `ST_CoverageClean` pass. See `docs/explanation/stitch.md`.
 - **detect**: scans a single polygon layer for gap/overlap coverage defects and reports them, without fixing anything. See `docs/explanation/detect.md`.
+- **dissolve**: aggregates a polygon layer into a coarser one by grouping on attribute columns and unioning geometry per group, auto-keeping every other column that's constant per group and dropping the rest. See `docs/explanation/dissolve.md`.
 - **match**: `assign-many` → per-group `extend` (own subprocess) → batched `clip` → `stitch`, fitting a child layer into a coarser parent/clip layer (e.g. admin4 into admin0). See `docs/explanation/match.md`.
 - **mosaic**: `assign-one` → `clip` → `stitch`, fitting an already-extended child layer (a prior `extend()` output) into a new/different parent/clip layer, skipping Voronoi extension entirely. See `docs/explanation/mosaic.md`.
 - **clean**: `detect` → fixes the reported coverage defects (gaps, overlaps) with `ST_CoverageClean`, reporting the fix outcome in the issues file for manual review. See `docs/explanation/clean.md`.
 - **change**: compares an old/new polygon layer pair and classifies every unit (unchanged/renamed/modified/relocated/split/merge/complex/created/removed) via spatial overlap and optional code/name identity linking; writes a tabular changelog plus a colored spatial overlay layer. See `docs/explanation/change.md`.
+- **schema-propose**: proposes a source-column → target-schema crosswalk (exact/alias/pattern matching, plus cardinality/nesting-based admin-level inference for embedded ancestor columns), deterministically, no LLM; never renames anything itself. See `docs/explanation/schema_propose.md`.
+- **schema-apply**: renames/drops columns per a crosswalk from `schema-propose` (likely hand-edited first). See `docs/explanation/schema_apply.md`.
 
 ## Deployment Targets
 
@@ -39,7 +42,7 @@ mechanism between stages (per-group subprocesses inside `match` are the one
 exception, see `docs/explanation/match.md`). Three layers, each with a specific job
 (mirroring `geoparquet-io`'s `core`/`api`/`cli` split):
 
-- `topo_tools/core/{extend,assign,clip,stitch,detect,match,mosaic,clean,change}/`:
+- `topo_tools/core/{extend,assign,clip,stitch,detect,dissolve,match,mosaic,clean,change}/`:
   stage implementations. `core.match`/`core.mosaic` call
   `core.clip`/`core.stitch` stage functions directly (not through their
   own `api.*()`), the same pattern `core.match` uses to call
@@ -48,10 +51,11 @@ exception, see `docs/explanation/match.md`). Three layers, each with a specific 
   `docs/adr/0028`). `core.assign` has no `api.*()`/CLI pipeline of its
   own, so it's called one layer up instead, directly from `api.mosaic`/
   `api.clip`/`api.match`. `core.assign`/`core.clip`/`core.stitch`/
-  `core.detect` are themselves neutral leaves, alongside `core.constants`/
-  `core.coverage`/`core.io`/`core.duckdb_utils`/`core.units`; every tool
-  package may import any of these nine, none of them may import back.
-- `topo_tools/api/{extend,clip,stitch,detect,match,mosaic,clean,change}.py`:
+  `core.detect`/`core.dissolve` are themselves neutral leaves, alongside
+  `core.constants`/`core.coverage`/`core.io`/`core.duckdb_utils`/
+  `core.units`; every tool package may import any of these ten, none of
+  them may import back.
+- `topo_tools/api/{extend,clip,stitch,detect,dissolve,match,mosaic,clean,change}.py`:
   public API functions; each chains its own tool's stages for exactly one
   file (or file pair) per call, except `mosaic`'s and `clip`'s children
   role, which MAY span multiple files (see `docs/reference/mosaic.md`,
@@ -140,6 +144,9 @@ uv run topo-tools clip children.parquet parents.geojson
 uv run topo-tools stitch tiled.geojson
 uv run topo-tools detect example.geojson
 
+# Run the dissolve tool (aggregate a layer into a coarser one by grouping on columns)
+uv run topo-tools dissolve admin3.geojson --group-by adm2_pcode,adm1_pcode
+
 # Run the clean tool (detect, then fix gaps+overlaps, reporting the outcome in the issues file)
 uv run topo-tools clean example.geojson
 
@@ -182,6 +189,6 @@ file (or an old/new comparison pair, for `change`) from the catalog.
 
 - `docs/tutorials/{tool}.md`: GDAL-style getting-started examples per tool
 - `docs/reference/{tool}.md`: behavior contract per tool (`shared.md` for common settings/gates)
-- `docs/explanation/{tool}.md`: stage-by-stage detail for `extend`, `topology`, `assign`, `clip`, `stitch`, `detect`, `match`, `mosaic`, `clean`, `change`; notable: `topology.md` has the SPATIAL_JOIN memory bug, `performance.md` has thread-scaling benchmarks + the RTREE experiment, `voronoi-memory.md` has per-file resampling distance and memory ceilings for `phl_admin3`/`idn_admin3`, `match.md` has the `check_gaps` caveat
+- `docs/explanation/{tool}.md`: stage-by-stage detail for `extend`, `topology`, `assign`, `clip`, `stitch`, `detect`, `dissolve`, `match`, `mosaic`, `clean`, `change`; notable: `topology.md` has the SPATIAL_JOIN memory bug, `performance.md` has thread-scaling benchmarks + the RTREE experiment, `voronoi-memory.md` has per-file resampling distance and memory ceilings for `phl_admin3`/`idn_admin3`, `match.md` has the `check_gaps` caveat
 - `docs/how-to/`: `publishing.md` (PyPI release via OIDC), `verify-duckdb-function.md` (DuckDB/spatial function lookup), `at-scale-testing.md` (portolan catalog layout, picking a test file/pair)
 - `docs/adr/README.md`: how to decide ADR vs. `docs/explanation/` vs. CLAUDE.md's Key Patterns; `docs/adr/` itself holds the decision records
