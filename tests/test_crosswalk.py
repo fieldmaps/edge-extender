@@ -56,18 +56,27 @@ def structural_hierarchy_input(tmp_path):
             "Province One",
             "PU1",
             "Zone Alpha",
-            "ZU1",
+            "PU1ZU1",
             "1",
             "1.5",
             "2.5",
         ),
-        (_unit_square(1), "Province One", "PU1", "Zone Beta", "ZU2", "2", "1.5", "2.5"),
+        (
+            _unit_square(1),
+            "Province One",
+            "PU1",
+            "Zone Beta",
+            "PU1ZU2",
+            "2",
+            "1.5",
+            "2.5",
+        ),
         (
             _unit_square(2),
             "Province Two",
             "PU2",
             "Zone Gamma",
-            "ZU3",
+            "PU2ZU3",
             "3",
             "1.5",
             "2.5",
@@ -77,7 +86,7 @@ def structural_hierarchy_input(tmp_path):
             "Province Two",
             "PU2",
             "Zone Delta",
-            "ZU4",
+            "PU2ZU4",
             "4",
             "1.5",
             "2.5",
@@ -131,9 +140,9 @@ def test_end_to_end_writes_crosswalk_and_mapped_output(
     )
 
     rows = _crosswalk_rows(crosswalk_out)
-    assert rows["province"]["target_column"] == ""
+    assert rows["province"]["target_column"] == "adm0_name"
     assert rows["province"]["note"] == ""
-    assert rows["prov_uid"]["target_column"] == ""
+    assert rows["prov_uid"]["target_column"] == "adm0_pcode"
     assert rows["prov_uid"]["note"] == ""
     assert rows["zonesante"]["target_column"] == "adm1_name"
     assert rows["zs_uid"]["target_column"] == "adm1_pcode"
@@ -149,7 +158,13 @@ def test_end_to_end_writes_crosswalk_and_mapped_output(
         values = conn.execute(
             f"SELECT adm1_name FROM '{mapped_out}' ORDER BY adm1_pcode"
         ).fetchall()
-    assert columns == {"adm1_name", "adm1_pcode", "geometry"}
+    assert columns == {
+        "adm0_name",
+        "adm0_pcode",
+        "adm1_name",
+        "adm1_pcode",
+        "geometry",
+    }
     assert values == [
         ("Zone Alpha",),
         ("Zone Beta",),

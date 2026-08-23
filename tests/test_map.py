@@ -62,10 +62,10 @@ def chain_input(tmp_path):
     """2-level pcode chain, a name column, a non-nesting code, an unmatched column."""
     path = tmp_path / "chain.parquet"
     rows = [
-        (_unit_square(0), "R0", "R1", "D1", "Alpha", "Miscellaneous One"),
-        (_unit_square(1), "R0", "R1", "D2", "Alpha", "Miscellaneous Two"),
-        (_unit_square(2), "R0", "R2", "D1", "Beta", "Miscellaneous Three"),
-        (_unit_square(3), "R0", "R2", "D2", "Beta", "Miscellaneous One"),
+        (_unit_square(0), "R0", "R0-1", "R0X1", "Alpha", "Miscellaneous One"),
+        (_unit_square(1), "R0", "R0-1", "R0X2", "Alpha", "Miscellaneous Two"),
+        (_unit_square(2), "R0", "R0-2", "R0X1", "Beta", "Miscellaneous Three"),
+        (_unit_square(3), "R0", "R0-2", "R0X2", "Beta", "Miscellaneous One"),
     ]
     _write_table(
         path,
@@ -114,7 +114,7 @@ def test_code_and_name_tiers(chain_input, chain_schema, tmp_path):
     assert rows["adm1_name"]["note"] == ""
     assert rows["adm1_name"]["unique_count"] == "2"
     assert rows["decoy_code"]["target_column"] == ""
-    assert "doesn't fit chain" in rows["decoy_code"]["note"]
+    assert rows["decoy_code"]["note"] == "ambiguous, level 1"
     assert rows["notes"]["target_column"] == ""
     assert rows["notes"]["note"] == ""
 
@@ -156,7 +156,7 @@ def test_output_ordering_level_desc_name_before_code_unmatched_last(
 
     with out.open(newline="") as f:
         ordered = [row["source_column"] for row in csv.DictReader(f)]
-    assert ordered == ["adm1_name", "adm1_pcode", "adm0_pcode", "decoy_code", "notes"]
+    assert ordered == ["adm1_name", "adm1_pcode", "decoy_code", "adm0_pcode", "notes"]
 
 
 def test_target_schema_defaults_to_bundled_cod_ab(tmp_path):
@@ -272,10 +272,10 @@ def test_constant_bare_letter_code_reclassified(tmp_path):
 def test_name_bracket_group_numbers_multiple_name_candidates(tmp_path):
     path = tmp_path / "tie.parquet"
     rows = [
-        (_unit_square(0), "R0", "R1", "Alpha", "TypeX"),
-        (_unit_square(1), "R0", "R1", "Alpha", "TypeX"),
-        (_unit_square(2), "R0", "R2", "Beta", "TypeY"),
-        (_unit_square(3), "R0", "R2", "Beta", "TypeY"),
+        (_unit_square(0), "R0", "R0R1", "Alpha", "TypeX"),
+        (_unit_square(1), "R0", "R0R1", "Alpha", "TypeX"),
+        (_unit_square(2), "R0", "R0R2", "Beta", "TypeY"),
+        (_unit_square(3), "R0", "R0R2", "Beta", "TypeY"),
     ]
     _write_table(
         path, ["geom", "adm0_pcode", "adm1_pcode", "adm1_name", "tied_name"], rows
@@ -296,10 +296,10 @@ def test_name_bracket_group_numbers_multiple_name_candidates(tmp_path):
 def test_admin_level_zero_never_resolved(tmp_path):
     path = tmp_path / "level_zero.parquet"
     rows = [
-        (_unit_square(0), "MG", "Madagascar", "R1", "Alpha"),
-        (_unit_square(1), "MG", "Madagascar", "R1", "Alpha"),
-        (_unit_square(2), "MG", "Madagascar", "R2", "Beta"),
-        (_unit_square(3), "MG", "Madagascar", "R2", "Beta"),
+        (_unit_square(0), "MG", "Madagascar", "MGR1", "Alpha"),
+        (_unit_square(1), "MG", "Madagascar", "MGR1", "Alpha"),
+        (_unit_square(2), "MG", "Madagascar", "MGR2", "Beta"),
+        (_unit_square(3), "MG", "Madagascar", "MGR2", "Beta"),
     ]
     _write_table(
         path, ["geom", "adm0_pcode", "adm0_name", "adm1_pcode", "adm1_name"], rows
@@ -326,10 +326,10 @@ def test_admin_level_zero_never_resolved(tmp_path):
 def test_exact_bijective_match_wins_over_looser_function_match(tmp_path):
     path = tmp_path / "exact_match.parquet"
     rows = [
-        (_unit_square(0), "R0", "R1", "Alpha", "Group1"),
-        (_unit_square(1), "R0", "R2", "Beta", "Group1"),
-        (_unit_square(2), "R0", "R3", "Gamma", "Group2"),
-        (_unit_square(3), "R0", "R4", "Delta", "Group2"),
+        (_unit_square(0), "R0", "R0R1", "Alpha", "Group1"),
+        (_unit_square(1), "R0", "R0R2", "Beta", "Group1"),
+        (_unit_square(2), "R0", "R0R3", "Gamma", "Group2"),
+        (_unit_square(3), "R0", "R0R4", "Delta", "Group2"),
     ]
     _write_table(
         path,
@@ -347,17 +347,16 @@ def test_exact_bijective_match_wins_over_looser_function_match(tmp_path):
     rows_out = _crosswalk(out)
     assert rows_out["adm1_name"]["target_column"] == "level1_name"
     assert rows_out["region_group"]["target_column"] == ""
-    assert "adm1_name" in rows_out["region_group"]["note"]
-    assert rows_out["region_group"]["note"].startswith("ambiguous")
+    assert rows_out["region_group"]["note"] == "supplemental, superset of level 1"
 
 
 def test_code_bracket_group_numbers_bijective_code_companions(tmp_path):
     path = tmp_path / "code_companions.parquet"
     rows = [
-        (_unit_square(0), "R0", "R1", "ALT1"),
-        (_unit_square(1), "R0", "R1", "ALT1"),
-        (_unit_square(2), "R0", "R2", "ALT2"),
-        (_unit_square(3), "R0", "R2", "ALT2"),
+        (_unit_square(0), "R0", "R0R1", "R0ALT1"),
+        (_unit_square(1), "R0", "R0R1", "R0ALT1"),
+        (_unit_square(2), "R0", "R0R2", "R0ALT2"),
+        (_unit_square(3), "R0", "R0R2", "R0ALT2"),
     ]
     _write_table(path, ["geom", "adm0_pcode", "adm1_pcode", "alt1_pcode"], rows)
     schema = _write_schema(

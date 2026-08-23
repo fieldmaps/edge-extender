@@ -1,30 +1,21 @@
 """Structurally discovers a source file's admin hierarchy and code/name roles.
 
-See docs/explanation/map.md and docs/adr/0054 for the algorithm and why.
+See docs/explanation/map.md and docs/adr/0054, 0064-0066 for the algorithm and why.
 """
 
-import re
 from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.constants import NOISE_COLUMNS
 from topo_tools.core.duckdb_utils import quote_identifier
-from topo_tools.core.map._constants import CONFIDENCE_AMBIGUOUS
+from topo_tools.core.map._constants import CONFIDENCE_AMBIGUOUS, CONFIDENCE_SUPPLEMENTAL
 from topo_tools.core.map._target_schema import TargetSchema
 
 # fid/geom are topo-tools' own internal columns, never candidate source data.
 _EXCLUDED_COLUMNS = {"fid", "geom"}
 
-# COD-AB's own documented p-code format: letter prefix + numeric suffix
-# (e.g. "MG11101001035"); a majority match is a strong code-vs-name signal.
-_CODE_SHAPE_REGEX = r"^[A-Za-z]{1,4}[0-9]+$"
-_CODE_SHAPE_MIN_RATE = 0.75
-_NAME_SHAPE_MAX_RATE = 0.10
-
-# COD-AB's admin0 pcode is a bare ISO2/3 country code, no digit suffix, so it
-# fails _CODE_SHAPE_REGEX; a constant column matching this is code-shaped too.
-_CONSTANT_CODE_REGEX = r"^[A-Z]{1,4}$"
+_CODE_SHAPE_MAJORITY = 0.5
 
 
 @dataclass
@@ -57,49 +48,46 @@ def _distinct_counts(
     return dict(zip(columns, result, strict=True))
 
 
-def _shape_classify(
-    conn: DuckDBPyConnection, table: str, columns: list[str]
-) -> dict[str, str]:
-    """Classify each column "code"/"name"/"ambiguous" by its own values alone."""
-    if not columns:
-        return {}
-    select = ", ".join(
-        f"""--sql
-        CAST(COUNT(*) FILTER (
-            WHERE regexp_matches(CAST({quote_identifier(c)} AS VARCHAR),
-                                  '{_CODE_SHAPE_REGEX}')
-        ) AS DOUBLE) / NULLIF(COUNT({quote_identifier(c)}), 0)
-        """
-        for c in columns
-    )
-    rates = conn.execute(f"SELECT {select} FROM {quote_identifier(table)}").fetchone()
-    result = {}
-    for c, rate in zip(columns, rates, strict=True):
-        if rate is not None and rate >= _CODE_SHAPE_MIN_RATE:
-            result[c] = "code"
-        elif rate is not None and rate <= _NAME_SHAPE_MAX_RATE:
-            result[c] = "name"
-        else:
-            result[c] = "ambiguous"
-    return result
+def _embeds(conn: DuckDBPyConnection, table: str, child: str, parent: str) -> bool:
+    """Check every row where both are non-null has `child` contain `parent`.
+
+    An all-null `parent` gives no evidence either way and must not pass.
+    """
+    evaluated, bad = conn.execute(f"""--sql
+        SELECT
+            COUNT(*) FILTER (
+                WHERE {quote_identifier(child)} IS NOT NULL
+                  AND {quote_identifier(parent)} IS NOT NULL
+            ),
+            COUNT(*) FILTER (
+                WHERE {quote_identifier(child)} IS NOT NULL
+                  AND {quote_identifier(parent)} IS NOT NULL
+                  AND NOT contains(
+                      CAST({quote_identifier(child)} AS VARCHAR),
+                      CAST({quote_identifier(parent)} AS VARCHAR)
+                  )
+            )
+        FROM {quote_identifier(table)}
+    """).fetchone()
+    return evaluated > 0 and bad == 0
 
 
-def _reclassify_constant_codes(
-    conn: DuckDBPyConnection,
-    table: str,
-    columns: list[str],
-    shapes: dict[str, str],
-    counts: dict[str, int],
-) -> None:
-    """Reclassify a constant bare-uppercase column (e.g. a country code) as code."""
-    for c in columns:
-        if shapes[c] == "code" or counts[c] != 1:
-            continue
-        value = conn.execute(
-            f"SELECT MAX({quote_identifier(c)}) FROM {quote_identifier(table)}"
-        ).fetchone()[0]
-        if value is not None and re.match(_CONSTANT_CODE_REGEX, str(value)):
-            shapes[c] = "code"
+def _looks_code_shaped(conn: DuckDBPyConnection, table: str, column: str) -> bool:
+    """Check whether most non-null values contain a digit.
+
+    Only consulted when no embedding evidence exists to pick code vs name.
+    """
+    digits, total = conn.execute(f"""--sql
+        SELECT
+            COUNT(*) FILTER (
+                WHERE regexp_matches(
+                    CAST({quote_identifier(column)} AS VARCHAR), '[0-9]'
+                )
+            ),
+            COUNT(*) FILTER (WHERE {quote_identifier(column)} IS NOT NULL)
+        FROM {quote_identifier(table)}
+    """).fetchone()
+    return total > 0 and digits / total > _CODE_SHAPE_MAJORITY
 
 
 def _containment_holds(
@@ -135,13 +123,12 @@ def _combined_distinct_count(
     """).fetchone()[0]
 
 
-def _build_code_groups(
+def _build_level_groups(
     conn: DuckDBPyConnection, table: str, columns: list[str], counts: dict[str, int]
 ) -> list[tuple[int, list[str]]]:
-    """Group code-shaped columns by distinct count, verifying same-count bijection.
+    """Group every column (code or name alike) by distinct count and bijection.
 
-    A constant (single-value) column is kept, unlike the general structural
-    case: a single-country file's admin0 code is legitimately constant.
+    A constant (single-value) column stays, a single-country file's admin0 can be one.
     """
     by_count: dict[int, list[str]] = {}
     for c in columns:
@@ -149,42 +136,73 @@ def _build_code_groups(
 
     groups: list[tuple[int, list[str]]] = []
     for count, cols in by_count.items():
-        if len(cols) == 1:
-            groups.append((count, cols))
-            continue
-        all_bijective = all(
-            _bijective(conn, table, a, b)
-            for i, a in enumerate(cols)
-            for b in cols[i + 1 :]
+        groups.extend(
+            (count, cluster) for cluster in _cluster_by_bijection(conn, table, cols)
         )
-        if all_bijective:
-            groups.append((count, cols))
-        else:
-            groups.extend((count, [c]) for c in cols)
     groups.sort(key=lambda g: g[0])
     return groups
 
 
-def _chain_from_groups(
+def _cluster_by_bijection(
+    conn: DuckDBPyConnection, table: str, cols: list[str]
+) -> list[list[str]]:
+    """Union same-count columns pairwise bijective with each other into one cluster."""
+    parent = {c: c for c in cols}
+
+    def find(c: str) -> str:
+        while parent[c] != c:
+            parent[c] = parent[parent[c]]
+            c = parent[c]
+        return c
+
+    for i, a in enumerate(cols):
+        for b in cols[i + 1 :]:
+            if _bijective(conn, table, a, b):
+                parent[find(a)] = find(b)
+
+    clusters: dict[str, list[str]] = {}
+    for c in cols:
+        clusters.setdefault(find(c), []).append(c)
+    return list(clusters.values())
+
+
+def _build_chain(
     conn: DuckDBPyConnection, table: str, groups: list[tuple[int, list[str]]]
-) -> list[list[tuple[int, list[str]]]]:
-    """Split groups into chains at any failed adjacent containment check."""
-    if not groups:
+) -> list[tuple[int, list[str]]]:
+    """Longest nesting path; a non-constant edge must be embedding-justified.
+
+    See docs/adr/0066: a constant needs no embedding, anything else does.
+    """
+    n = len(groups)
+    best_len = [1] * n
+    best_prev: list[int | None] = [None] * n
+    for finer_idx in range(n):
+        _finer_count, finer_cols = groups[finer_idx]
+        for coarser_idx in range(finer_idx):
+            coarser_count, coarser_cols = groups[coarser_idx]
+            joins = all(
+                _containment_holds(conn, table, coarser=a, finer=b)
+                for a in coarser_cols
+                for b in finer_cols
+            )
+            if not joins:
+                continue
+            justified = coarser_count == 1 or any(
+                _embeds(conn, table, b, a) for a in coarser_cols for b in finer_cols
+            )
+            if justified and best_len[coarser_idx] + 1 > best_len[finer_idx]:
+                best_len[finer_idx] = best_len[coarser_idx] + 1
+                best_prev[finer_idx] = coarser_idx
+    if n == 0:
         return []
-    chains: list[list[tuple[int, list[str]]]] = [[groups[0]]]
-    for group in groups[1:]:
-        _prev_count, prev_cols = chains[-1][-1]
-        _cur_count, cur_cols = group
-        joins = all(
-            _containment_holds(conn, table, coarser=a, finer=b)
-            for a in prev_cols
-            for b in cur_cols
-        )
-        if joins:
-            chains[-1].append(group)
-        else:
-            chains.append([group])
-    return chains
+    end = max(range(n), key=lambda i: (best_len[i], len(groups[i][1]), groups[i][0]))
+    chain_indices = []
+    i: int | None = end
+    while i is not None:
+        chain_indices.append(i)
+        i = best_prev[i]
+    chain_indices.reverse()
+    return [groups[i] for i in chain_indices]
 
 
 def _numbered_target(template: str, level: int, index: int) -> str:
@@ -203,51 +221,112 @@ def _bracket_index(code_counts: list[int], count: int) -> int | None:
     return None
 
 
-def _bracket_other_columns(  # noqa: PLR0913, PLR0917
+def _assign_chain_roles(
     conn: DuckDBPyConnection,
     table: str,
     chain: list[tuple[int, list[str]]],
-    other_columns: list[str],
-    counts: dict[str, int],
-    shapes: dict[str, str],
     schema: TargetSchema,
+    counts: dict[str, int],
 ) -> dict[str, "_Row"]:
-    """Bracket non-code columns into the chain, numbering every name winner.
+    """Assign every chain-level column a code/name role and numbered target.
 
-    A candidate bijective with the level's code (an exact match) wins
-    over a looser, repeats-tolerant one; admin level 0 is never resolved.
+    Embeds the resolved parent -> code; no embedding evidence -> value shape.
     """
-    code_counts = [count for count, _cols in chain]
-    bracketed: dict[int, list[str]] = {}
-    for column in other_columns:
-        index = _bracket_index(code_counts, counts[column])
-        if index is not None:
-            bracketed.setdefault(index, []).append(column)
+    rows: dict[str, _Row] = {}
+    for index, (count, cols) in enumerate(chain):
+        if count == 1:
+            continue
+        level = index
+        parent_cols = chain[index - 1][1] if index > 0 else []
+        embeds_parent = {
+            c: any(_embeds(conn, table, c, p) for p in parent_cols) for c in cols
+        }
+        any_embeds = any(embeds_parent.values())
+        roles: dict[str, str] = {}
+        for c in cols:
+            if embeds_parent[c]:
+                roles[c] = "code"
+            elif any_embeds:
+                roles[c] = "name"
+            else:
+                roles[c] = "code" if _looks_code_shaped(conn, table, c) else "name"
+        parent_code = parent_cols[0] if parent_cols else None
+        for role, template in (
+            ("code", schema.code_field),
+            ("name", schema.name_field),
+        ):
+            members = [c for c in cols if roles[c] == role]
+            for member_index, column in enumerate(members):
+                target = _numbered_target(template, level, member_index)
+                unique_count = (
+                    counts[column]
+                    if parent_code is None
+                    else _combined_distinct_count(conn, table, parent_code, column)
+                )
+                rows[column] = _Row(
+                    column,
+                    target,
+                    "",
+                    role=role,
+                    level=level,
+                    unique_count=unique_count,
+                )
+    return rows
+
+
+def _bracket_level(  # noqa: PLR0913, PLR0917
+    conn: DuckDBPyConnection,
+    table: str,
+    chain: list[tuple[int, list[str]]],
+    level: int,
+    candidates: list[str],
+    counts: dict[str, int],
+    schema: TargetSchema,
+    chain_rows: dict[str, "_Row"],
+) -> dict[str, "_Row"]:
+    """Resolve one bracketed level's candidates into name/supplemental/ambiguous rows.
+
+    A winner is `name` only if the level has no chain name yet, else `supplemental`.
+    """
+    code_column = chain[level][1][0]
+    winners = {
+        c
+        for c in candidates
+        if _containment_holds(conn, table, coarser=c, finer=code_column)
+    }
+    level_has_name = any(
+        chain_rows[m].role == "name" for m in chain[level][1] if m in chain_rows
+    )
+    parent_code_column = chain[level - 1][1][0] if level > 0 else None
+
+    def unique_count_for(column: str) -> int:
+        if parent_code_column is None:
+            return counts[column]
+        return _combined_distinct_count(conn, table, parent_code_column, column)
 
     rows: dict[str, _Row] = {}
-    for index, candidates in bracketed.items():
-        level = index
-        if level == 0:
-            continue
-        code_column = chain[index][1][0]
-        winners = [
-            c
-            for c in candidates
-            if shapes[c] == "name"
-            and _containment_holds(conn, table, coarser=c, finer=code_column)
-        ]
-        exact = [
-            c
-            for c in winners
-            if _containment_holds(conn, table, coarser=code_column, finer=c)
-        ]
-        resolved = exact or winners
-        parent_code_column = chain[index - 1][1][0]
-        for winner_index, column in enumerate(resolved):
-            target = _numbered_target(schema.name_field, level, winner_index)
-            unique_count = _combined_distinct_count(
-                conn, table, parent_code_column, column
+    winner_index = 0
+    for column in candidates:
+        unique_count = unique_count_for(column)
+        if column not in winners:
+            rows[column] = _Row(
+                column,
+                None,
+                f"{CONFIDENCE_AMBIGUOUS}, level {level}",
+                level=level,
+                unique_count=unique_count,
             )
+        elif level_has_name:
+            rows[column] = _Row(
+                column,
+                None,
+                f"{CONFIDENCE_SUPPLEMENTAL}, superset of level {level}",
+                level=level,
+                unique_count=unique_count,
+            )
+        else:
+            target = _numbered_target(schema.name_field, level, winner_index)
+            winner_index += 1
             rows[column] = _Row(
                 column,
                 target,
@@ -256,80 +335,54 @@ def _bracket_other_columns(  # noqa: PLR0913, PLR0917
                 level=level,
                 unique_count=unique_count,
             )
-        for column in candidates:
-            if column in resolved:
-                continue
-            unique_count = _combined_distinct_count(
-                conn, table, parent_code_column, column
-            )
-            if column in winners:
-                others = ", ".join(exact)
-                rows[column] = _Row(
-                    column,
-                    None,
-                    f"{CONFIDENCE_AMBIGUOUS}, level {level}; see {others}",
-                    level=level,
-                    unique_count=unique_count,
-                )
-            elif shapes[column] == "name":
-                rows[column] = _Row(
-                    column,
-                    None,
-                    f"{CONFIDENCE_AMBIGUOUS}, level {level}; repeats in group",
-                    level=level,
-                    unique_count=unique_count,
-                )
-            else:
-                rows[column] = _Row(
-                    column,
-                    None,
-                    f"{CONFIDENCE_AMBIGUOUS}, level {level}; shape unclear",
-                    level=level,
-                    unique_count=unique_count,
-                )
     return rows
 
 
-def main(conn: DuckDBPyConnection, name: str, schema: TargetSchema) -> None:  # noqa: C901
+def _bracket_other_columns(  # noqa: PLR0913, PLR0917
+    conn: DuckDBPyConnection,
+    table: str,
+    chain: list[tuple[int, list[str]]],
+    other_columns: list[str],
+    counts: dict[str, int],
+    schema: TargetSchema,
+    chain_rows: dict[str, "_Row"],
+) -> dict[str, "_Row"]:
+    """Bracket non-chain columns into the chain by cardinality range."""
+    code_counts = [count for count, _cols in chain]
+    bracketed: dict[int, list[str]] = {}
+    for column in other_columns:
+        index = _bracket_index(code_counts, counts[column])
+        if index is not None:
+            bracketed.setdefault(index, []).append(column)
+
+    rows: dict[str, _Row] = {}
+    for level, candidates in bracketed.items():
+        if chain[level][0] == 1:
+            continue
+        rows.update(
+            _bracket_level(
+                conn, table, chain, level, candidates, counts, schema, chain_rows
+            )
+        )
+    return rows
+
+
+def main(conn: DuckDBPyConnection, name: str, schema: TargetSchema) -> None:
     """Discover a source file's admin hierarchy, writing crosswalk `{name}_02`."""
     table = f"{name}_01"
     columns = _candidate_columns(conn, table)
-    shapes = _shape_classify(conn, table, columns)
     counts = _distinct_counts(conn, table, columns)
-    _reclassify_constant_codes(conn, table, columns, shapes, counts)
-    code_columns = [c for c in columns if shapes[c] == "code"]
-    other_columns = [c for c in columns if c not in code_columns]
 
-    code_groups = _build_code_groups(conn, table, code_columns, counts)
-    chains = _chain_from_groups(conn, table, code_groups)
-    chain = max(chains, key=len, default=[])
+    level_groups = _build_level_groups(conn, table, columns, counts)
+    chain = _build_chain(conn, table, level_groups)
 
-    rows: dict[str, _Row] = {}
+    rows = _assign_chain_roles(conn, table, chain, schema, counts)
 
-    for index, (_count, cols) in enumerate(chain):
-        level = index
-        if level == 0:
-            continue
-        coarser = chain[index - 1][1][0]
-        for column_index, column in enumerate(cols):
-            target = _numbered_target(schema.code_field, level, column_index)
-            unique_count = _combined_distinct_count(conn, table, coarser, column)
-            rows[column] = _Row(
-                column, target, "", role="code", level=level, unique_count=unique_count
-            )
-
-    chained_code_columns = {c for _count, cols in chain for c in cols}
-    for column in code_columns:
-        if column not in chained_code_columns:
-            rows[column] = _Row(
-                column,
-                None,
-                f"{CONFIDENCE_AMBIGUOUS}; doesn't fit chain",
-                unique_count=counts[column],
-            )
+    chained_columns = {c for _count, cols in chain for c in cols}
+    other_columns = [c for c in columns if c not in chained_columns]
 
     other_rows = _bracket_other_columns(
-        conn, table, chain, other_columns, counts, shapes, schema
+        conn, table, chain, other_columns, counts, schema, rows
     )
     rows.update(other_rows)
 

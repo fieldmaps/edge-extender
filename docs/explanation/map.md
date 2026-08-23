@@ -4,7 +4,7 @@
 default, or user-supplied), and maps a source-column -> canonical-column
 crosswalk, without touching the file. It replaces what `hdx-cod-ab-ai`
 previously did by having a live Claude Code session freehand DuckDB
-`DESCRIBE` queries and its own judgment: matching here is value-shape and
+`DESCRIBE` queries and its own judgment: matching here is embedding and
 cardinality/containment logic only, with no LLM call and no column-name
 vocabulary anywhere, so it's reusable outside an agentic session and the
 matching decisions are inspectable, versionable, and reproducible.
@@ -14,20 +14,31 @@ human confirming it first (see its "no auto-approve mode" requirement);
 human to review, edit, and hand to `refactor`
 (`docs/explanation/refactor.md`).
 
-## Why column names are never a matching signal
+## Why column names, and value shape, are never a matching signal
 
 Real source files never reliably use a target schema's vocabulary: a
 GRID3 health-zone layer uses French field names, a national mapping
 agency's shapefile uses its own local convention, and no alias/pattern
 list can anticipate every source vocabulary in advance. Treating column
-names as signal is unreliable by construction, not just under-tuned. What
-every admin boundary file *does* share, regardless of vocabulary, is
-structure: a hierarchy nests (each finer unit belongs to exactly one
-coarser unit), and within a level, a code column and a name column look
-different from each other in their raw values. `map` uses only those two
-structural facts. See `docs/adr/0054` for the empirical evidence (a real
-Madagascar admin4 shapefile) that motivated replacing the earlier
-name/alias/pattern-based design with this one.
+names as signal is unreliable by construction, not just under-tuned. See
+`docs/adr/0054` for the empirical evidence (a real Madagascar admin4
+shapefile) that motivated replacing the earlier name/alias/pattern-based
+design.
+
+A value-shape assumption fails the same way for *deciding what nests
+where*: real national source files use pure-numeric codes, pure-alpha
+codes, compound codes with a prefix longer than COD-AB's own convention,
+and opaque GRID3 GUIDs, none of which match COD-AB's own p-code shape.
+What every admin boundary file *does* share, regardless of vocabulary or
+shape, is a purely relational fact: a hierarchy nests (each finer unit
+belongs to exactly one coarser unit), and a real hierarchical code is
+often (not always) *constructed* from its parent's code, so it textually
+contains that parent's value. `map` never uses column name or value
+shape to decide chain membership or level; it uses value shape only as a
+last-resort fallback for one narrower question, once a level is already
+resolved by nesting: does *this* column at *that* level play the `code`
+or `name` role, when nothing in the level embeds its parent to settle it
+directly (see `docs/adr/0064`, `docs/adr/0066`).
 
 ## Usage
 
@@ -75,72 +86,92 @@ reads them while deciding what belongs to which level.
 
 ## Algorithm
 
-1. **Shape-classify every candidate column** by its own values: a
-   majority-vote SQL predicate checks what fraction of each column's
-   non-null values match COD-AB's own documented p-code format
-   (`^[A-Za-z]{1,4}[0-9]+$`, letter prefix plus digit suffix). At or above
-   75% match, the column is `code`-shaped; at or below 10%, `name`-shaped;
-   otherwise `ambiguous`. A constant (distinct count 1) column whose sole
-   value is bare uppercase letters (`^[A-Z]{1,4}$`) is reclassified
-   `code`-shaped too, recovering COD-AB's admin0 pcode convention (a bare
-   ISO2/3 country code, no digit suffix, e.g. `"MG"`), which otherwise
-   fails the letter-plus-digit regex (see `docs/adr/0055`).
-2. **Build the code-only hierarchy chain** (`_build_code_groups()` +
-   `_chain_from_groups()`, `core/map/_02_map.py`): group code-shaped
-   columns by identical `COUNT(DISTINCT)` (constants, distinct count 1,
-   are kept, not dropped: a single-country file's admin0 code is
-   legitimately constant), verify a same-count group is truly bijective
-   in both directions before treating its columns as same-level
-   companions (a group that fails is demoted to singleton columns, each
-   still eligible to chain on its own), then walk the groups
-   coarsest-to-finest joining adjacent pairs only when
-   `GROUP BY finer HAVING COUNT(DISTINCT coarser) > 1` returns zero rows.
-   A failed join splits the run into independent chains. The **longest**
-   resulting chain is treated as the discovered admin hierarchy; each
-   adjacent link is also checked for the fraction of rows where the finer
-   code's value literally starts with the coarser code's value (COD-AB's
-   own p-code nesting convention), a corroborating signal surfaced in the
-   row's `note` only when it's below 100%, not a hard requirement, since
-   real data can have documented exceptions to it.
-3. **Bracket every non-code column into the chain by cardinality**
-   (`_bracket_other_columns()`): a name-shaped or shape-ambiguous column
-   lands at chain level `k` if `code_count[k-1] < COUNT(DISTINCT col) <=
-   code_count[k]` (`code_count[-1]` is 0). A column whose count doesn't
-   fall into exactly one bracket is left unmatched. Landing in a bracket
-   wins the `name` tier for every bracketed column there that also passes
-   a same-level function check against that level's code column
+1. **Group every column, code or name alike, by cardinality and
+   bijection** (`_build_level_groups()`, `core/map/_02_map.py`): no
+   pre-filter decides code-vs-name eligibility up front, since a real
+   file may use codes to build the chain at one level and names at
+   another, and admin1 (not admin0) may be the first level with any real
+   nesting at all. Columns sharing a `COUNT(DISTINCT)` cluster together
+   only if pairwise bijective with each other (a third column sharing
+   their count but not their bijection stays its own singleton, it
+   doesn't break the other two apart).
+2. **Build the hierarchy as a longest path over the full containment
+   DAG, embedding-justified except at a true constant**
+   (`_build_chain()`, `core/map/_02_map.py`): dynamic programming over
+   every coarser/finer pair of groups, not just cardinality-adjacent
+   ones, testing that `GROUP BY finer HAVING COUNT(DISTINCT coarser) > 1`
+   returns zero rows for each (containment), and additionally requiring
+   either the coarser group's `COUNT(DISTINCT)` to be exactly 1 (a
+   constant has no variation to test embedding against, so it's exempt),
+   or some column in the finer group to textually contain
+   (`contains(child, parent)`) some column in the coarser group. Testing
+   every pair, not just neighbors, lets a finer level reconnect past one
+   that doesn't nest cleanly: a "loose" cross-cutting attribute can still
+   get baked into a compound code's construction (an urban/rural
+   classifier concatenated into a barrio-level code, say) without
+   breaking the chain around it. When multiple candidates tie for the
+   longest path, the one with more same-level companion columns wins (a
+   code+name pair beats a lone column), then the one with the higher
+   (finer) `COUNT(DISTINCT)` (see `docs/adr/0066`); this is what lets a
+   real, bijective code+name pair (Madagascar's `ADM1_PCODE`+`ADM1_EN`)
+   win a chain slot over a coarser, independently-numbered grouping that
+   also reaches the same root (`PROV_CODE_`) at the same path length.
+3. **Assign each chain level's columns a `code`/`name` role**
+   (`_assign_chain_roles()`): a column that embeds its level's resolved
+   parent is `code`; a sibling that doesn't is `name`, when at least one
+   sibling did embed. When nothing in the group embeds the parent
+   (independently-numbered codes, a lone column, or a level with no
+   parent at all), each column's role falls back to
+   `_looks_code_shaped()` individually: a majority of non-null values
+   containing a digit is `code`, otherwise `name` (see `docs/adr/0066`).
+4. **Bracket every non-chain column into the chain by cardinality**
+   (`_bracket_other_columns()`): a column lands at chain level `k` if
+   `code_count[k-1] < COUNT(DISTINCT col) <= code_count[k]`
+   (`code_count[-1]` is 0). A column whose count doesn't fall into
+   exactly one bracket is left unmatched. A bracketed column additionally
+   passes a same-level function check against that level's code column
    (`GROUP BY code HAVING COUNT(DISTINCT candidate) > 1` returns zero
    rows, i.e. every code value maps to exactly one value of the
    candidate): real name columns fail a direct containment check against
    a *different* level's code (the same name legitimately repeats under
    different parents), but must pass it against their *own* level's
    code, since a given unit's code always has exactly one name. A
-   candidate that's also **bijective** with the level's code (an exact
-   count-and-value match, not just a repeats-tolerant function) wins over
-   a looser match: when at least one exact match exists at a level, only
-   exact matches resolve, and every other function-passing candidate
-   there stays `ambiguous`, naming the exact match (see `docs/adr/0057`).
-   A bracketed column that fails the function check entirely also stays
-   `ambiguous`.
-4. **Number and assign levels, emit rows**: a chain position's level
-   number is always its relative rank (0 = coarsest). `map` never takes a
-   real admin number as input, it only infers nesting depth (see
-   `docs/adr/0058`). Every code-chain column and every winning bracketed
-   name column becomes a `code`/`name` row, `target_column` always
-   rendered from the schema template at that level; when two or more
-   qualify at the same level (bijective code companions, or multiple
-   exact-or-functional name matches), each is numbered by source-column
-   order, the first getting the bare template (`adm2_name`, `adm2_pcode`)
-   and each next one the template plus an appended integer
-   (`adm2_name1`, `adm2_pcode1`, ...) (see `docs/adr/0056`). **Admin
-   level 0 is never resolved** (code or name): both this step and step 3
-   skip any chain position whose resolved level is `0` (see
-   `docs/adr/0057`). Everything else becomes `ambiguous` (bracketed but
-   shape-ambiguous, failing the function check, or losing to an exact
-   match; or code-shaped but outside the chain) or `unmatched`,
-   `target_column` left empty in either case: `refactor` drops a column
-   whose crosswalk `target_column` is empty, so keeping one under its own
-   name is a decision a human makes by editing the crosswalk, not
+   bijective (exact) same-level companion can never reach this bracket
+   step at all: bijection would already have merged it into the chain
+   group at the grouping step (step 1). So a function-passing bracket
+   candidate is always a genuine, coarser (superset) grouping over the
+   level, never a same-level near-tie: by pigeonhole, an onto function
+   between equal-cardinality sets is automatically one-to-one too, so a
+   non-bijective function-passing candidate can't have the level's own
+   cardinality. When the level's chain group already has a resolved
+   `name` role member, a function-passing candidate becomes
+   `supplemental` (see `docs/adr/0065`); when it doesn't yet, the
+   function-passing candidate resolves to `name` directly. A bracketed
+   column that fails the function check entirely (neither a subset nor
+   superset of the level) stays `ambiguous`.
+5. **Number and emit rows**: a chain position's level number is always
+   its relative rank (0 = coarsest). `map` never takes a real admin
+   number as input, it only infers nesting depth (see `docs/adr/0058`).
+   Every code-chain column and every winning bracketed name column
+   becomes a `code`/`name` row, `target_column` always rendered from the
+   schema template at that level; when two or more qualify at the same
+   level and role (bijective companions, or multiple function-passing
+   name matches), each is numbered by source-column order, the first
+   getting the bare template (`adm2_name`, `adm2_pcode`) and each next
+   one the template plus an appended integer (`adm2_name1`,
+   `adm2_pcode1`, ...) (see `docs/adr/0056`). **A resolved level is
+   excluded from output only when its own `COUNT(DISTINCT)` is exactly
+   1**, a true constant; a non-constant level is resolved regardless of
+   its rank in the chain, even at position 0 (see `docs/adr/0066`, which
+   drops ADR-0057's position-based admin0 exclusion: `map` has no country
+   column to assume, so it can't tell a genuine admin0 constant from a
+   coarsest-in-file level that merely isn't actually admin0). Everything
+   else becomes `supplemental` (a bracketed column that's a confirmed
+   coarser grouping over the level, see `docs/adr/0065`), `ambiguous`
+   (bracketed but failing the function check entirely), or `unmatched`,
+   `target_column` left empty in every case: `refactor` drops a column
+   whose crosswalk `target_column` is empty, so keeping one under its
+   own name is a decision a human makes by editing the crosswalk, not
    something `map` assumes (see `docs/adr/0059`).
 
 ## Confidence tiers
@@ -148,27 +179,32 @@ reads them while deciding what belongs to which level.
 A `code`/`name` row's `note` is empty: its `target_column` already
 encodes the level (e.g. `adm4_name`), and its `unique_count` already
 encodes the cardinality signal that used to live in `note`. An
-`ambiguous` row has no `target_column`, so its `note` states its tier
-and level, plus at most one short clause beyond that, only when it adds
-information (see `docs/adr/0060`, `docs/adr/0061`, `docs/adr/0062`).
+`ambiguous`/`supplemental` row has no `target_column`, so its `note`
+states its tier and level, in one of two fixed forms: `"ambiguous, level
+{k}"` or `"supplemental, superset of level {k}"` (see `docs/adr/0065`,
+`docs/adr/0066`).
 
-- `code` / `name`: resolved into the discovered chain by shape and
-  position, at a level above admin0.
-- `ambiguous`: landed at a chain level above admin0 (or is code-shaped)
-  but shape, chain membership, or exact-match priority didn't cleanly
-  resolve it.
-- `unmatched`: never joined the code chain and never bracketed into any
-  level above admin0 (e.g. a free-text `NOTES`/`SOURCE`-style column, or
-  any admin0 code/name column, always left unmapped by design); `note`
-  is empty.
+- `code` / `name`: resolved into the discovered chain by embedding (or,
+  absent embedding evidence, value shape) and position; a level resolves
+  regardless of its rank, unless it's a true constant.
+- `supplemental`: bracketed at a resolved chain level, function-passing
+  against that level's code, but a confirmed coarser (superset) grouping
+  rather than the level's own code/name, because the level's chain group
+  already has a resolved `name` (see `docs/adr/0065`, `docs/adr/0066`).
+- `ambiguous`: landed at a resolved chain level but failed the function
+  check entirely (neither a subset nor superset of the level).
+- `unmatched`: never joined the chain and never bracketed into any
+  resolved level (e.g. a free-text `NOTES`/`SOURCE`-style column, or any
+  column whose only resolvable level is a true constant); `note` is
+  empty.
 
 Every row also carries `unique_count`. For a row bracketed to a level,
 it's `COUNT(DISTINCT parent_code, this_column)` against the level above
 it, the number of genuinely distinct units once the parent disambiguates
 a repeated value (e.g. "County 1" appearing under two different
-provinces is 1 raw value but 2 real units). For any other row (level 0,
-a code-shaped column outside the chain, or fully `unmatched`), it's the
-column's own `COUNT(DISTINCT)`. See `docs/adr/0062`.
+provinces is 1 raw value but 2 real units). For any other row (an
+excluded constant level, or fully `unmatched`), it's the column's own
+`COUNT(DISTINCT)`. See `docs/adr/0062`.
 
 ## Output ordering
 
@@ -194,11 +230,17 @@ the source file's own original column order.
   level's real name) is numbered and renamed alongside any real name
   candidates there; nothing short of a vocabulary or human signal can
   tell the two apart (`docs/adr/0057`).
-- Admin level 0's code/name are never suggested, even when unambiguous;
-  a user always fills that one crosswalk row in by hand (`docs/adr/0057`).
-- Levels are numbered purely by nesting depth, never a real admin number;
-  a source file whose coarsest discovered code column isn't actually
-  admin level 0 (e.g. a state-level file with no country column at all)
-  still gets that coarsest position excluded, mislabeled as admin0,
-  since `map` has no signal left to tell the two cases apart without a
-  vocabulary or human input (`docs/adr/0058`).
+- A code column with no parent-value embedding evidence, at a level whose
+  parent isn't a true constant (e.g. a GRID3-style opaque GUID one level
+  deep, or an independently-assigned per-level code convention that
+  doesn't concatenate its parent's value), is never recognized as chain-
+  eligible; it stays fully unresolved rather than guessing at its level,
+  since containment alone (without embedding) can't distinguish a real
+  nesting relationship from coincidence (`docs/adr/0064`, `docs/adr/0066`).
+- Levels are numbered purely by nesting depth, never a real admin number.
+  A source file whose coarsest discovered level isn't actually admin0
+  (e.g. a state-level file with no country column at all) still gets that
+  coarsest position resolved and numbered as if it were admin0, since
+  `map` has no signal left to tell the two cases apart without a
+  vocabulary or human input; a human renames it by hand in the crosswalk
+  (`docs/adr/0058`, `docs/adr/0066`).

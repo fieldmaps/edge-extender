@@ -24,69 +24,90 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 ## Matching
 
 `map` MUST NOT use any column name, alias, or vocabulary as a matching
-signal; every candidate column's own values are shape-classified and
-structurally positioned, never its name. See `docs/explanation/map.md`
-for the empirical justification.
+signal, and MUST NOT use a value-shape assumption to decide chain
+membership either; every candidate column's own values are relationally
+tested against every other candidate column's values, never its name.
+Value shape (`_looks_code_shaped()`, majority of non-null values
+containing a digit) MUST only be consulted as a fallback for the `code`
+vs. `name` role of a chain column once its level is already resolved. See
+`docs/explanation/map.md` and `docs/adr/0064`, `docs/adr/0066` for the
+empirical justification.
 
-- Every candidate column MUST be shape-classified by a majority-vote
-  match rate against COD-AB's own p-code format (`^[A-Za-z]{1,4}[0-9]+$`,
-  letter prefix plus digit suffix): `code` at or above a 75% match rate,
-  `name` at or below 10%, `ambiguous` otherwise. A constant (distinct
-  count 1) column whose sole value is bare uppercase letters
-  (`^[A-Z]{1,4}$`) MUST be reclassified `code`-shaped too (a bare ISO2/3
-  country code, COD-AB's admin0 pcode convention, has no digit suffix).
-- Code-shaped columns MUST be grouped by identical `COUNT(DISTINCT)`
-  (constants are kept, not dropped: a single-country file's admin0 code
-  is legitimately constant), same-count groups verified truly bijective
-  before treating them as same-level companions (a group that fails MUST
-  be demoted to singleton columns, not discarded), then chained
-  coarsest-to-finest via containment (`GROUP BY finer HAVING
-  COUNT(DISTINCT coarser) > 1` MUST return zero rows), splitting into
-  independent chains at any failed adjacent pair. The longest resulting
-  chain MUST be treated as the discovered admin hierarchy; a code-shaped
-  column outside that chain MUST be confidence `ambiguous`.
+- Every candidate column, code or name alike, MUST be grouped by
+  identical `COUNT(DISTINCT)` (constants are kept, not dropped: a
+  single-country file's admin0 code is legitimately constant), and
+  same-count columns clustered by pairwise verified bijection (two
+  columns merge only if bijective with each other; a third column sharing
+  their count but not their bijection MUST NOT prevent the other two from
+  merging).
+- The admin hierarchy MUST be built as the longest path through every
+  coarser/finer pair of level-groups that satisfies containment
+  (`GROUP BY finer HAVING COUNT(DISTINCT coarser) > 1` MUST return zero
+  rows for every coarser/finer column pair between the two groups), not
+  just cardinality-adjacent pairs; this lets a finer level reconnect past
+  a level that doesn't nest cleanly (a "loose" cross-cutting attribute
+  that happens to be embedded inside a compound code, e.g. an urban/rural
+  classifier) instead of severing the rest of the chain. A candidate edge
+  MUST additionally require either the coarser group's `COUNT(DISTINCT)`
+  to be exactly 1 (a true constant, exempt from embedding), or some
+  column in the finer group to textually contain (`contains(child,
+  parent)`, row for row over non-null pairs) some column in the coarser
+  group. When multiple candidates tie for the longest path, the one with
+  more same-level companion columns MUST win, then the one with the
+  higher (finer) `COUNT(DISTINCT)`.
 - Every level MUST be numbered by the column's relative rank in the
-  discovered code chain (0 = coarsest); `map` never takes a real admin
-  number as input, it only infers nesting depth.
-- Every code-chain column MUST be confidence `code`. Same-count bijective
-  code companions at one level MUST each get a numbered `target_column`
-  from `code_field` (the first by source-column order gets the bare
-  rendered template, each next one the template plus an appended integer
-  starting at 1).
-- Every non-code-shaped (name-shaped or shape-ambiguous) column MUST be
-  bracketed into the code chain by its own `COUNT(DISTINCT)`: it lands at
-  level `k` if `code_count[k-1] < distinct_count <= code_count[k]`
-  (`code_count[-1]` is 0); a column whose count doesn't fall into exactly
-  one bracket MUST be left unmatched.
-- A bracketed, name-shaped column MUST additionally pass a same-level
-  function check against that level's code column (`GROUP BY code HAVING
-  COUNT(DISTINCT candidate) > 1` MUST return zero rows) before it's
-  eligible for confidence `name`. A function-passing column that's also
-  bijective with the level's code (every candidate value maps back to
-  exactly one code value too) is an exact match; when at least one exact
-  match exists at a level, only exact matches MUST resolve to `name`,
-  every other function-passing candidate there MUST be confidence
-  `ambiguous`, its note naming the exact match.
-- Every bracketed column at a level that resolves (per the exact-match
-  priority above) MUST be confidence `name`, with a numbered
-  `target_column` from `name_field` at its bracketed level (same
-  numbering scheme as code companions above).
-- A bracketed column that is shape-ambiguous, is name-shaped but fails
-  the function check, or loses to an exact match, MUST be confidence
-  `ambiguous`, `target_column` empty.
+  discovered chain (0 = coarsest); `map` never takes a real admin number
+  as input, it only infers nesting depth.
+- Within a resolved chain level, a column that textually contains
+  (`contains(child, parent)`) some column at the level's resolved parent
+  MUST be confidence `code`; a sibling column at the same level that
+  doesn't MUST be confidence `name` when at least one sibling did. When no
+  column at the level embeds its parent (independently-numbered codes, a
+  lone column, or a level with no parent at all), each column's role MUST
+  fall back to `_looks_code_shaped()` individually. Same-role companions
+  at one level MUST each get a numbered `target_column` from `code_field`/
+  `name_field` (the first by source-column order gets the bare rendered
+  template, each next one the template plus an appended integer starting
+  at 1).
+- Every non-code-eligible column MUST be bracketed into the chain by its
+  own `COUNT(DISTINCT)`: it lands at level `k` if `code_count[k-1] <
+  distinct_count <= code_count[k]` (`code_count[-1]` is 0); a column
+  whose count doesn't fall into exactly one bracket MUST be left
+  unmatched.
+- A bracketed column MUST additionally pass a same-level function check
+  against that level's code column (`GROUP BY code HAVING COUNT(DISTINCT
+  candidate) > 1` MUST return zero rows) before it's eligible for
+  confidence `name` or `supplemental`; a column that fails this check
+  entirely (neither a subset nor superset of the level) MUST be
+  confidence `ambiguous`, `target_column` empty.
+- A function-passing column MUST be confidence `supplemental`,
+  `target_column` empty, when its level's chain group already has a
+  resolved `name` role member; a bijective (exact) same-level companion
+  cannot reach the bracket step at all, since bijection would already
+  have merged it into the chain group at the grouping step, so a
+  function-passing bracket candidate is always a genuine, coarser
+  superset of the level (by pigeonhole, an onto function between
+  equal-cardinality sets is also one-to-one, so a non-bijective
+  function-passing candidate must be coarser). When the level's chain
+  group has no `name` role member yet, function-passing candidates MUST
+  instead resolve to confidence `name`, numbered `target_column` from
+  `name_field` (same numbering scheme as code companions above).
 - A column landing in no bracket at all MUST be confidence `unmatched`,
   `target_column` and `note` both empty.
-- Admin level 0 MUST never be resolved: `map` MUST NOT emit a `code` or
-  `name` row for any column whose resolved level is `0`, regardless of
-  how unambiguous the match would otherwise be; such a column MUST fall
-  through to confidence `unmatched` instead.
+- A resolved level MUST be excluded from output (fall through to
+  confidence `unmatched`) only when its own `COUNT(DISTINCT)` is exactly
+  1, a true constant; a non-constant level MUST be resolved regardless of
+  its rank in the discovered chain, even at position 0. `map` has no way
+  to tell a genuine admin0 constant from a coarsest-in-file level that
+  merely isn't actually admin0 (a file with no country column at all); it
+  only excludes columns with no real variation to report.
 - `target_column` MUST be non-empty only for a `code`/`name` row; every
   `ambiguous`/`unmatched` row's `target_column` MUST be empty, since
   `refactor` drops any source column whose crosswalk `target_column` is
   empty (see `docs/reference/refactor.md`) and a human, not `map`,
   decides whether to keep such a column and under what name.
 - `map` MUST NOT call an LLM or any external service; matching is
-  value-shape and cardinality/containment logic only.
+  embedding and cardinality/containment logic only.
 
 ## Outputs
 
@@ -95,18 +116,18 @@ for the empirical justification.
 - `map` MUST always produce a crosswalk file, one CSV row per source
   column with exactly four columns: `source_column`, `target_column`,
   `unique_count`, `note`. Every row MUST carry a `unique_count`: for a
-  row bracketed to a level (`code`, `name`, or `ambiguous` with a level),
-  `COUNT(DISTINCT parent_code, this_column)` against the level above it,
-  catching a value reused across parents (e.g. "County 1" under two
-  different provinces) that a same-column distinct count alone would
-  hide; for any other row (level 0, a code-shaped column outside the
-  chain, or fully `unmatched`), the column's own `COUNT(DISTINCT)`. A
+  row bracketed to a level (`code`, `name`, `ambiguous`, or
+  `supplemental`), `COUNT(DISTINCT parent_code, this_column)` against
+  the level above it, catching a value reused across parents (e.g.
+  "County 1" under two different provinces) that a same-column distinct
+  count alone would hide; for any other row (an excluded constant level,
+  or fully `unmatched`), the column's own `COUNT(DISTINCT)`. A
   `code`/`name` row's `note` MUST be empty, since `target_column` already
   encodes the level and `unique_count` already encodes the cardinality
-  signal; an `ambiguous` row's `note` MUST start with its tier followed
-  by its level (it has no `target_column` to encode the level), plus at
-  most one short clause beyond that, only when it adds information; an
-  `unmatched` row's `note` MUST be empty.
+  signal. A bracketed `ambiguous` row's `note` MUST be exactly
+  `"ambiguous, level {k}"`; a bracketed `supplemental` row's `note` MUST
+  be exactly `"supplemental, superset of level {k}"`. An `unmatched`
+  row's `note` MUST be empty.
 - Rows MUST be ordered by resolved level descending (finest first,
   matching COD-AB's own-level-then-ancestors order), name before code
   within a level, then every `unmatched` column last in the source
