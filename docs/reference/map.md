@@ -15,11 +15,17 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `map` MUST raise `ValueError` (not a raw `KeyError`/silent empty
   result) if the target-schema YAML is missing either key or either
   value lacks a `{n}` placeholder.
-- `map` MUST exclude `core.constants.NOISE_COLUMNS` (case-insensitive:
-  `objectid`, `globalid`, `shape_leng`/`shape_length`/`shape__length`,
-  `shape_area`/`shape__area`, `ogc_fid`/`ogc_fid_orig`/`fid_orig`) from
-  candidate columns entirely; they never appear in the crosswalk, not
-  even as `unmatched`.
+- `map` MUST exclude any column matching `core.constants.is_noise_column()`
+  from candidate columns entirely; they never appear in the crosswalk, not
+  even as `unmatched`. A column matches if its name, case-insensitively,
+  either exactly equals an entry in `core.constants.NOISE_COLUMNS`
+  (`objectid`, `globalid`, `shape_leng`/`shape_length`/`shape__length`,
+  `shape_area`/`shape__area`, `ogc_fid`/`ogc_fid_orig`/`fid_orig`), or
+  equals one after stripping a trailing GDAL collision suffix
+  (`_\d+`, e.g. `fid_1` -> `fid`), or is exactly 10 characters long (the
+  ESRI Shapefile DBF driver's field-name limit) with that stripped base a
+  prefix of a `NOISE_COLUMNS` entry (e.g. `Shape_Le_1` -> `shape_le`, a
+  prefix of `shape_length`, the DBF-truncated form of a duplicate field).
 
 ## Matching
 
@@ -33,7 +39,13 @@ vs. `name` role of a chain column once its level is already resolved. See
 `docs/explanation/map.md` and `docs/adr/0064`, `docs/adr/0066` for the
 empirical justification.
 
-- Every candidate column, code or name alike, MUST be grouped by
+- An all-null candidate column (`COUNT(DISTINCT) = 0`) MUST NOT be
+  eligible for chain group formation: two all-null columns are trivially,
+  vacuously bijective with each other and with nothing else, no real
+  evidence either way, the same principle already applied to `_embeds()`
+  (see `docs/adr/0069`). It still MUST appear in the crosswalk as
+  `unmatched`.
+- Every remaining candidate column, code or name alike, MUST be grouped by
   identical `COUNT(DISTINCT)` (constants are kept, not dropped: a
   single-country file's admin0 code is legitimately constant), and
   same-count columns clustered by pairwise verified bijection (two
@@ -58,17 +70,18 @@ empirical justification.
 - Every level MUST be numbered by the column's relative rank in the
   discovered chain (0 = coarsest); `map` never takes a real admin number
   as input, it only infers nesting depth.
-- Within a resolved chain level, a column that textually contains
-  (`contains(child, parent)`) some column at the level's resolved parent
-  MUST be confidence `code`; a sibling column at the same level that
-  doesn't MUST be confidence `name` when at least one sibling did. When no
-  column at the level embeds its parent (independently-numbered codes, a
-  lone column, or a level with no parent at all), each column's role MUST
-  fall back to `_looks_code_shaped()` individually. Same-role companions
-  at one level MUST each get a numbered `target_column` from `code_field`/
-  `name_field` (the first by source-column order gets the bare rendered
-  template, each next one the template plus an appended integer starting
-  at 1).
+- Within a resolved chain level, each column's role MUST be `code` if
+  either it textually contains (`contains(child, parent)`) some column at
+  the level's resolved parent, or it independently passes
+  `_looks_code_shaped()`; otherwise it MUST be `name`. This check MUST run
+  per column, never deferred to a sibling's embedding result: a column
+  that fails to embed its parent MUST still resolve to `code` on its own
+  value shape rather than defaulting to `name` just because another
+  sibling in the group embedded the parent (see `docs/adr/0067`). Same-
+  role companions at one level MUST each get a numbered `target_column`
+  from `code_field`/`name_field` (the first by source-column order gets
+  the bare rendered template, each next one the template plus an
+  appended integer starting at 1).
 - Every non-code-eligible column MUST be bracketed into the chain by its
   own `COUNT(DISTINCT)`: it lands at level `k` if `code_count[k-1] <
   distinct_count <= code_count[k]` (`code_count[-1]` is 0); a column

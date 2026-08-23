@@ -77,9 +77,11 @@ reads them while deciding what belongs to which level.
    distinct counts, value shapes, and containment checks, not just
    column names/types.
 2. **`_02_map`**: excludes GIS bookkeeping noise columns
-   (`core.constants.NOISE_COLUMNS`), shape-classifies and structurally
-   positions every remaining source column (below), reorders everything,
-   and writes one crosswalk row per column (`{name}_02`).
+   (`core.constants.is_noise_column()`, catching both an exact
+   `NOISE_COLUMNS` name and a GDAL collision-suffixed or DBF-truncated
+   form of one, e.g. `fid_1` or `Shape_Le_1`), shape-classifies and
+   structurally positions every remaining source column (below), reorders
+   everything, and writes one crosswalk row per column (`{name}_02`).
 3. **`_03_outputs`**: exports `{name}_02` as the crosswalk CSV file. No
    hard gate: like `detect`, this tool never modifies geometry, so there's
    nothing to validate against.
@@ -94,7 +96,12 @@ reads them while deciding what belongs to which level.
    nesting at all. Columns sharing a `COUNT(DISTINCT)` cluster together
    only if pairwise bijective with each other (a third column sharing
    their count but not their bijection stays its own singleton, it
-   doesn't break the other two apart).
+   doesn't break the other two apart). An all-null column (`COUNT
+   (DISTINCT) = 0`) is excluded from this step entirely: two all-null
+   columns are vacuously bijective with each other and with nothing else,
+   no real evidence either way, the same principle `_embeds()` already
+   applies (see `docs/adr/0069`). It still appears in the crosswalk,
+   correctly falling through to `unmatched`.
 2. **Build the hierarchy as a longest path over the full containment
    DAG, embedding-justified except at a true constant**
    (`_build_chain()`, `core/map/_02_map.py`): dynamic programming over
@@ -116,14 +123,20 @@ reads them while deciding what belongs to which level.
    real, bijective code+name pair (Madagascar's `ADM1_PCODE`+`ADM1_EN`)
    win a chain slot over a coarser, independently-numbered grouping that
    also reaches the same root (`PROV_CODE_`) at the same path length.
-3. **Assign each chain level's columns a `code`/`name` role**
-   (`_assign_chain_roles()`): a column that embeds its level's resolved
-   parent is `code`; a sibling that doesn't is `name`, when at least one
-   sibling did embed. When nothing in the group embeds the parent
-   (independently-numbered codes, a lone column, or a level with no
-   parent at all), each column's role falls back to
-   `_looks_code_shaped()` individually: a majority of non-null values
-   containing a digit is `code`, otherwise `name` (see `docs/adr/0066`).
+3. **Assign each chain level's columns a `code`/`name` role,
+   per column, never deferred to a sibling** (`_assign_chain_roles()`): a
+   column that embeds its level's resolved parent is `code`; otherwise
+   its own value shape decides (`_looks_code_shaped()`, a majority of
+   non-null values containing a digit), independently of whether some
+   other column at the same level embedded the parent. A column that
+   fails to embed the parent still resolves to `code` on shape alone
+   rather than defaulting to `name`: a companion group can have more than
+   one real code representation (Angola's numeric `Cod_Prov` alongside
+   its embedding `Cod_Alfa_N`), and a coincidentally bijective non-name
+   attribute (Mozambique's numeric `area_sqkm`, sharing a level's
+   cardinality by chance) must not claim the `name` slot away from the
+   level's real name column just because it failed to embed (see
+   `docs/adr/0067`).
 4. **Bracket every non-chain column into the chain by cardinality**
    (`_bracket_other_columns()`): a column lands at chain level `k` if
    `code_count[k-1] < COUNT(DISTINCT col) <= code_count[k]`
@@ -222,9 +235,11 @@ the source file's own original column order.
 - A row-unique non-code column at the exact same cardinality as the
   finest code level (e.g. a raw feature index) can still pass the
   bijection/containment checks and falsely companion with it; noise-
-  column exclusion (`core.constants.NOISE_COLUMNS`) mitigates known cases,
-  but this is an accepted limitation, not fully closed, same philosophy
-  as `docs/adr/0052`.
+  column exclusion (`core.constants.is_noise_column()`) mitigates known
+  GIS bookkeeping cases (including a GDAL collision-suffixed or
+  DBF-truncated duplicate, see `docs/adr/0068`), but this is an accepted
+  limitation for any other coincidentally row-unique attribute, not fully
+  closed, same philosophy as `docs/adr/0052`.
 - A column that genuinely, coincidentally is bijective with a level's
   code (varies 1:1 with it, purely by chance, not because it's the
   level's real name) is numbered and renamed alongside any real name

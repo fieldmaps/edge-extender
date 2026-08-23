@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.constants import NOISE_COLUMNS
+from topo_tools.core.constants import is_noise_column
 from topo_tools.core.duckdb_utils import quote_identifier
 from topo_tools.core.map._constants import CONFIDENCE_AMBIGUOUS, CONFIDENCE_SUPPLEMENTAL
 from topo_tools.core.map._target_schema import TargetSchema
@@ -33,7 +33,7 @@ def _candidate_columns(conn: DuckDBPyConnection, table: str) -> list[str]:
     return [
         r[0]
         for r in rows
-        if r[0] not in _EXCLUDED_COLUMNS and r[0].lower() not in NOISE_COLUMNS
+        if r[0] not in _EXCLUDED_COLUMNS and not is_noise_column(r[0])
     ]
 
 
@@ -230,7 +230,7 @@ def _assign_chain_roles(
 ) -> dict[str, "_Row"]:
     """Assign every chain-level column a code/name role and numbered target.
 
-    Embeds the resolved parent -> code; no embedding evidence -> value shape.
+    Embeds the resolved parent, or looks code-shaped -> code; else -> name.
     """
     rows: dict[str, _Row] = {}
     for index, (count, cols) in enumerate(chain):
@@ -241,15 +241,12 @@ def _assign_chain_roles(
         embeds_parent = {
             c: any(_embeds(conn, table, c, p) for p in parent_cols) for c in cols
         }
-        any_embeds = any(embeds_parent.values())
-        roles: dict[str, str] = {}
-        for c in cols:
-            if embeds_parent[c]:
-                roles[c] = "code"
-            elif any_embeds:
-                roles[c] = "name"
-            else:
-                roles[c] = "code" if _looks_code_shaped(conn, table, c) else "name"
+        roles: dict[str, str] = {
+            c: "code"
+            if embeds_parent[c] or _looks_code_shaped(conn, table, c)
+            else "name"
+            for c in cols
+        }
         parent_code = parent_cols[0] if parent_cols else None
         for role, template in (
             ("code", schema.code_field),
@@ -373,7 +370,9 @@ def main(conn: DuckDBPyConnection, name: str, schema: TargetSchema) -> None:
     columns = _candidate_columns(conn, table)
     counts = _distinct_counts(conn, table, columns)
 
-    level_groups = _build_level_groups(conn, table, columns, counts)
+    # An all-null column has no evidence either way, same principle as _embeds().
+    chainable_columns = [c for c in columns if counts[c] > 0]
+    level_groups = _build_level_groups(conn, table, chainable_columns, counts)
     chain = _build_chain(conn, table, level_groups)
 
     rows = _assign_chain_roles(conn, table, chain, schema, counts)

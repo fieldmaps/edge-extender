@@ -1,5 +1,7 @@
 """Shared, tool-neutral constants used by more than one pipeline."""
 
+import re
+
 SNAP_TOLERANCE = 0.00000001
 # Equal Earth, used by match/change to rank/compute areas for cross-polygon
 # area comparison (never stored).
@@ -32,6 +34,28 @@ NOISE_COLUMNS = frozenset(
         "fid_orig",
     }
 )
+
+_NOISE_SUFFIX_RE = re.compile(r"_(\d+)$")
+# ESRI Shapefile's DBF driver caps field names at this many characters total,
+# truncating the base name to make room for a disambiguating "_N" suffix.
+_DBF_FIELD_NAME_LIMIT = 10
+
+
+def is_noise_column(name: str) -> bool:
+    """Check name, or its GDAL collision-suffixed/DBF-truncated form, is noise."""
+    lowered = name.lower()
+    if lowered in NOISE_COLUMNS:
+        return True
+    match = _NOISE_SUFFIX_RE.search(lowered)
+    if not match:
+        return False
+    base = lowered[: match.start()]
+    if base in NOISE_COLUMNS:
+        return True
+    return len(lowered) == _DBF_FIELD_NAME_LIMIT and any(
+        noise.startswith(base) for noise in NOISE_COLUMNS
+    )
+
 
 # core.clip skips grid-tiling below this vertex count and clips directly.
 CLIP_TILE_MIN_VERTICES = 5000

@@ -12,9 +12,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   `source_column` and `target_column` columns.
 - `refactor` MUST raise `ValueError` if the crosswalk's `source_column`
   set does not exactly equal the input file's own column set, excluding
-  `core.constants.NOISE_COLUMNS` (extra columns in either direction),
-  catching a stale crosswalk or a mismatched input file rather than
-  silently mis-mapping or dropping data.
+  any column matching `core.constants.is_noise_column()` (extra columns
+  in either direction), catching a stale crosswalk or a mismatched input
+  file rather than silently mis-mapping or dropping data.
 - `refactor` MUST raise `ValueError` if two source columns share the
   same non-null `target_column`, or if a `target_column` collides with a
   reserved name (`fid`, `geom`, `geometry`), rather than letting DuckDB

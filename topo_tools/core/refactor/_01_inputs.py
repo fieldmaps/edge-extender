@@ -5,7 +5,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.constants import NOISE_COLUMNS
+from topo_tools.core.constants import is_noise_column
 from topo_tools.core.io import read_and_reproject
 
 
@@ -80,7 +80,7 @@ def validate_and_materialize_crosswalk(
     actual_columns = {
         r[0]
         for r in conn.execute(f'DESCRIBE "{table}"').fetchall()
-        if r[0] not in {"fid", "geom"} and r[0].lower() not in NOISE_COLUMNS
+        if r[0] not in {"fid", "geom"} and not is_noise_column(r[0])
     }
     crosswalk_columns = {row["source_column"] for row in crosswalk}
     _validate_columns_match(crosswalk_columns, actual_columns, path)
