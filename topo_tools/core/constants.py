@@ -14,6 +14,25 @@ EQUAL_AREA_CRS = "EPSG:8857"
 # again.
 RESERVED_COLUMN_NAMES = ("fid", "OGC_FID")
 
+# GIS bookkeeping columns map/refactor exclude as noise, not "real" source
+# data: case-insensitive exact match, not a heuristic.
+NOISE_COLUMNS = frozenset(
+    {
+        "objectid",
+        "globalid",
+        "fid",
+        "shape_leng",
+        "shape_length",
+        "shape__length",
+        "shape_area",
+        "shape__area",
+        # GDAL's own synthesized feature index, see RESERVED_COLUMN_NAMES.
+        "ogc_fid",
+        "ogc_fid_orig",
+        "fid_orig",
+    }
+)
+
 # core.clip skips grid-tiling below this vertex count and clips directly.
 CLIP_TILE_MIN_VERTICES = 5000
 # Target vertices per tile once tiling triggers; cell size is solved from

@@ -4,7 +4,7 @@
 
 `topo-tools` is a Python package of DuckDB-powered geospatial topology utilities,
 `pip install`-able and importable, mirroring the organization of the sister JS app
-at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships eleven
+at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships twelve
 tools, all used for improving administrative boundary datasets and matching
 sub-national boundaries to national boundaries (import-linter contracts
 governing which tool may depend on which are in `docs/reference/shared.md`).
@@ -20,8 +20,9 @@ tools below them:
 - **mosaic**: `assign-one` → `clip` → `stitch`, fitting an already-extended child layer (a prior `extend()` output) into a new/different parent/clip layer, skipping Voronoi extension entirely. See `docs/explanation/mosaic.md`.
 - **clean**: `detect` → fixes the reported coverage defects (gaps, overlaps) with `ST_CoverageClean`, reporting the fix outcome in the issues file for manual review. See `docs/explanation/clean.md`.
 - **change**: compares an old/new polygon layer pair and classifies every unit (unchanged/renamed/modified/relocated/split/merge/complex/created/removed) via spatial overlap and optional code/name identity linking; writes a tabular changelog plus a colored spatial overlay layer. See `docs/explanation/change.md`.
-- **schema-propose**: proposes a source-column → target-schema crosswalk (exact/alias/pattern matching, plus cardinality/nesting-based admin-level inference for embedded ancestor columns), deterministically, no LLM; never renames anything itself. See `docs/explanation/schema_propose.md`.
-- **schema-apply**: renames/drops columns per a crosswalk from `schema-propose` (likely hand-edited first). See `docs/explanation/schema_apply.md`.
+- **map**: maps a source-column → target-schema crosswalk by inferring the admin hierarchy structurally (cardinality/containment, never column names) and classifying code vs. name by value shape, deterministically, no LLM; never renames anything itself. See `docs/explanation/map.md`.
+- **refactor**: renames/drops columns per a crosswalk from `map` (likely hand-edited first). See `docs/explanation/refactor.md`.
+- **crosswalk**: `map` → `refactor`, in one call, so a user can see mapped values right away and iterate by hand-editing the written crosswalk and re-running `refactor` on it. See `docs/explanation/crosswalk.md`.
 
 ## Deployment Targets
 
@@ -99,6 +100,7 @@ per-tool table names are in `docs/explanation/{tool}.md`.
 - **Topology validation** (`check_valid_topology()` in every tool's outputs stage, chaining `check_invalid_edges`/`check_gaps`, backed by `has_invalid_edges`/`has_gaps` in `topo_tools/core/coverage.py`) always unnests MultiPolygons first. No byte-exactness check, see the next bullet.
 - **`has_gaps()`/`check_valid_topology()` default `gap_maximum_width` to `SNAP_TOLERANCE` (GEOS's own `CoverageCleaner` parameter name, see `docs/adr/0002`), tolerating a wider gap**: a wider leftover gap may be a real hole in the parent/clip layer's own shape (e.g. Lesotho inside South Africa), a real unfilled-by-design gap, or a real unbatched absence, not a defect, so `match`/`mosaic`/`clean`/`stitch` all rely on this default and report any such gap as a `kind='gap'` row in the issues report instead of raising (see `docs/adr/0035`, `docs/adr/0037`, `docs/adr/0038`, `docs/adr/0039`). `extend` is the one outlier, passing `gap_maximum_width=0` explicitly for its zero-tolerance check: it has no parent/clip layer, so any gap in its own coverage is unambiguously a bug. `clean`/`match`/`mosaic`/`stitch` share one issues-table column schema and skip writing the file entirely when it would be empty (see `docs/adr/0035`, `docs/adr/0036`).
 - **Geometry column names**: `geom` in DuckDB tables, `geometry` in final output. `duckdb_memory()` profiling caveats are in `docs/explanation/performance.md`.
+- **`core.io.read_and_reproject()` raises `ValueError` on invalid source geometry `ST_MakeValid` can't repair, and on a 0-row read.** A 0-row read is a known DuckDB-spatial-bundled-GDAL gap on some real FileGDBs that a system-installed GDAL reads fine; re-export via `gdal vector convert` to GeoParquet/GPKG first as the workaround (see `docs/adr/0053`).
 - **`_05_merge.py` joins against nearby originals via bbox-prefiltered, part-exploded join, never a global `ST_Union_Agg` operand** (`_02_lines.py`'s neighbor-union join uses whole-fid bboxes instead, not interchangeable). See `docs/adr/0001`.
 - **Never call `ST_XMin`/`ST_XMax`/`ST_YMin`/`ST_YMax` inline inside a JOIN's `ON` clause** — can hang indefinitely on high-vertex-count tables. Precompute bbox columns on the joined table/CTE first, as `_05_merge.py` does (see `docs/adr/0014`).
 - **Byte-exact preservation of original polygon vertices is not a goal.** `ST_CoverageClean` may shift any polygon's boundary, including previously-untouched ones (see `docs/explanation/topology.md`).
@@ -118,6 +120,7 @@ per-tool table names are in `docs/explanation/{tool}.md`.
 - **`change` always uses exact `ST_Intersection`, never point-sampling**, unlike the sister JS app's WASM-only-bug workaround. See `docs/explanation/change.md`.
 - **`clean`'s `--maximum-gap-width`/`--snapping-distance` are decimal degrees, not meters** (`_01` is always EPSG:4326). See `docs/explanation/clean.md`.
 - **A read-role file argument MAY be an `http://`/`https://` URL to a `.parquet` file**, resolved via `core.io.resolve_input_path()`/`input_basename()`, never plain `Path()` (which mangles a URL's `//`); output-role arguments always stay local paths (see `docs/adr/0043`).
+- **`crosswalk` reuses `map`'s and `refactor`'s stage functions directly rather than re-implementing matching or renaming**, the same primitive-reuse pattern as `clean`/`detect` (`docs/adr/0028`), but split across two independent `name` sub-namespaces (`{name}` for `map`'s tables, `f"{name}_apply"` for `refactor`'s) since both hardcode `"{name}_02"` for different data. The apply namespace's `_01` table is a DuckDB **view** over the already-loaded input, not a copy, per this project's memory-constrained deployment targets; it MUST be dropped before any `DROP TABLE IF EXISTS` targets that name, since DuckDB raises a Catalog Error dropping a view as a table even with `IF EXISTS`. See `docs/explanation/crosswalk.md`.
 
 ### Supported Formats
 
@@ -152,6 +155,13 @@ uv run topo-tools clean example.geojson
 
 # Run the change tool (compares an old/new polygon layer pair)
 uv run topo-tools change old.geojson new.geojson
+
+# Run map/refactor standalone (propose a crosswalk, then apply it separately)
+uv run topo-tools map example.geojson
+uv run topo-tools refactor example.geojson example_crosswalk.csv
+
+# Run the crosswalk tool (map + refactor in one call)
+uv run topo-tools crosswalk example.geojson
 
 # Format and lint
 uv run ruff format && uv run ruff check
@@ -189,6 +199,6 @@ file (or an old/new comparison pair, for `change`) from the catalog.
 
 - `docs/tutorials/{tool}.md`: GDAL-style getting-started examples per tool
 - `docs/reference/{tool}.md`: behavior contract per tool (`shared.md` for common settings/gates)
-- `docs/explanation/{tool}.md`: stage-by-stage detail for `extend`, `topology`, `assign`, `clip`, `stitch`, `detect`, `dissolve`, `match`, `mosaic`, `clean`, `change`; notable: `topology.md` has the SPATIAL_JOIN memory bug, `performance.md` has thread-scaling benchmarks + the RTREE experiment, `voronoi-memory.md` has per-file resampling distance and memory ceilings for `phl_admin3`/`idn_admin3`, `match.md` has the `check_gaps` caveat
+- `docs/explanation/{tool}.md`: stage-by-stage detail for `extend`, `topology`, `assign`, `clip`, `stitch`, `detect`, `dissolve`, `match`, `mosaic`, `clean`, `change`, `map`, `refactor`, `crosswalk`; notable: `topology.md` has the SPATIAL_JOIN memory bug, `performance.md` has thread-scaling benchmarks + the RTREE experiment, `voronoi-memory.md` has per-file resampling distance and memory ceilings for `phl_admin3`/`idn_admin3`, `match.md` has the `check_gaps` caveat
 - `docs/how-to/`: `publishing.md` (PyPI release via OIDC), `verify-duckdb-function.md` (DuckDB/spatial function lookup), `at-scale-testing.md` (portolan catalog layout, picking a test file/pair)
 - `docs/adr/README.md`: how to decide ADR vs. `docs/explanation/` vs. CLAUDE.md's Key Patterns; `docs/adr/` itself holds the decision records

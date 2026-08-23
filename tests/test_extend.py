@@ -92,7 +92,9 @@ def test_cli_positional_args(synthetic_input, tmp_path):
 def test_cli_clean_error_on_existing_output(synthetic_input, tmp_path):
     output_path = tmp_path / "exists.parquet"
     output_path.touch()
-    result = CliRunner().invoke(cli, ["extend", str(synthetic_input), str(output_path)])
+    result = CliRunner().invoke(
+        cli, ["extend", str(synthetic_input), str(output_path), "--overwrite=false"]
+    )
     assert result.exit_code != 0
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "output already exists" in result.output

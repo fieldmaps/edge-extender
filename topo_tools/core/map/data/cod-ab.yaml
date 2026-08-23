@@ -1,0 +1,4 @@
+# Default target schema for map: COD-AB per-level name/code field templates.
+# map discovers hierarchy levels and code/name roles from the data alone.
+name_field: "adm{n}_name"
+code_field: "adm{n}_pcode"

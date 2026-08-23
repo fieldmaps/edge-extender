@@ -12,7 +12,12 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
+from topo_tools.core.io import (
+    check_overwrite,
+    default_output_path,
+    input_basename,
+    resolve_input_path,
+)
 
 logger = getLogger(__name__)
 
@@ -55,7 +60,7 @@ def _parse_snapping_distance(value: str | None) -> tuple[str, float | None]:
         raise ValueError(msg) from None
 
 
-def clean(  # noqa: C901, PLR0913
+def clean(  # noqa: PLR0913
     input_path: str | Path,
     output_path: str | Path | None = None,
     issues_path: str | Path | None = None,
@@ -64,7 +69,7 @@ def clean(  # noqa: C901, PLR0913
     snapping_distance: str | None = None,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
 ) -> None:
@@ -90,12 +95,8 @@ def clean(  # noqa: C901, PLR0913
         if issues_path is not None
         else output_path.with_stem(output_path.stem + "_issues")
     )
-    if output_path.exists() and not overwrite:
-        msg = f"output already exists: {output_path}"
-        raise FileExistsError(msg)
-    if issues_path.exists() and not overwrite:
-        msg = f"output already exists: {issues_path}"
-        raise FileExistsError(msg)
+    check_overwrite(output_path, overwrite=overwrite)
+    check_overwrite(issues_path, overwrite=overwrite)
 
     name = input_basename(input_path).replace(".", "_") + "_clean"
 

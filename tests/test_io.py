@@ -2,7 +2,17 @@
 
 from pathlib import Path
 
-from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
+import duckdb
+import pytest
+
+from topo_tools.core.io import (
+    _auto_resolve_layer,
+    default_output_path,
+    input_basename,
+    read_and_reproject,
+    reproject_select_sql,
+    resolve_input_path,
+)
 
 _URL = "https://data.source.coop/hdx/cod-ab/lka/latest/adm2/original.parquet"
 
@@ -35,3 +45,105 @@ def test_default_output_path_matches_with_stem_for_local_input():
 
 def test_default_output_path_defaults_to_cwd_for_url_input():
     assert default_output_path(_URL, "_extended") == Path("original_extended.parquet")
+
+
+class _FakeCursor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FakeMetaConn:
+    """Duck-types DuckDBPyConnection.execute() for ST_Read_Meta results only."""
+
+    def __init__(self, layers):
+        self._layers = layers
+
+    def execute(self, _sql, _params=None):
+        return _FakeCursor([] if self._layers is None else [(self._layers,)])
+
+
+def _layer(name, feature_count, *, spatial):
+    return {
+        "name": name,
+        "feature_count": feature_count,
+        "geometry_fields": [{"name": "geom"}] if spatial else [],
+    }
+
+
+def test_auto_resolve_layer_none_when_meta_empty():
+    assert _auto_resolve_layer(_FakeMetaConn(None), "x") is None
+
+
+def test_auto_resolve_layer_none_for_single_layer():
+    assert (
+        _auto_resolve_layer(_FakeMetaConn([_layer("a", 1, spatial=True)]), "x") is None
+    )
+
+
+def test_auto_resolve_layer_picks_sole_spatial_layer():
+    layers = [_layer("codebook", 3, spatial=False), _layer("zones", 519, spatial=True)]
+    assert _auto_resolve_layer(_FakeMetaConn(layers), "x") == "zones"
+
+
+def test_auto_resolve_layer_raises_on_multiple_spatial_layers():
+    layers = [_layer("a", 1, spatial=True), _layer("b", 2, spatial=True)]
+    with pytest.raises(ValueError, match=r"'a' \(1 features\).*'b' \(2 features\)"):
+        _auto_resolve_layer(_FakeMetaConn(layers), "x")
+
+
+def test_auto_resolve_layer_raises_when_no_layer_is_spatial():
+    layers = [_layer("a", 1, spatial=False), _layer("b", 2, spatial=False)]
+    with pytest.raises(ValueError, match="found 0 carrying geometry"):
+        _auto_resolve_layer(_FakeMetaConn(layers), "x")
+
+
+def test_reproject_select_sql_raises_clear_error_without_geometry(tmp_path):
+    path = tmp_path / "no_geom.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"COPY (SELECT 1 AS x) TO '{path}'")
+        with pytest.raises(ValueError, match="no geometry column found"):
+            reproject_select_sql(conn, path)
+
+
+def test_read_and_reproject_raises_clear_error_on_invalid_geometry(tmp_path):
+    path = tmp_path / "unclosed_ring.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            "COPY (SELECT ST_GeomFromText("
+            f"'POLYGON((0 0, 1 0, 1 1, 0 1))') AS geom) TO '{path}'"
+        )
+        with pytest.raises(ValueError, match="invalid geometry"):
+            read_and_reproject(conn, "out", path)
+
+
+def test_read_and_reproject_raises_on_zero_rows(tmp_path):
+    path = tmp_path / "empty.gpkg"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            "CREATE TABLE t AS SELECT ST_GeomFromText('POINT(0 0)') AS geom, 1 AS x"
+        )
+        conn.execute(
+            f"COPY (SELECT * FROM t WHERE false) TO '{path}' "
+            "(FORMAT GDAL, DRIVER 'GPKG')"
+        )
+        with pytest.raises(ValueError, match="read 0 features"):
+            read_and_reproject(conn, "out", path)
+
+
+def test_explicit_layer_overrides_auto_detection(tmp_path):
+    path = tmp_path / "namecheck.gpkg"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            "CREATE TABLE t AS SELECT ST_GeomFromText('POINT(0 0)') AS geom, 1 AS x"
+        )
+        conn.execute(f"COPY t TO '{path}' (FORMAT GDAL, DRIVER 'GPKG')")
+        read_and_reproject(conn, "out", path, layer=path.stem)
+        rows = conn.execute('SELECT * FROM "out_01"').fetchall()
+    assert len(rows) == 1

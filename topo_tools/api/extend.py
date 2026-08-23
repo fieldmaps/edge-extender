@@ -13,7 +13,12 @@ from topo_tools.core.extend import _02_lines as lines
 from topo_tools.core.extend import _05_merge as merge
 from topo_tools.core.extend import _06_outputs as outputs
 from topo_tools.core.extend import attempt
-from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
+from topo_tools.core.io import (
+    check_overwrite,
+    default_output_path,
+    input_basename,
+    resolve_input_path,
+)
 
 logger = getLogger(__name__)
 
@@ -38,13 +43,13 @@ _STEP_TABLES = {
 }
 
 
-def extend(  # noqa: C901, PLR0913
+def extend(  # noqa: PLR0913
     input_path: str | Path,
     output_path: str | Path | None = None,
     *,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
 ) -> None:
@@ -63,9 +68,7 @@ def extend(  # noqa: C901, PLR0913
         if output_path is not None
         else default_output_path(input_path, "_extended")
     )
-    if output_path.exists() and not overwrite:
-        msg = f"output already exists: {output_path}"
-        raise FileExistsError(msg)
+    check_overwrite(output_path, overwrite=overwrite)
 
     name = input_basename(input_path).replace(".", "_")
 

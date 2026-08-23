@@ -20,6 +20,7 @@ from topo_tools.core.duckdb_utils import (
     resolve_tmp_dir,
 )
 from topo_tools.core.io import (
+    check_overwrite,
     default_output_path,
     export_geometry_table,
     export_issues_table,
@@ -50,7 +51,7 @@ def clip(  # noqa: C901, PLR0912, PLR0913, PLR0915
     name: str | None = None,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
     match_column: str | None = None,
@@ -150,13 +151,9 @@ def clip(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     if step in (None, "outputs"):
         for out in outputs_list:
-            if out.exists() and not overwrite:
-                msg = f"output already exists: {out}"
-                raise FileExistsError(msg)
+            check_overwrite(out, overwrite=overwrite)
         for issues_out in issues_list:
-            if issues_out.exists() and not overwrite:
-                msg = f"output already exists: {issues_out}"
-                raise FileExistsError(msg)
+            check_overwrite(issues_out, overwrite=overwrite)
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,

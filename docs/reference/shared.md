@@ -18,6 +18,9 @@ instead of repeating them.
   units, assign, clip, detect, and stitch helpers MUST NOT depend on any
   of the five tool packages (`extend`, `match`, `clean`, `change`,
   `mosaic`); they are leaf building blocks usable by all of them.
+- The `crosswalk` tool MAY reuse `map`'s and `refactor`'s logic directly;
+  neither `map` nor `refactor` MUST depend on `crosswalk`, or on each
+  other (see `docs/explanation/crosswalk.md`).
 
 ## Coverage-topology checks
 
@@ -41,7 +44,13 @@ tool-specific settings (see the tool's own file for those):
   call unless `debug` is set.
 - `threads`: DuckDB thread count; unset MUST defer to DuckDB's own
   default.
-- `overwrite`: whether to overwrite an existing output path.
+- `overwrite`: whether to overwrite an existing output path; MUST default
+  to `True`, logging `"overwriting existing output: {path}"` when it
+  does; passing `False` (CLI: `--overwrite=false`) MUST raise
+  `FileExistsError` instead if any output path already exists. Every
+  `api.*()` function MUST route this check through
+  `core.io.check_overwrite()` rather than an inline check, so the
+  behavior stays in one place (see `docs/adr/0063`).
 - `debug`: MUST keep intermediate tables, export all of them to Parquet,
   and log timing + memory delta per query.
 - `step`: if given, MUST run only the one named stage; any value outside

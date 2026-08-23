@@ -289,7 +289,13 @@ def test_cli_error_on_existing_output(synthetic_children, synthetic_parents, tmp
     output_path.touch()
     result = CliRunner().invoke(
         cli,
-        ["mosaic", str(synthetic_children), str(synthetic_parents), str(output_path)],
+        [
+            "mosaic",
+            str(synthetic_children),
+            str(synthetic_parents),
+            str(output_path),
+            "--overwrite=false",
+        ],
     )
     assert result.exit_code != 0
     assert result.exception is None or isinstance(result.exception, SystemExit)

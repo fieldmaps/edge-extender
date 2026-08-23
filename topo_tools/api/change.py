@@ -21,7 +21,11 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.io import input_basename, resolve_input_path
+from topo_tools.core.io import (
+    check_overwrite,
+    input_basename,
+    resolve_input_path,
+)
 
 logger = getLogger(__name__)
 
@@ -68,7 +72,7 @@ def change(  # noqa: C901, PLR0912, PLR0913
     name_column_b: str | None = None,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
 ) -> None:
@@ -112,12 +116,8 @@ def change(  # noqa: C901, PLR0912, PLR0913
             f"got {overlay_path.suffix!r}"
         )
         raise ValueError(msg)
-    if output_path.exists() and not overwrite:
-        msg = f"output already exists: {output_path}"
-        raise FileExistsError(msg)
-    if overlay_path.exists() and not overwrite:
-        msg = f"output already exists: {overlay_path}"
-        raise FileExistsError(msg)
+    check_overwrite(output_path, overwrite=overwrite)
+    check_overwrite(overlay_path, overwrite=overwrite)
 
     # "_changelog" keeps every table/file this call creates distinct from an
     # extend()/match()/clean() run against the same old_path/tmp_dir, same

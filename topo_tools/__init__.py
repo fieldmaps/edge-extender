@@ -4,13 +4,14 @@ from .api import (
     change,
     clean,
     clip,
+    crosswalk,
     detect,
     dissolve,
     extend,
+    map,  # noqa: A004
     match,
     mosaic,
-    schema_apply,
-    schema_propose,
+    refactor,
     stitch,
 )
 from .cli.main import cli
@@ -20,12 +21,13 @@ __all__ = [
     "clean",
     "cli",
     "clip",
+    "crosswalk",
     "detect",
     "dissolve",
     "extend",
+    "map",
     "match",
     "mosaic",
-    "schema_apply",
-    "schema_propose",
+    "refactor",
     "stitch",
 ]

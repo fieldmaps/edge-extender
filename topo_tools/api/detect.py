@@ -11,7 +11,12 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
+from topo_tools.core.io import (
+    check_overwrite,
+    default_output_path,
+    input_basename,
+    resolve_input_path,
+)
 
 logger = getLogger(__name__)
 
@@ -30,7 +35,7 @@ def detect(  # noqa: PLR0913
     *,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
 ) -> None:
@@ -49,9 +54,7 @@ def detect(  # noqa: PLR0913
         if output_path is not None
         else default_output_path(input_path, "_issues")
     )
-    if output_path.exists() and not overwrite:
-        msg = f"output already exists: {output_path}"
-        raise FileExistsError(msg)
+    check_overwrite(output_path, overwrite=overwrite)
 
     # "_detect" keeps every table/file this call creates distinct from
     # another tool's run against the same input_path/tmp_dir.

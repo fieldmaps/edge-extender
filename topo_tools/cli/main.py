@@ -9,13 +9,14 @@ import click
 from topo_tools.api import change as _change
 from topo_tools.api import clean as _clean
 from topo_tools.api import clip as _clip
+from topo_tools.api import crosswalk as _crosswalk
 from topo_tools.api import detect as _detect
 from topo_tools.api import dissolve as _dissolve
 from topo_tools.api import extend as _extend
+from topo_tools.api import map as _map
 from topo_tools.api import match as _match
 from topo_tools.api import mosaic as _mosaic
-from topo_tools.api import schema_apply as _schema_apply
-from topo_tools.api import schema_propose as _schema_propose
+from topo_tools.api import refactor as _refactor
 from topo_tools.api import stitch as _stitch
 from topo_tools.core.change._constants import TAU_MATCH_DEFAULT, TAU_SAME_DEFAULT
 
@@ -38,7 +39,12 @@ def cli() -> None:
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -85,8 +91,8 @@ def extend(  # noqa: PLR0913, PLR0917
       topo-tools extend example.gpkg example_extended.gpkg
 
       \b
-      # Rerun and overwrite a previous output
-      topo-tools extend example.parquet example_extended.parquet --overwrite
+      # Error instead of silently overwriting an existing output
+      topo-tools extend example.parquet example_extended.parquet --overwrite=false
     """
     logger.info("--debug=%s", debug)
     try:
@@ -107,7 +113,12 @@ def extend(  # noqa: PLR0913, PLR0917
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -187,7 +198,12 @@ def detect(  # noqa: PLR0913, PLR0917
     help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -282,7 +298,12 @@ def dissolve(  # noqa: PLR0913, PLR0917
     "default). Noding robustness knob only.",
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -435,7 +456,12 @@ def clean(  # noqa: PLR0913, PLR0917
     help="New-side name column; auto-detected if omitted.",
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -536,7 +562,12 @@ def change(  # noqa: PLR0913, PLR0917
     help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -654,7 +685,12 @@ def match(  # noqa: PLR0913, PLR0917
     help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -792,7 +828,12 @@ def mosaic(  # noqa: PLR0913, PLR0917
     help='Issues report path. Defaults to OUTPUT_FILE with an "_issues" suffix.',
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -852,8 +893,8 @@ def stitch(  # noqa: PLR0913, PLR0917
       topo-tools stitch afg.parquet stitched.parquet --input ago.parquet,are.parquet
 
       \b
-      # Rerun and overwrite a previous output
-      topo-tools stitch tiled.parquet stitched.parquet --overwrite
+      # Error instead of silently overwriting an existing output
+      topo-tools stitch tiled.parquet stitched.parquet --overwrite=false
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -883,22 +924,27 @@ def stitch(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command(name="schema-propose")
+@cli.command(name="map")
 @click.argument("input_file", envvar="INPUT_FILE")
-@click.argument("target_schema_file", envvar="TARGET_SCHEMA_FILE")
+@click.argument(
+    "target_schema_file", envvar="TARGET_SCHEMA_FILE", required=False, default=None
+)
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
-    "--own-level",
-    envvar="OWN_LEVEL",
-    type=int,
+    "--layer",
+    envvar="LAYER",
     default=None,
-    help="This file's own admin level (e.g. 3 for an admin3 file). Anchors "
-    "the finest column in a validated nesting chain to a concrete level; "
-    "omit to leave every level in that chain as a relative placeholder for "
-    "review.",
+    help="Layer name, for a multi-layer source (e.g. FileGDB). Auto-detected "
+    "when possible; required if auto-detection can't resolve it to exactly "
+    "one geometry-bearing layer.",
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -918,45 +964,45 @@ def stitch(  # noqa: PLR0913, PLR0917
 @click.option(
     "--step",
     envvar="STEP",
-    type=click.Choice(["inputs", "propose", "outputs"]),
+    type=click.Choice(["inputs", "map", "outputs"]),
     default=None,
     help="Run only one named stage.",
 )
-def schema_propose(  # noqa: PLR0913, PLR0917
+def map_cmd(  # noqa: PLR0913, PLR0917
     input_file: str,
-    target_schema_file: str,
+    target_schema_file: str | None,
     output_file: str | None,
-    own_level: int | None,
+    layer: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
     debug: bool,  # noqa: FBT001
     tmp_dir: str | None,
     step: str | None,
 ) -> None:
-    r"""Propose a source-column -> target-schema crosswalk for one input file.
+    r"""Map a source-column -> target-schema crosswalk for one input file.
 
-    TARGET_SCHEMA_FILE is a YAML config of canonical target fields (see
-    docs/examples/target-schemas/cod-ab.yaml for an example). OUTPUT_FILE
-    defaults to INPUT_FILE with a "_crosswalk.json" name if omitted. Never
-    renames anything itself; review/edit the crosswalk, then run
-    schema-apply.
+    TARGET_SCHEMA_FILE is a YAML config of canonical target fields; if
+    omitted, defaults to the bundled COD-AB schema
+    (topo_tools/core/map/data/cod-ab.yaml). OUTPUT_FILE defaults to
+    INPUT_FILE with a "_crosswalk.csv" name if omitted. Never renames
+    anything itself; review/edit the crosswalk, then run refactor.
 
     \b
     Examples:
-      # Basic run, output name chosen automatically
-      topo-tools schema-propose example.geojson target-schema.yaml
+      # Basic run: default (COD-AB) schema, output name chosen automatically
+      topo-tools map example.geojson
 
       \b
-      # Anchor this file's own (finest) admin level
-      topo-tools schema-propose example.geojson target-schema.yaml --own-level 3
+      # Custom target schema
+      topo-tools map example.geojson target-schema.yaml
     """
-    logger.info("--own-level=%s --debug=%s", own_level, debug)
+    logger.info("--debug=%s", debug)
     try:
-        _schema_propose(
+        _map(
             input_file,
             target_schema_file,
             Path(output_file) if output_file is not None else None,
-            own_level=own_level,
+            layer=layer,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,
@@ -967,12 +1013,17 @@ def schema_propose(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command(name="schema-apply")
+@cli.command(name="refactor")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("crosswalk_file", envvar="CROSSWALK_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
@@ -996,7 +1047,7 @@ def schema_propose(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
-def schema_apply(  # noqa: PLR0913, PLR0917
+def refactor(  # noqa: PLR0913, PLR0917
     input_file: str,
     crosswalk_file: str,
     output_file: str | None,
@@ -1006,29 +1057,121 @@ def schema_apply(  # noqa: PLR0913, PLR0917
     tmp_dir: str | None,
     step: str | None,
 ) -> None:
-    r"""Rename/drop columns per a crosswalk from schema-propose (possibly edited).
+    r"""Rename/drop columns per a crosswalk from map (possibly edited).
 
-    CROSSWALK_FILE is the JSON crosswalk schema-propose wrote (or a
-    hand-edited copy of it). Raises if the crosswalk's columns don't
-    exactly match INPUT_FILE's, catching a stale crosswalk or wrong input
-    file. OUTPUT_FILE defaults to INPUT_FILE with a "_mapped" suffix if
-    omitted.
+    CROSSWALK_FILE is the CSV crosswalk map wrote (or a hand-edited copy
+    of it). Raises if the crosswalk's columns don't exactly match
+    INPUT_FILE's, catching a stale crosswalk or wrong input file.
+    OUTPUT_FILE defaults to INPUT_FILE with a "_mapped" suffix if omitted.
 
     \b
     Examples:
       # Basic run, output name chosen automatically
-      topo-tools schema-apply example.geojson crosswalk.json
+      topo-tools refactor example.geojson crosswalk.csv
 
       \b
       # Explicit output
-      topo-tools schema-apply example.gpkg crosswalk.json example_mapped.gpkg
+      topo-tools refactor example.gpkg crosswalk.csv example_mapped.gpkg
     """
     logger.info("--debug=%s", debug)
     try:
-        _schema_apply(
+        _refactor(
             input_file,
             crosswalk_file,
             Path(output_file) if output_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command()
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument(
+    "target_schema_file", envvar="TARGET_SCHEMA_FILE", required=False, default=None
+)
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.argument("crosswalk_file", envvar="CROSSWALK_FILE", required=False, default=None)
+@click.option(
+    "--layer",
+    envvar="LAYER",
+    default=None,
+    help="Layer name, for a multi-layer source (e.g. FileGDB). Auto-detected "
+    "when possible; required if auto-detection can't resolve it to exactly "
+    "one geometry-bearing layer.",
+)
+@click.option(
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "map", "apply", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+def crosswalk(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    target_schema_file: str | None,
+    output_file: str | None,
+    crosswalk_file: str | None,
+    layer: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+) -> None:
+    r"""Map a crosswalk, then immediately apply it (map + refactor in one call).
+
+    TARGET_SCHEMA_FILE defaults to the bundled COD-AB schema. OUTPUT_FILE
+    defaults to INPUT_FILE with a "_mapped" suffix; CROSSWALK_FILE defaults
+    to INPUT_FILE with a "_crosswalk.csv" name. To iterate, hand-edit the
+    written crosswalk CSV and re-run refactor on it, not crosswalk again
+    (which always maps fresh).
+
+    \b
+    Examples:
+      # Basic run: default (COD-AB) schema, output names chosen automatically
+      topo-tools crosswalk example.geojson
+
+      \b
+      # Custom target schema, explicit outputs
+      topo-tools crosswalk example.geojson target-schema.yaml \
+          example_mapped.geojson example_crosswalk.csv
+    """
+    logger.info("--debug=%s", debug)
+    try:
+        _crosswalk(
+            input_file,
+            target_schema_file,
+            Path(output_file) if output_file is not None else None,
+            Path(crosswalk_file) if crosswalk_file is not None else None,
+            layer=layer,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,
@@ -1089,7 +1232,12 @@ def schema_apply(  # noqa: PLR0913, PLR0917
     help="Run name for internal tables/tmp files. Required when --input is given.",
 )
 @click.option(
-    "--overwrite", envvar="OVERWRITE", is_flag=True, help="Overwrite existing output."
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
 )
 @click.option(
     "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."

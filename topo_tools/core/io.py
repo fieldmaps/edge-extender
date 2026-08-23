@@ -4,12 +4,17 @@ from logging import getLogger
 from pathlib import Path
 from urllib.parse import urlparse
 
+import duckdb
 from duckdb import DuckDBPyConnection
 
 from .constants import COPY_OPTS, RESERVED_COLUMN_NAMES
 from .coverage import coverage_clean, has_valid_topology
 
 logger = getLogger(__name__)
+
+# Esri FileGDB API type GUID for a feature class (spatial); stable across
+# versions, and how GDAL's own OpenFileGDB driver tells layers apart too.
+_ESRI_FEATURE_CLASS_TYPE = "{70737809-852C-4A03-9E22-2CECEA5B9BFA}"
 
 
 def resolve_input_path(path: str | Path) -> Path | str:
@@ -24,6 +29,16 @@ def input_basename(path: Path | str) -> str:
     return Path(urlparse(path).path).name
 
 
+def check_overwrite(path: Path, *, overwrite: bool) -> None:
+    """Raise if path exists and overwrite is off; log and proceed otherwise."""
+    if not path.exists():
+        return
+    if not overwrite:
+        msg = f"output already exists: {path}"
+        raise FileExistsError(msg)
+    logger.info("overwriting existing output: %s", path)
+
+
 def default_output_path(input_path: Path | str, suffix: str) -> Path:
     """Default output path: input's own directory (CWD if remote), stem + suffix.
 
@@ -36,23 +51,92 @@ def default_output_path(input_path: Path | str, suffix: str) -> Path:
     return directory / base.with_stem(base.stem + suffix).name
 
 
-def reproject_select_sql(conn: DuckDBPyConnection, path: Path | str) -> str:
+def _filegdb_spatial_layers(
+    conn: DuckDBPyConnection, path: Path | str
+) -> list[str] | None:
+    """Feature-class names via a FileGDB's own catalog table; never opens a layer."""
+    catalog = Path(path) / "a00000004.gdbtable"
+    if not catalog.exists():
+        return None
+    query = (
+        f"SELECT Name FROM ST_Read('{catalog}') "
+        "WHERE Name <> '' AND Path = '\\' || Name AND Type = ? ORDER BY Name"
+    )
+    try:
+        rows = conn.execute(query, [_ESRI_FEATURE_CLASS_TYPE]).fetchall()
+    except duckdb.Error:
+        return None
+    return [row[0] for row in rows]
+
+
+def _auto_resolve_layer(conn: DuckDBPyConnection, path: Path | str) -> str | None:
+    """Auto-pick the sole geometry-bearing layer; None defers to ST_Read's default."""
+    filegdb_layers = _filegdb_spatial_layers(conn, path)
+    if filegdb_layers:
+        if len(filegdb_layers) == 1:
+            return filegdb_layers[0]
+        candidates = ", ".join(repr(name) for name in filegdb_layers)
+        msg = (
+            f"{path} is a FileGDB with {len(filegdb_layers)} feature classes, "
+            f"not exactly 1 ({candidates}); pass layer= (CLI: --layer) with "
+            "the layer name"
+        )
+        raise ValueError(msg)
+    if filegdb_layers is not None:
+        return None
+
+    meta = conn.execute("SELECT layers FROM ST_Read_Meta(?)", [str(path)]).fetchall()
+    if not meta or not meta[0][0] or len(meta[0][0]) <= 1:
+        return None
+    layers = meta[0][0]
+    spatial = [layer for layer in layers if layer["geometry_fields"]]
+    if len(spatial) == 1:
+        return spatial[0]["name"]
+    candidates = ", ".join(
+        f"{layer['name']!r} ({layer['feature_count']} features)" for layer in layers
+    )
+    msg = (
+        f"{path} has multiple layers and auto-detection found "
+        f"{len(spatial)} carrying geometry, not exactly 1 ({candidates}); "
+        "pass layer= (CLI: --layer) with the layer name"
+    )
+    raise ValueError(msg)
+
+
+def reproject_select_sql(
+    conn: DuckDBPyConnection, path: Path | str, layer: str | None = None
+) -> str:
     """Build the read+reproject-to-EPSG:4326 SELECT for one file, as unexecuted SQL.
 
     Composable as a subquery, so multiple files' worth can be combined with
     `UNION ALL BY NAME` inside one `CREATE TABLE ... AS SELECT` call instead
     of materializing a table per file first (see `docs/adr/0044`).
     """
-    read_expr = (
-        f"SELECT * FROM '{path}'"
-        if Path(input_basename(path)).suffix == ".parquet"
-        else f"SELECT * FROM ST_Read('{path}')"
-    )
+    is_parquet = Path(input_basename(path)).suffix == ".parquet"
+    if layer is None and not is_parquet:
+        layer = _auto_resolve_layer(conn, path)
+
+    if is_parquet:
+        read_expr = f"SELECT * FROM '{path}'"
+    elif layer is not None:
+        read_expr = f"SELECT * FROM ST_Read('{path}', layer='{layer}')"
+    else:
+        read_expr = f"SELECT * FROM ST_Read('{path}')"
 
     schema = conn.execute(f"DESCRIBE {read_expr}").fetchall()
-    geom_col, geom_type = next(
-        (col[0], col[1]) for col in schema if col[1].startswith("GEOMETRY")
+    geom_match = next(
+        ((col[0], col[1]) for col in schema if col[1].startswith("GEOMETRY")), None
     )
+    if geom_match is None:
+        layer_note = f" (layer={layer!r})" if layer else ""
+        msg = (
+            f"no geometry column found reading {path}{layer_note}; this source "
+            "may have multiple layers that couldn't be auto-detected (a known "
+            "gap for FileGDB) -- find the layer name (e.g. `gdal vector info "
+            f"{path}`) and pass layer= (CLI: --layer)"
+        )
+        raise ValueError(msg)
+    geom_col, geom_type = geom_match
     # A source column already named "fid"/"OGC_FID" would otherwise collide
     # with our own row_number() AS fid below (duplicate column) or with
     # GDAL's reserved FID handling on export (see RESERVED_COLUMN_NAMES);
@@ -94,19 +178,37 @@ def reproject_select_sql(conn: DuckDBPyConnection, path: Path | str) -> str:
     """
 
 
-def read_and_reproject(conn: DuckDBPyConnection, name: str, path: Path | str) -> None:
+def read_and_reproject(
+    conn: DuckDBPyConnection, name: str, path: Path | str, layer: str | None = None
+) -> None:
     """Read geodata, reproject to EPSG:4326, store as canonical table `{name}_01`."""
-    conn.execute(f"""--sql
-        CREATE OR REPLACE TABLE "{name}_01" AS
-        {reproject_select_sql(conn, path)}
-    """)
+    select_sql = reproject_select_sql(conn, path, layer)
+    try:
+        conn.execute(f'CREATE OR REPLACE TABLE "{name}_01" AS {select_sql}')
+    except duckdb.Error as e:
+        msg = (
+            f"failed to read/reproject {path}: {e}; the source file may contain "
+            "invalid geometry (e.g. an unclosed ring) that ST_MakeValid cannot repair"
+        )
+        raise ValueError(msg) from e
+
+    count = conn.execute(f'SELECT COUNT(*) FROM "{name}_01"').fetchone()[0]
+    if count == 0:
+        layer_note = f" (layer={layer!r})" if layer else ""
+        msg = (
+            f"read 0 features from {path}{layer_note}; DuckDB spatial's bundled "
+            "GDAL build may not support this exact source format/version (seen "
+            "with some FileGDBs that a system-installed GDAL reads fine) -- try "
+            "re-exporting it first, e.g. `gdal vector convert` to GeoParquet/GPKG"
+        )
+        raise ValueError(msg)
 
 
 def read_reproject_and_clean(
-    conn: DuckDBPyConnection, name: str, path: Path | str
+    conn: DuckDBPyConnection, name: str, path: Path | str, layer: str | None = None
 ) -> None:
     """Read, reproject, and coverage-clean geodata into table `{name}_01`."""
-    read_and_reproject(conn, name, path)
+    read_and_reproject(conn, name, path, layer)
 
     table = f"{name}_01"
     if not has_valid_topology(conn, table, gap_maximum_width=0):

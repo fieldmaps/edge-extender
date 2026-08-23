@@ -73,8 +73,8 @@ through `dissolve` itself.
 
 `dissolve` never inspects column names to infer which are "ancestor"
 columns; it inspects the data itself (constancy per group). This keeps it
-schema-agnostic in the same spirit as `schema-propose`, whose target schema
-is itself a user-supplied YAML, not a naming convention fixed inside
+schema-agnostic in the same spirit as `map`, whose target schema is
+itself a user-supplied YAML, not a naming convention fixed inside
 `topo-tools`. A pipeline using any column-naming convention gets the same
 automatic behavior without `dissolve` needing to know the convention
 exists.

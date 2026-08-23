@@ -242,6 +242,7 @@ def test_cli_error_on_existing_output(admin3_input, tmp_path):
             str(output_path),
             "--group-by",
             "adm2_pcode,adm1_pcode",
+            "--overwrite=false",
         ],
     )
     assert result.exit_code != 0

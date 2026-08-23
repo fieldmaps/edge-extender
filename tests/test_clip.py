@@ -192,7 +192,13 @@ def test_cli_error_on_existing_output(synthetic_children, synthetic_parents, tmp
     output_path.touch()
     result = CliRunner().invoke(
         cli,
-        ["clip", str(synthetic_children), str(synthetic_parents), str(output_path)],
+        [
+            "clip",
+            str(synthetic_children),
+            str(synthetic_parents),
+            str(output_path),
+            "--overwrite=false",
+        ],
     )
     assert result.exit_code != 0
     assert "output already exists" in result.output

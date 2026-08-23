@@ -35,7 +35,7 @@ topo-tools = "topo_tools.cli.main:cli"
 dev = ["import-linter", "pre-commit", "pytest", "ruff"]
 
 [build-system]
-requires = ["uv_build>=0.11.27,<0.12.0"]
+requires = ["uv_build>=0.11.27,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -223,3 +223,23 @@ forbidden_modules = [
     "topo_tools.core.change",
     "topo_tools.core.mosaic",
 ]
+
+[[tool.importlinter.contracts]]
+id = "crosswalk-may-use-map-not-reverse"
+name = "crosswalk may depend on map; map must not depend on crosswalk"
+type = "forbidden"
+source_modules = ["topo_tools.core.map"]
+forbidden_modules = ["topo_tools.core.crosswalk"]
+
+[[tool.importlinter.contracts]]
+id = "crosswalk-may-use-refactor-not-reverse"
+name = "crosswalk may depend on refactor; refactor must not depend on crosswalk"
+type = "forbidden"
+source_modules = ["topo_tools.core.refactor"]
+forbidden_modules = ["topo_tools.core.crosswalk"]
+
+[[tool.importlinter.contracts]]
+id = "map-independent-of-refactor"
+name = "map and refactor must not depend on each other"
+type = "independence"
+modules = ["topo_tools.core.map", "topo_tools.core.refactor"]

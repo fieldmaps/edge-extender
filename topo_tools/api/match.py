@@ -9,7 +9,12 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
+from topo_tools.core.io import (
+    check_overwrite,
+    default_output_path,
+    input_basename,
+    resolve_input_path,
+)
 from topo_tools.core.match import _01_inputs as inputs
 from topo_tools.core.match import _02_groups as groups
 from topo_tools.core.match import _03_clip as clip
@@ -41,7 +46,7 @@ def match(  # noqa: C901, PLR0912, PLR0913
     *,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
     match_column: str | None = None,
@@ -85,12 +90,8 @@ def match(  # noqa: C901, PLR0912, PLR0913
         if issues_path is not None
         else output_path.with_stem(output_path.stem + "_issues")
     )
-    if output_path.exists() and not overwrite:
-        msg = f"output already exists: {output_path}"
-        raise FileExistsError(msg)
-    if issues_path.exists() and not overwrite:
-        msg = f"output already exists: {issues_path}"
-        raise FileExistsError(msg)
+    check_overwrite(output_path, overwrite=overwrite)
+    check_overwrite(issues_path, overwrite=overwrite)
 
     # "_match" keeps every table/file this call creates distinct from an
     # extend() run against the same input_path/tmp_dir, e.g. extend's bare

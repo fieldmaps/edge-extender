@@ -9,7 +9,12 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
+from topo_tools.core.io import (
+    check_overwrite,
+    default_output_path,
+    input_basename,
+    resolve_input_path,
+)
 from topo_tools.core.mosaic import _01_clip as clip
 from topo_tools.core.mosaic import _02_stitch as stitch
 from topo_tools.core.mosaic import _03_outputs as outputs
@@ -27,7 +32,7 @@ _STEP_TABLES = {
 }
 
 
-def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def mosaic(  # noqa: C901, PLR0912, PLR0913
     input_paths: str | Path | list[str | Path],
     clip_path: str | Path,
     output_path: str | Path | None = None,
@@ -35,7 +40,7 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
     *,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
     match_column: str | None = None,
@@ -89,12 +94,8 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else output_path.with_stem(output_path.stem + "_issues")
     )
     if step in (None, "outputs"):
-        if output_path.exists() and not overwrite:
-            msg = f"output already exists: {output_path}"
-            raise FileExistsError(msg)
-        if issues_path.exists() and not overwrite:
-            msg = f"output already exists: {issues_path}"
-            raise FileExistsError(msg)
+        check_overwrite(output_path, overwrite=overwrite)
+        check_overwrite(issues_path, overwrite=overwrite)
 
     # "_mosaic" keeps every table/file this call creates distinct from an
     # extend()/match() run against the same input_path/tmp_dir.

@@ -279,7 +279,14 @@ def test_cli_change_error_on_existing_output(old_layer, new_layer, tmp_path):
     output_path = tmp_path / "exists.csv"
     output_path.touch()
     result = CliRunner().invoke(
-        cli, ["change", str(old_layer), str(new_layer), str(output_path)]
+        cli,
+        [
+            "change",
+            str(old_layer),
+            str(new_layer),
+            str(output_path),
+            "--overwrite=false",
+        ],
     )
     assert result.exit_code != 0
     assert result.exception is None or isinstance(result.exception, SystemExit)

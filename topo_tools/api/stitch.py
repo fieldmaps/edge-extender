@@ -8,7 +8,12 @@ from topo_tools.core.duckdb_utils import (
     pipeline_connection,
     resolve_tmp_dir,
 )
-from topo_tools.core.io import default_output_path, input_basename, resolve_input_path
+from topo_tools.core.io import (
+    check_overwrite,
+    default_output_path,
+    input_basename,
+    resolve_input_path,
+)
 from topo_tools.core.stitch import _01_inputs as inputs
 from topo_tools.core.stitch import _02_clean as clean
 from topo_tools.core.stitch import _03_outputs as outputs
@@ -24,14 +29,14 @@ _STEP_TABLES = {
 }
 
 
-def stitch(  # noqa: C901, PLR0912, PLR0913
+def stitch(  # noqa: C901, PLR0913
     input_path: str | Path | list[str | Path],
     output_path: str | Path | None = None,
     issues_path: str | Path | None = None,
     *,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
-    overwrite: bool = False,
+    overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
 ) -> None:
@@ -65,12 +70,8 @@ def stitch(  # noqa: C901, PLR0912, PLR0913
         if issues_path is not None
         else output_path.with_stem(output_path.stem + "_issues")
     )
-    if output_path.exists() and not overwrite:
-        msg = f"output already exists: {output_path}"
-        raise FileExistsError(msg)
-    if issues_path.exists() and not overwrite:
-        msg = f"output already exists: {issues_path}"
-        raise FileExistsError(msg)
+    check_overwrite(output_path, overwrite=overwrite)
+    check_overwrite(issues_path, overwrite=overwrite)
 
     # "_stitch" keeps every table/file this call creates distinct from
     # another tool's run against the same input_path/tmp_dir.
