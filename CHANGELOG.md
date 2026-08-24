@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-24
+
+### Added
+
+- `dissolve`: new tool that aggregates a polygon layer into a coarser one
+  by grouping on attribute columns, auto-keeping every other column that's
+  constant per group and dropping the rest.
+- `schema-map`/`schema-refactor`/`schema-crosswalk`: new tools that map a
+  source-column crosswalk to a target schema by inferring the admin
+  hierarchy structurally (never renaming anything itself), apply that
+  crosswalk to rename/drop columns, and chain the two in one call.
+- `edge-match`/`edge-mosaic`/`edge-clip`: assignment now prefers an exact
+  code match (e.g. a shared pcode) over the spatial plurality/majority
+  pick when they disagree, falling back to the spatial pick when no code
+  match exists; both outcomes are reported as issue rows for review.
+- `schema-map`: chain-building now falls back to containment alone when
+  no column pair in the file has embedding evidence, and tolerates a
+  single missing-value sentinel (e.g. a literal "No_Pcode" string) the
+  same way NULL already carries no evidence.
+- `schema-map`: the crosswalk CSV gains a `unique_count` column
+  (parent-combined distinct count) so a reviewer can spot a value reused
+  across parents.
+
+### Changed
+
+- **Breaking:** every tool is renamed to a `{group}-{verb}` CLI
+  convention: `extend`→`edge-extend`, `clip`→`edge-clip`,
+  `stitch`→`edge-stitch`, `match`→`edge-match`, `mosaic`→`edge-mosaic`,
+  `detect`→`topo-detect`, `clean`→`topo-clean`, `map`→`schema-map`,
+  `refactor`→`schema-refactor`. `dissolve` and `change` are unchanged.
+  Applies to CLI command names and Python API module names alike.
+- Every tool's `overwrite` kwarg now defaults to `true`, logging the
+  overwrite instead of requiring the flag on every rerun.
+
+### Fixed
+
+- `schema-map`: role assignment no longer lets one column's embedding
+  evidence override a sibling's own shape evidence, and a coincidentally
+  bijective non-name column no longer displaces the real name column.
+- `schema-map`: GDAL collision-suffixed and DBF-truncated duplicate
+  columns (e.g. `fid_1`, `Shape_Le_1`) are now excluded from the
+  crosswalk the same as their originals; all-null columns are excluded
+  from chain candidacy the same way they're already treated as no
+  evidence for embedding.
+- `schema-map`: dropped a country/admin0 embedding assumption that broke
+  on files with an independently-numbered admin1 or no country column at
+  all; group formation now considers every column regardless of
+  embedding, and level exclusion is based on the level's own cardinality
+  rather than its position in the chain.
+
 ## [0.2.0] - 2026-08-11
 
 ### Added
@@ -108,6 +158,7 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OCHA-DAP/topo-tools-py/releases/tag/v0.1.0
