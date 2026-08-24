@@ -55,18 +55,28 @@ empirical justification.
 - The admin hierarchy MUST be built as the longest path through every
   coarser/finer pair of level-groups that satisfies containment
   (`GROUP BY finer HAVING COUNT(DISTINCT coarser) > 1` MUST return zero
-  rows for every coarser/finer column pair between the two groups), not
-  just cardinality-adjacent pairs; this lets a finer level reconnect past
-  a level that doesn't nest cleanly (a "loose" cross-cutting attribute
-  that happens to be embedded inside a compound code, e.g. an urban/rural
-  classifier) instead of severing the rest of the chain. A candidate edge
-  MUST additionally require either the coarser group's `COUNT(DISTINCT)`
-  to be exactly 1 (a true constant, exempt from embedding), or some
-  column in the finer group to textually contain (`contains(child,
-  parent)`, row for row over non-null pairs) some column in the coarser
-  group. When multiple candidates tie for the longest path, the one with
-  more same-level companion columns MUST win, then the one with the
-  higher (finer) `COUNT(DISTINCT)`.
+  rows, or exactly one violating group, for every coarser/finer column
+  pair between the two groups; see the single-violator tolerance below),
+  not just cardinality-adjacent pairs; this lets a finer level reconnect
+  past a level that doesn't nest cleanly (a "loose" cross-cutting
+  attribute that happens to be embedded inside a compound code, e.g. an
+  urban/rural classifier) instead of severing the rest of the chain. A
+  candidate edge MUST additionally require either the coarser group's
+  `COUNT(DISTINCT)` to be exactly 1 (a true constant, exempt from
+  embedding), or some column in the finer group to textually contain
+  (`contains(child, parent)`, row for row over non-null pairs, tolerating
+  a single violating value) some column in the coarser group, or, if no
+  coarser/finer group pair anywhere in the file has embedding evidence at
+  all, containment alone (see `docs/adr/0070`). When multiple candidates
+  tie for the longest path, the one with more same-level companion
+  columns MUST win, then the one with the higher (finer) `COUNT(DISTINCT)`.
+- Both the containment and embedding checks above MUST tolerate exactly
+  one violating value the same way a NULL already carries no evidence: a
+  missing-value sentinel (e.g. `"No_Pcode"`) reused across many real
+  parents, never a hardcoded literal, only "exactly one distinct value
+  explains every violation". More than one distinct violator MUST fail
+  strictly, a genuine multi-value anomaly, not a placeholder (see
+  `docs/adr/0071`).
 - Every level MUST be numbered by the column's relative rank in the
   discovered chain (0 = coarsest); `map` never takes a real admin number
   as input, it only infers nesting depth.

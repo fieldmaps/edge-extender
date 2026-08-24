@@ -49,27 +49,43 @@ def _distinct_counts(
 
 
 def _embeds(conn: DuckDBPyConnection, table: str, child: str, parent: str) -> bool:
-    """Check every row where both are non-null has `child` contain `parent`.
+    """Check every non-null row has `child` contain `parent`, tolerating one sentinel.
 
-    An all-null `parent` gives no evidence either way and must not pass.
+    An all-null `parent`, or every failure sharing one `child` value, is no evidence.
+    """
+    evaluated_where = f"""
+        {quote_identifier(child)} IS NOT NULL AND {quote_identifier(parent)} IS NOT NULL
+    """
+    not_contains = f"""
+        NOT contains(
+            CAST({quote_identifier(child)} AS VARCHAR),
+            CAST({quote_identifier(parent)} AS VARCHAR)
+        )
     """
     evaluated, bad = conn.execute(f"""--sql
         SELECT
-            COUNT(*) FILTER (
-                WHERE {quote_identifier(child)} IS NOT NULL
-                  AND {quote_identifier(parent)} IS NOT NULL
-            ),
-            COUNT(*) FILTER (
-                WHERE {quote_identifier(child)} IS NOT NULL
-                  AND {quote_identifier(parent)} IS NOT NULL
-                  AND NOT contains(
-                      CAST({quote_identifier(child)} AS VARCHAR),
-                      CAST({quote_identifier(parent)} AS VARCHAR)
-                  )
-            )
+            COUNT(*) FILTER (WHERE {evaluated_where}),
+            COUNT(*) FILTER (WHERE {evaluated_where} AND {not_contains})
         FROM {quote_identifier(table)}
     """).fetchone()
-    return evaluated > 0 and bad == 0
+    if bad == 0:
+        return evaluated > 0
+    culprits = conn.execute(f"""--sql
+        SELECT DISTINCT CAST({quote_identifier(child)} AS VARCHAR)
+        FROM {quote_identifier(table)}
+        WHERE {evaluated_where} AND {not_contains}
+    """).fetchall()
+    if len(culprits) != 1:
+        return False
+    remaining = conn.execute(
+        f"""--sql
+        SELECT COUNT(*) FROM {quote_identifier(table)}
+        WHERE {evaluated_where}
+          AND CAST({quote_identifier(child)} AS VARCHAR) != ?
+        """,
+        [culprits[0][0]],
+    ).fetchone()[0]
+    return remaining > 0
 
 
 def _looks_code_shaped(conn: DuckDBPyConnection, table: str, column: str) -> bool:
@@ -93,15 +109,13 @@ def _looks_code_shaped(conn: DuckDBPyConnection, table: str, column: str) -> boo
 def _containment_holds(
     conn: DuckDBPyConnection, table: str, coarser: str, finer: str
 ) -> bool:
-    """Check that every value of `finer` maps to exactly one value of `coarser`."""
-    bad = conn.execute(f"""--sql
-        SELECT COUNT(*) FROM (
-            SELECT {quote_identifier(finer)} FROM {quote_identifier(table)}
-            GROUP BY {quote_identifier(finer)}
-            HAVING COUNT(DISTINCT {quote_identifier(coarser)}) > 1
-        )
-    """).fetchone()[0]
-    return bad == 0
+    """Check every `finer` maps to one `coarser`, tolerating one violating value."""
+    violators = conn.execute(f"""--sql
+        SELECT {quote_identifier(finer)} FROM {quote_identifier(table)}
+        GROUP BY {quote_identifier(finer)}
+        HAVING COUNT(DISTINCT {quote_identifier(coarser)}) > 1
+    """).fetchall()
+    return len(violators) <= 1
 
 
 def _bijective(conn: DuckDBPyConnection, table: str, a: str, b: str) -> bool:
@@ -171,25 +185,36 @@ def _build_chain(
 ) -> list[tuple[int, list[str]]]:
     """Longest nesting path; a non-constant edge must be embedding-justified.
 
-    See docs/adr/0066: a constant needs no embedding, anything else does.
+    See docs/adr/0066: a constant needs no embedding, anything else does,
+    unless no candidate pair in the whole file embeds at all (docs/adr/0070).
     """
     n = len(groups)
-    best_len = [1] * n
-    best_prev: list[int | None] = [None] * n
+    edges: dict[tuple[int, int], tuple[bool, bool]] = {}
     for finer_idx in range(n):
         _finer_count, finer_cols = groups[finer_idx]
         for coarser_idx in range(finer_idx):
-            coarser_count, coarser_cols = groups[coarser_idx]
+            _coarser_count, coarser_cols = groups[coarser_idx]
             joins = all(
                 _containment_holds(conn, table, coarser=a, finer=b)
                 for a in coarser_cols
                 for b in finer_cols
             )
-            if not joins:
-                continue
-            justified = coarser_count == 1 or any(
+            embeds = joins and any(
                 _embeds(conn, table, b, a) for a in coarser_cols for b in finer_cols
             )
+            edges[coarser_idx, finer_idx] = (joins, embeds)
+
+    no_embedding_anywhere = not any(embeds for _joins, embeds in edges.values())
+
+    best_len = [1] * n
+    best_prev: list[int | None] = [None] * n
+    for finer_idx in range(n):
+        for coarser_idx in range(finer_idx):
+            coarser_count, _coarser_cols = groups[coarser_idx]
+            joins, embeds = edges[coarser_idx, finer_idx]
+            if not joins:
+                continue
+            justified = coarser_count == 1 or embeds or no_embedding_anywhere
             if justified and best_len[coarser_idx] + 1 > best_len[finer_idx]:
                 best_len[finer_idx] = best_len[coarser_idx] + 1
                 best_prev[finer_idx] = coarser_idx

@@ -107,14 +107,25 @@ reads them while deciding what belongs to which level.
    (`_build_chain()`, `core/map/_02_map.py`): dynamic programming over
    every coarser/finer pair of groups, not just cardinality-adjacent
    ones, testing that `GROUP BY finer HAVING COUNT(DISTINCT coarser) > 1`
-   returns zero rows for each (containment), and additionally requiring
-   either the coarser group's `COUNT(DISTINCT)` to be exactly 1 (a
-   constant has no variation to test embedding against, so it's exempt),
-   or some column in the finer group to textually contain
-   (`contains(child, parent)`) some column in the coarser group. Testing
-   every pair, not just neighbors, lets a finer level reconnect past one
-   that doesn't nest cleanly: a "loose" cross-cutting attribute can still
-   get baked into a compound code's construction (an urban/rural
+   returns zero rows, or exactly one violating group, for each
+   (containment), and additionally requiring either the coarser group's
+   `COUNT(DISTINCT)` to be exactly 1 (a constant has no variation to test
+   embedding against, so it's exempt), or some column in the finer group
+   to textually contain (`contains(child, parent)`) some column in the
+   coarser group, tolerating one violating value the same way, or, when
+   no group pair anywhere in the file embeds at all, containment alone
+   (DRC's GRID3 health-facility layers nest `province` through `airesante`
+   by name only, no compound code anywhere, see `docs/adr/0070`). The
+   single-violator tolerance (both here and in step 1's bijection check)
+   catches a missing-value sentinel like Syria's `"No_Pcode"`, reused
+   across many real parents, never a hardcoded literal: exactly one
+   distinct value must explain every violation, or the check stays strict
+   (Syria's `Admin_Unit.shp` has `SY14` genuinely duplicating five other
+   governorates' district codes, a real multi-value anomaly, not a
+   placeholder, so it correctly stays unresolved, see `docs/adr/0071`).
+   Testing every pair, not just neighbors, lets a finer level reconnect
+   past one that doesn't nest cleanly: a "loose" cross-cutting attribute
+   can still get baked into a compound code's construction (an urban/rural
    classifier concatenated into a barrio-level code, say) without
    breaking the chain around it. When multiple candidates tie for the
    longest path, the one with more same-level companion columns wins (a
@@ -246,12 +257,14 @@ the source file's own original column order.
   candidates there; nothing short of a vocabulary or human signal can
   tell the two apart (`docs/adr/0057`).
 - A code column with no parent-value embedding evidence, at a level whose
-  parent isn't a true constant (e.g. a GRID3-style opaque GUID one level
-  deep, or an independently-assigned per-level code convention that
-  doesn't concatenate its parent's value), is never recognized as chain-
-  eligible; it stays fully unresolved rather than guessing at its level,
-  since containment alone (without embedding) can't distinguish a real
-  nesting relationship from coincidence (`docs/adr/0064`, `docs/adr/0066`).
+  parent isn't a true constant, chains only if no group pair anywhere in
+  the file embeds at all (`docs/adr/0070`); a genuinely mixed file (some
+  levels use compound codes, this one doesn't, e.g. an independently-
+  assigned per-level code convention alongside a real p-code elsewhere)
+  still leaves that one level unresolved rather than guessing, since
+  containment alone can't distinguish a real nesting relationship from
+  coincidence once embedding evidence exists elsewhere in the same file
+  (`docs/adr/0064`, `docs/adr/0066`).
 - Levels are numbered purely by nesting depth, never a real admin number.
   A source file whose coarsest discovered level isn't actually admin0
   (e.g. a state-level file with no country column at all) still gets that
