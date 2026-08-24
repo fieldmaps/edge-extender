@@ -4,9 +4,9 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.clip import subdivide_boundary
 from topo_tools.core.constants import CLIP_TILE_MIN_VERTICES, EQUAL_AREA_CRS
 from topo_tools.core.duckdb_utils import bbox_columns_sql
+from topo_tools.core.edge_clip import subdivide_boundary
 
 logger = getLogger(__name__)
 

@@ -7,17 +7,17 @@ from pathlib import Path
 import click
 
 from topo_tools.api import change as _change
-from topo_tools.api import clean as _clean
-from topo_tools.api import clip as _clip
-from topo_tools.api import crosswalk as _crosswalk
-from topo_tools.api import detect as _detect
 from topo_tools.api import dissolve as _dissolve
-from topo_tools.api import extend as _extend
-from topo_tools.api import map as _map
-from topo_tools.api import match as _match
-from topo_tools.api import mosaic as _mosaic
-from topo_tools.api import refactor as _refactor
-from topo_tools.api import stitch as _stitch
+from topo_tools.api import edge_clip as _edge_clip
+from topo_tools.api import edge_extend as _edge_extend
+from topo_tools.api import edge_match as _edge_match
+from topo_tools.api import edge_mosaic as _edge_mosaic
+from topo_tools.api import edge_stitch as _edge_stitch
+from topo_tools.api import schema_crosswalk as _schema_crosswalk
+from topo_tools.api import schema_map as _schema_map
+from topo_tools.api import schema_refactor as _schema_refactor
+from topo_tools.api import topo_clean as _topo_clean
+from topo_tools.api import topo_detect as _topo_detect
 from topo_tools.core.change._constants import TAU_MATCH_DEFAULT, TAU_SAME_DEFAULT
 
 basicConfig(level=INFO, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -35,7 +35,7 @@ def cli() -> None:
     """topo-tools: DuckDB-powered geospatial topology utilities."""
 
 
-@cli.command()
+@cli.command(name="edge-extend")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
@@ -68,7 +68,7 @@ def cli() -> None:
     default=None,
     help="Run only one named stage.",
 )
-def extend(  # noqa: PLR0913, PLR0917
+def edge_extend(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     overwrite: bool,  # noqa: FBT001
@@ -84,19 +84,19 @@ def extend(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Basic run, output name chosen automatically
-      topo-tools extend example.geojson
+      topo-tools edge-extend example.geojson
 
       \b
       # Explicit output
-      topo-tools extend example.gpkg example_extended.gpkg
+      topo-tools edge-extend example.gpkg example_extended.gpkg
 
       \b
       # Error instead of silently overwriting an existing output
-      topo-tools extend example.parquet example_extended.parquet --overwrite=false
+      topo-tools edge-extend example.parquet example_extended.parquet --overwrite=false
     """
     logger.info("--debug=%s", debug)
     try:
-        _extend(
+        _edge_extend(
             input_file,
             Path(output_file) if output_file is not None else None,
             threads=threads,
@@ -109,7 +109,7 @@ def extend(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command()
+@cli.command(name="topo-detect")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
@@ -142,7 +142,7 @@ def extend(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
-def detect(  # noqa: PLR0913, PLR0917
+def topo_detect(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     overwrite: bool,  # noqa: FBT001
@@ -158,15 +158,15 @@ def detect(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Basic run, output name chosen automatically
-      topo-tools detect example.geojson
+      topo-tools topo-detect example.geojson
 
       \b
       # Explicit output
-      topo-tools detect example.gpkg example_issues.gpkg
+      topo-tools topo-detect example.gpkg example_issues.gpkg
     """
     logger.info("--debug=%s", debug)
     try:
-        _detect(
+        _topo_detect(
             input_file,
             Path(output_file) if output_file is not None else None,
             threads=threads,
@@ -270,7 +270,7 @@ def dissolve(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command()
+@cli.command(name="topo-clean")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
@@ -327,7 +327,7 @@ def dissolve(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
-def clean(  # noqa: PLR0913, PLR0917
+def topo_clean(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     issues_file: str | None,
@@ -346,19 +346,19 @@ def clean(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Basic run: fills only floating-point-noise-scale gaps (the default)
-      topo-tools clean example.geojson
+      topo-tools topo-clean example.geojson
 
       \b
       # Fill thin/sliver-shaped gaps regardless of width
-      topo-tools clean example.gpkg --maximum-gap-width thin
+      topo-tools topo-clean example.gpkg --maximum-gap-width thin
 
       \b
       # Fill every detected gap, not just slivers
-      topo-tools clean example.gpkg --maximum-gap-width all
+      topo-tools topo-clean example.gpkg --maximum-gap-width all
 
       \b
       # Cap gap-filling at ~0.0001 degrees (~11m at the equator)
-      topo-tools clean example.parquet --maximum-gap-width 0.0001
+      topo-tools topo-clean example.parquet --maximum-gap-width 0.0001
     """
     logger.info(
         "--maximum-gap-width=%s --snapping-distance=%s --debug=%s",
@@ -367,7 +367,7 @@ def clean(  # noqa: PLR0913, PLR0917
         debug,
     )
     try:
-        _clean(
+        _topo_clean(
             input_file,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
@@ -551,7 +551,7 @@ def change(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command()
+@cli.command(name="edge-match")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
@@ -613,7 +613,7 @@ def change(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
-def match(  # noqa: PLR0913, PLR0917
+def edge_match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
@@ -634,19 +634,19 @@ def match(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Fit an admin4 layer into a single country boundary
-      topo-tools match adm4.geojson adm0.geojson
+      topo-tools edge-match adm4.geojson adm0.geojson
 
       \b
       # Fit admin3 into admin2 groups, each cleaned against its own parent
-      topo-tools match adm3.gpkg adm2.gpkg adm3_matched.gpkg
+      topo-tools edge-match adm3.gpkg adm2.gpkg adm3_matched.gpkg
 
       \b
       # Prefer an existing pcode join over spatial overlap where they disagree
-      topo-tools match adm3.gpkg adm2.gpkg --match-column pcode
+      topo-tools edge-match adm3.gpkg adm2.gpkg --match-column pcode
     """
     logger.info("--debug=%s", debug)
     try:
-        _match(
+        _edge_match(
             input_file,
             clip_file,
             Path(output_file) if output_file is not None else None,
@@ -664,7 +664,7 @@ def match(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command()
+@cli.command(name="edge-mosaic")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
@@ -736,7 +736,7 @@ def match(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
-def mosaic(  # noqa: PLR0913, PLR0917
+def edge_mosaic(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
@@ -760,21 +760,22 @@ def mosaic(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Re-clip a pre-extended admin3 layer against a new admin0 boundary
-      topo-tools mosaic adm3_extended.parquet adm0_new.geojson
+      topo-tools edge-mosaic adm3_extended.parquet adm0_new.geojson
 
       \b
       # Combine every country's pre-extended layer, re-clip against a world admin0
-      topo-tools mosaic "*/latest/adm2/extended.parquet" world_adm0.geojson out.parquet
+      topo-tools edge-mosaic "*/latest/adm2/extended.parquet" world_adm0.geojson \
+        out.parquet
 
       \b
       # Combine explicit files instead of a glob (--input MAY be repeated
       # and/or comma-separated)
-      topo-tools mosaic afg.parquet world_adm0.geojson out.parquet \
+      topo-tools edge-mosaic afg.parquet world_adm0.geojson out.parquet \
         --input ago.parquet,are.parquet
 
       \b
       # Prefer an existing pcode join over spatial overlap where they disagree
-      topo-tools mosaic adm3_extended.parquet adm0_new.geojson --match-column pcode
+      topo-tools edge-mosaic adm3_extended.parquet adm0_new.geojson --match-column pcode
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -790,7 +791,7 @@ def mosaic(  # noqa: PLR0913, PLR0917
         all_inputs[0] if len(all_inputs) == 1 else all_inputs
     )
     try:
-        _mosaic(
+        _edge_mosaic(
             resolved_input,
             clip_file,
             Path(output_file) if output_file is not None else None,
@@ -808,7 +809,7 @@ def mosaic(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command()
+@cli.command(name="edge-stitch")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
@@ -857,7 +858,7 @@ def mosaic(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
-def stitch(  # noqa: PLR0913, PLR0917
+def edge_stitch(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     extra_inputs: tuple[str, ...],
@@ -877,24 +878,25 @@ def stitch(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Basic run, output name chosen automatically
-      topo-tools stitch tiled.geojson
+      topo-tools edge-stitch tiled.geojson
 
       \b
       # Explicit output
-      topo-tools stitch tiled.gpkg stitched.gpkg
+      topo-tools edge-stitch tiled.gpkg stitched.gpkg
 
       \b
       # Combine every already-clipped file into one global stitched output
-      topo-tools stitch "tmp/clipped/*.parquet" stitched.parquet
+      topo-tools edge-stitch "tmp/clipped/*.parquet" stitched.parquet
 
       \b
       # Combine explicit files instead of a glob (--input MAY be repeated
       # and/or comma-separated)
-      topo-tools stitch afg.parquet stitched.parquet --input ago.parquet,are.parquet
+      topo-tools edge-stitch afg.parquet stitched.parquet \
+        --input ago.parquet,are.parquet
 
       \b
       # Error instead of silently overwriting an existing output
-      topo-tools stitch tiled.parquet stitched.parquet --overwrite=false
+      topo-tools edge-stitch tiled.parquet stitched.parquet --overwrite=false
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -910,7 +912,7 @@ def stitch(  # noqa: PLR0913, PLR0917
         all_inputs[0] if len(all_inputs) == 1 else all_inputs
     )
     try:
-        _stitch(
+        _edge_stitch(
             resolved_input,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
@@ -924,7 +926,7 @@ def stitch(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command(name="map")
+@cli.command(name="schema-map")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument(
     "target_schema_file", envvar="TARGET_SCHEMA_FILE", required=False, default=None
@@ -968,7 +970,7 @@ def stitch(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
-def map_cmd(  # noqa: PLR0913, PLR0917
+def schema_map(  # noqa: PLR0913, PLR0917
     input_file: str,
     target_schema_file: str | None,
     output_file: str | None,
@@ -983,22 +985,22 @@ def map_cmd(  # noqa: PLR0913, PLR0917
 
     TARGET_SCHEMA_FILE is a YAML config of canonical target fields; if
     omitted, defaults to the bundled COD-AB schema
-    (topo_tools/core/map/data/cod-ab.yaml). OUTPUT_FILE defaults to
+    (topo_tools/core/schema_map/data/cod-ab.yaml). OUTPUT_FILE defaults to
     INPUT_FILE with a "_crosswalk.csv" name if omitted. Never renames
-    anything itself; review/edit the crosswalk, then run refactor.
+    anything itself; review/edit the crosswalk, then run schema-refactor.
 
     \b
     Examples:
       # Basic run: default (COD-AB) schema, output name chosen automatically
-      topo-tools map example.geojson
+      topo-tools schema-map example.geojson
 
       \b
       # Custom target schema
-      topo-tools map example.geojson target-schema.yaml
+      topo-tools schema-map example.geojson target-schema.yaml
     """
     logger.info("--debug=%s", debug)
     try:
-        _map(
+        _schema_map(
             input_file,
             target_schema_file,
             Path(output_file) if output_file is not None else None,
@@ -1013,7 +1015,7 @@ def map_cmd(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command(name="refactor")
+@cli.command(name="schema-refactor")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("crosswalk_file", envvar="CROSSWALK_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
@@ -1047,7 +1049,7 @@ def map_cmd(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
-def refactor(  # noqa: PLR0913, PLR0917
+def schema_refactor(  # noqa: PLR0913, PLR0917
     input_file: str,
     crosswalk_file: str,
     output_file: str | None,
@@ -1057,9 +1059,9 @@ def refactor(  # noqa: PLR0913, PLR0917
     tmp_dir: str | None,
     step: str | None,
 ) -> None:
-    r"""Rename/drop columns per a crosswalk from map (possibly edited).
+    r"""Rename/drop columns per a crosswalk from schema-map (possibly edited).
 
-    CROSSWALK_FILE is the CSV crosswalk map wrote (or a hand-edited copy
+    CROSSWALK_FILE is the CSV crosswalk schema-map wrote (or a hand-edited copy
     of it). Raises if the crosswalk's columns don't exactly match
     INPUT_FILE's, catching a stale crosswalk or wrong input file.
     OUTPUT_FILE defaults to INPUT_FILE with a "_mapped" suffix if omitted.
@@ -1067,15 +1069,15 @@ def refactor(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Basic run, output name chosen automatically
-      topo-tools refactor example.geojson crosswalk.csv
+      topo-tools schema-refactor example.geojson crosswalk.csv
 
       \b
       # Explicit output
-      topo-tools refactor example.gpkg crosswalk.csv example_mapped.gpkg
+      topo-tools schema-refactor example.gpkg crosswalk.csv example_mapped.gpkg
     """
     logger.info("--debug=%s", debug)
     try:
-        _refactor(
+        _schema_refactor(
             input_file,
             crosswalk_file,
             Path(output_file) if output_file is not None else None,
@@ -1089,7 +1091,7 @@ def refactor(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command()
+@cli.command(name="schema-crosswalk")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument(
     "target_schema_file", envvar="TARGET_SCHEMA_FILE", required=False, default=None
@@ -1134,7 +1136,7 @@ def refactor(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
-def crosswalk(  # noqa: PLR0913, PLR0917
+def schema_crosswalk(  # noqa: PLR0913, PLR0917
     input_file: str,
     target_schema_file: str | None,
     output_file: str | None,
@@ -1146,27 +1148,27 @@ def crosswalk(  # noqa: PLR0913, PLR0917
     tmp_dir: str | None,
     step: str | None,
 ) -> None:
-    r"""Map a crosswalk, then immediately apply it (map + refactor in one call).
+    r"""Map a crosswalk, then apply it (schema-map + schema-refactor, combined).
 
     TARGET_SCHEMA_FILE defaults to the bundled COD-AB schema. OUTPUT_FILE
     defaults to INPUT_FILE with a "_mapped" suffix; CROSSWALK_FILE defaults
     to INPUT_FILE with a "_crosswalk.csv" name. To iterate, hand-edit the
-    written crosswalk CSV and re-run refactor on it, not crosswalk again
-    (which always maps fresh).
+    written crosswalk CSV and re-run schema-refactor on it, not schema-crosswalk
+    again (which always maps fresh).
 
     \b
     Examples:
       # Basic run: default (COD-AB) schema, output names chosen automatically
-      topo-tools crosswalk example.geojson
+      topo-tools schema-crosswalk example.geojson
 
       \b
       # Custom target schema, explicit outputs
-      topo-tools crosswalk example.geojson target-schema.yaml \
+      topo-tools schema-crosswalk example.geojson target-schema.yaml \
           example_mapped.geojson example_crosswalk.csv
     """
     logger.info("--debug=%s", debug)
     try:
-        _crosswalk(
+        _schema_crosswalk(
             input_file,
             target_schema_file,
             Path(output_file) if output_file is not None else None,
@@ -1182,7 +1184,7 @@ def crosswalk(  # noqa: PLR0913, PLR0917
         raise click.ClickException(str(e)) from e
 
 
-@cli.command()
+@cli.command(name="edge-clip")
 @click.argument("input_file", envvar="INPUT_FILE")
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
@@ -1283,7 +1285,7 @@ def crosswalk(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
-def clip(  # noqa: PLR0913, PLR0917
+def edge_clip(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
@@ -1311,22 +1313,22 @@ def clip(  # noqa: PLR0913, PLR0917
     \b
     Examples:
       # Clip a children layer against a parent/clip layer
-      topo-tools clip children.parquet adm1.geojson
+      topo-tools edge-clip children.parquet adm1.geojson
 
       \b
       # Explicit output
-      topo-tools clip children.parquet adm1.geojson clipped.parquet
+      topo-tools edge-clip children.parquet adm1.geojson clipped.parquet
 
       \b
       # Multiple children files sharing one CLIP_FILE load (--input/--output
       # MAY each be repeated and/or comma-separated; --name is required)
-      topo-tools clip afg.parquet world_adm0.geojson afg_out.parquet \
+      topo-tools edge-clip afg.parquet world_adm0.geojson afg_out.parquet \
         --input ago.parquet,are.parquet --output ago_out.parquet,are_out.parquet \
         --name portolan_batch
 
       \b
       # Prefer an existing pcode join over spatial overlap where they disagree
-      topo-tools clip children.parquet adm1.geojson --match-column pcode
+      topo-tools edge-clip children.parquet adm1.geojson --match-column pcode
     """
     logger.info("--debug=%s", debug)
     if extra_inputs and output_file is None:
@@ -1354,7 +1356,7 @@ def clip(  # noqa: PLR0913, PLR0917
         issues = Path(issues_file) if issues_file is not None else None
 
     try:
-        _clip(
+        _edge_clip(
             children,
             clip_file,
             outputs,

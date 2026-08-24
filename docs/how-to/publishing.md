@@ -39,7 +39,7 @@ uv pip install --python /tmp/testpypi-check \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
   topo-tools==<version>
-/tmp/testpypi-check/bin/topo-tools extend --help
+/tmp/testpypi-check/bin/topo-tools edge-extend --help
 ```
 
 The `--extra-index-url` fallback is required: TestPyPI doesn't mirror `click`/`duckdb`/`psutil`, only whatever you've published there yourself. Full version history: <https://test.pypi.org/project/topo-tools/#history>.

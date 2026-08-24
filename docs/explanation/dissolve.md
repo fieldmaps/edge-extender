@@ -34,16 +34,16 @@ Run `topo-tools dissolve --help` for the full, always-current option list.
    warning naming every dropped column) if not. It then runs one
    `GROUP BY` + `ST_Union_Agg` + `ST_MakeValid` query — the same
    `ST_MakeValid(ST_Union_Agg(...)) ... GROUP BY` shape already used
-   internally by `core/extend/_04_voronoi.py`, generalized from a fixed
+   internally by `core/edge_extend/_04_voronoi.py`, generalized from a fixed
    `fid` grouping key to caller-supplied columns. A NULL value in a
    `group_by` column forms its own group here, DuckDB's native `GROUP BY`
    behavior, with no special-casing needed (see `docs/adr/0051`). This
    single-query shape is deliberately simpler than
-   `core/extend/_05_merge.py`'s bbox-prefiltered self-join: see
+   `core/edge_extend/_05_merge.py`'s bbox-prefiltered self-join: see
    `docs/adr/0047` for why that mitigation doesn't apply here.
 3. **`_03_outputs`**: `check_valid_topology()`, relying on its default
-   `gap_maximum_width=SNAP_TOLERANCE` (the same call `match`/`mosaic`/
-   `stitch` make), then export: raises on any overlap or a gap at or below
+   `gap_maximum_width=SNAP_TOLERANCE` (the same call `edge-match`/`edge-mosaic`/
+   `edge-stitch` make), then export: raises on any overlap or a gap at or below
    `SNAP_TOLERANCE`, tolerates a wider one. A tolerated gap still gets
    reported as a `kind='gap'` row in the issues report and a warning log.
 
@@ -73,7 +73,7 @@ through `dissolve` itself.
 
 `dissolve` never inspects column names to infer which are "ancestor"
 columns; it inspects the data itself (constancy per group). This keeps it
-schema-agnostic in the same spirit as `map`, whose target schema is
+schema-agnostic in the same spirit as `schema-map`, whose target schema is
 itself a user-supplied YAML, not a naming convention fixed inside
 `topo-tools`. A pipeline using any column-naming convention gets the same
 automatic behavior without `dissolve` needing to know the convention

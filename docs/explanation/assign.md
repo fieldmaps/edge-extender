@@ -1,7 +1,7 @@
 # Assign Explanation
 
 `assign-many` and `assign-one` are two internal crosswalk strategies in
-`core/assign/`, picked between by `match` (`assign-many`) and `mosaic`
+`core/assign/`, picked between by `edge-match` (`assign-many`) and `edge-mosaic`
 (`assign-one`); neither is a standalone CLI/API tool. Both build a
 `(child_fid, parent_fid)` pairing from a bbox-prefiltered, part-exploded
 overlap-area join; they differ only in how that pairing gets finalized
@@ -16,44 +16,44 @@ toward:
   misassign it).
 - **`assign-one`**: every child in one input file is forced onto **one**
   shared parent, chosen by majority vote of that file's children. Needed
-  for already-extended (post-`extend()`, overshoot) geometry, where a
+  for already-extended (post-`edge_extend()`, overshoot) geometry, where a
   handful of border-crossing children could otherwise plurality-assign
   themselves to the wrong neighboring parent.
 
 This is a decision-granularity distinction (per-child vs. per-file), not a
-tool-of-origin one: `assign-many` is `match`'s assignment logic,
-`assign-one` is `mosaic`'s.
+tool-of-origin one: `assign-many` is `edge-match`'s assignment logic,
+`assign-one` is `edge-mosaic`'s.
 
 ## Modules
 
 `core/assign/` has no `api.*()`/CLI pipeline of its own; every function
 below is called directly by another tool's own `api.*()` orchestrator
-(`api.mosaic`, `api.clip`, `api.match`), never from inside
-`core.mosaic`/`core.match` themselves.
+(`api.edge_mosaic`, `api.edge_clip`, `api.edge_match`), never from inside
+`core.edge_mosaic`/`core.edge_match` themselves.
 
 `core/assign/_inputs.py` loads the single parent/clip layer raw via
 `core.io.read_and_reproject`, and the (possibly multi-file) child layer via
 one combined query built from `core.io.reproject_select_sql()` per file
 (`UNION ALL BY NAME`, no table-per-file materialization, see
 `docs/adr/0044`); neither is coverage-checked nor -cleaned (consistent
-with `clip`/`stitch`; these are all purely mechanical primitives). Every
+with `edge-clip`/`edge-stitch`; these are all purely mechanical primitives). Every
 child row is tagged with a `source_file` column recording the exact path
 it came from (basename alone can't distinguish same-named files across
 directories).
-`api.mosaic` and standalone `api.clip` (its multi-file loop, see
-`docs/explanation/clip.md`) both call its `load_children()`/
-`load_parent()` directly, since ADR-0023 split those apart; `api.match`
-loads its own children via `core.match._01_inputs` instead.
+`api.edge_mosaic` and standalone `api.edge_clip` (its multi-file loop, see
+`docs/explanation/edge_clip.md`) both call its `load_children()`/
+`load_parent()` directly, since ADR-0023 split those apart; `api.edge_match`
+loads its own children via `core.edge_match._01_inputs` instead.
 
 `_many.py` / `_one.py` hold the actual assignment logic (see below):
-`api.match` calls `core.assign.assign_many()`, `api.mosaic` and
-standalone `api.clip` both call `core.assign.assign_one()`, all directly
-on their own already-loaded tables. `mosaic` calls it once per run;
-`clip`'s multi-file loop calls it once per children file, reusing a
+`api.edge_match` calls `core.assign.assign_many()`, `api.edge_mosaic` and
+standalone `api.edge_clip` both call `core.assign.assign_one()`, all directly
+on their own already-loaded tables. `edge-mosaic` calls it once per run;
+`edge-clip`'s multi-file loop calls it once per children file, reusing a
 cached parent-tile decomposition across every call (see below and
 `docs/adr/0024`). Neither function runs a coverage hard gate: an unclipped
 crosswalk is expected to still overlap/gap between neighboring children,
-that's `clip`'s and `stitch`'s job downstream.
+that's `edge-clip`'s and `edge-stitch`'s job downstream.
 
 ## `assign_many`: largest-overlap assignment
 
@@ -80,17 +80,17 @@ warning, not an error.
 `assign_one` cannot use `assign_many`'s pairs join unmodified: it runs
 against already-extended (often massively overshot) geometry, and a plain
 `ST_Intersection`-based area-sum join against a huge single parent part
-(e.g. a country-scale admin0 polygon) is exactly the failure mode `clip`
+(e.g. a country-scale admin0 polygon) is exactly the failure mode `edge-clip`
 itself grid-tiles around. So `assign_one` builds its own pairs table
-(`_build_pairs`), reusing `core.clip.subdivide_boundary` to tile any
+(`_build_pairs`), reusing `core.edge_clip.subdivide_boundary` to tile any
 parent part at or above `CLIP_TILE_MIN_VERTICES` before intersecting, the
-same threshold and tiling logic `clip` uses.
+same threshold and tiling logic `edge-clip` uses.
 
 That tiling is pure parent geometry, independent of which children are
 loaded, so it's split into its own function, `prepare_parent_tiles()`. A
-caller processing one children file per run (`mosaic`, single-file `clip`)
+caller processing one children file per run (`edge-mosaic`, single-file `edge-clip`)
 never notices: `assign_one()`'s default `use_cached_tiles=False` calls it
-once internally, same as before. `clip`'s multi-file loop instead calls
+once internally, same as before. `edge-clip`'s multi-file loop instead calls
 `prepare_parent_tiles()` once before iterating and passes
 `use_cached_tiles=True` on every file's `assign_one()` call, so the same
 parent's tiles aren't grid-subdivided from scratch on every one of

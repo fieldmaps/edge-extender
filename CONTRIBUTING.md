@@ -20,8 +20,8 @@ uv run pre-commit install
 ## Running the tool locally
 
 ```bash
-uv run topo-tools extend example.geojson
-# equivalently: uv run python -m topo_tools extend example.geojson
+uv run topo-tools edge-extend example.geojson
+# equivalently: uv run python -m topo_tools edge-extend example.geojson
 ```
 
 ## Tests
@@ -31,7 +31,7 @@ uv run pytest
 ```
 
 Tests use small synthetic geometry generated in-fixture (see
-`tests/test_extend.py`) rather than committed binary fixtures; prefer that
+`tests/test_edge_extend.py`) rather than committed binary fixtures; prefer that
 pattern for new tests unless a bug genuinely requires a real-world file to
 reproduce.
 
@@ -51,7 +51,7 @@ locally and fail in CI.
 Read `CLAUDE.md` before making structural changes. It documents the
 three-layer split (`core/` → `api/` → `cli/`) and the rule that `core/` and
 `api/` must never import `click`. New tools should follow the same
-`core/api/cli` layering as `extend`.
+`core/api/cli` layering as `edge-extend`.
 
 ## What a finished PR looks like
 

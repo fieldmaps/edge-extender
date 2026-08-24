@@ -57,10 +57,10 @@ Run `topo-tools change --help` for the full, always-current option list.
 1. **`_01_inputs`**: loads and coverage-cleans both layers by calling the
    shared `core.io.read_reproject_and_clean()` helper twice
    (`{name}_a_01` = old, `{name}_b_01` = new).
-   Unlike `clean`, `change` isn't trying to detect defects in the raw
+   Unlike `topo-clean`, `change` isn't trying to detect defects in the raw
    input (it's comparing two whole layers), so pre-cleaning each side
    reduces the risk of native GEOS choking on invalid geometry during
-   `ST_Intersection`, with no downside (same reasoning as `match`'s inputs
+   `ST_Intersection`, with no downside (same reasoning as `edge-match`'s inputs
    stage, which also pre-cleans both its layers).
 2. **`_02_overlap`**: computes `shared_area`/`coverage_a`/`coverage_b`/`iou`
    for every touching `(a_fid, b_fid)` pair.
@@ -68,8 +68,8 @@ Run `topo-tools change --help` for the full, always-current option list.
    cardinality-based classification, run in Python; assembles the final
    changelog table.
 4. **`_04_outputs`**: builds the spatial overlay render layer and exports
-   both artifacts. No topology hard-gate here (unlike `extend`/`match`/
-   `clean`): `change` is a read-only comparison, not a fix, so there's
+   both artifacts. No topology hard-gate here (unlike `edge-extend`/`edge-match`/
+   `topo-clean`): `change` is a read-only comparison, not a fix, so there's
    nothing to validate against.
 
 ## Why the WASM point-sampling fallback is dropped
@@ -102,12 +102,12 @@ Intersection crumbs below `INTERSECTION_SLIVER_DEG2` (`1e-12` deg², ~1cm²,
 ported as-is from JS) are dropped by their raw, untransformed degree² area,
 a cheap pre-filter before the equal-area transform, which is only ever
 applied to surviving intersection geometry (not the whole layer, to bound
-the cost). Areas and ratios use `EPSG:8857` (Equal Earth), matching `match`'s
+the cost). Areas and ratios use `EPSG:8857` (Equal Earth), matching `edge-match`'s
 own reasoning for avoiding raw `EPSG:4326` degree-area bias toward
 higher-latitude units. `EQUAL_AREA_CRS` lives in the shared
 `core/constants.py` and is imported from there, not duplicated as a
 separate literal in `change`'s own `_constants.py` the way it once was;
-`change` still stays decoupled from `match`/`clean` the same way they're
+`change` still stays decoupled from `edge-match`/`topo-clean` the same way they're
 decoupled from each other.
 
 ## Classification: identity + spatial union-find
@@ -116,8 +116,8 @@ decoupled from each other.
 and cardinality classification in Python rather than SQL. This is safe under
 this repo's memory model: the algorithm scales with **feature count**, not
 vertex count: a 500K-polygon admin layer is trivial to hold as Python
-dicts/sets, unlike the vertex-scaled Voronoi/coverage-clean work `extend`/
-`clean` do. Pair rows are fetched once via `conn.execute(...).fetchall()`,
+dicts/sets, unlike the vertex-scaled Voronoi/coverage-clean work `edge-extend`/
+`topo-clean` do. Pair rows are fetched once via `conn.execute(...).fetchall()`,
 classified entirely in memory, and written back via `conn.executemany()`;
 no batching needed the way JS's raw-SQL-string `INSERT ... VALUES` batching
 was (`_unionfind.py` mirrors JS's path-compressed, union-by-rank
@@ -199,7 +199,7 @@ both:
   no new polygon stands in for it). Together these tile the comparison area
   exactly once, colored by what happened (ported from JS's
   `render.ts:stageRender`). Single geometry type (Polygon/MultiPolygon), so
-  any of `extend`'s four formats is valid, unlike `clean`'s mixed-type
+  any of `edge-extend`'s four formats is valid, unlike `topo-clean`'s mixed-type
   issues file.
 
 ## Column auto-detection
@@ -227,7 +227,7 @@ explicit failure, not silent divergence from what the user asked for.
   pair to be `unchanged`/`renamed` rather than `modified`.
 
 Both are plain floats in `[0, 1]`, with no `auto`/`all` string modes the way
-`clean`'s `--gap-width` has: these thresholds have no GEOS-native
+`topo-clean`'s `--gap-width` has: these thresholds have no GEOS-native
 auto-default to defer to, they're this tool's own tunables.
 
 ## Portolan-scale profiling
@@ -242,7 +242,7 @@ Silicon/10 logical cores:
 | Ukraine admin3 v01→v05         | 10,375 / 1,769 | 46s       | 957 MB   | 9,860 merge (finer v01 consolidated into v05) |
 
 All three ran clean on the first attempt: no correctness or scale issues
-found, unlike `clean`'s overlap-detection bugs (see `docs/explanation/clean.md`). The
+found, unlike `topo-clean`'s overlap-detection bugs (see `docs/explanation/topo_clean.md`). The
 Ethiopia and Ukraine runs are good coverage of the classification taxonomy:
 Ethiopia's real federal-boundary splits exercise `split`/`complex`/`merge`/
 `removed` together, and Ukraine's 10,375→1,769 fid collapse stress-tests

@@ -21,7 +21,7 @@ Machine: Apple Silicon, macOS, 10 logical cores.
 
 ## Why one file per process
 
-`extend()`/`topo-tools extend` process exactly one file per call by design.
+`edge_extend()`/`topo-tools edge-extend` process exactly one file per call by design.
 Looping over many files *within a single process* has caused unbounded memory
 growth in the past: GEOS's native heap isn't fully released between files, even
 with the DuckDB connection closed. Call it once per file from separate OS
@@ -80,9 +80,9 @@ final polygons, the most expensive single query in the outputs phase.
 ## Portolan-scale profiling (post-restructure)
 
 The 147-file batch run recorded in `docs/explanation/voronoi-memory.md` predates the
-`app/` → `topo_tools` package restructure (commit `76f4426`); `clean` and
+`app/` → `topo_tools` package restructure (commit `76f4426`); `topo-clean` and
 `change` both got fresh post-restructure real-data tables (see
-`docs/explanation/clean.md`, `docs/explanation/change.md`) but `extend` itself hadn't been re-run
+`docs/explanation/topo_clean.md`, `docs/explanation/change.md`) but `edge-extend` itself hadn't been re-run
 against real portolan data under the current code until now.
 
 `phl_admin3` (portolan `phl/latest/adm3`, 1,642 fids, 13.85M vertices,
@@ -102,7 +102,7 @@ since-removed budget model, kept for the real measured numbers:
 | **Total** | **6m15s** | peak RSS **4.55 GB**                                     |
 
 Output: 1,642 fids preserved, 905,538 vertices (down from 13.85M, expected,
-`extend` resamples/simplifies via the Voronoi step). Topology validation
+`edge-extend` resamples/simplifies via the Voronoi step). Topology validation
 passed (`check_invalid_edges`/`check_gaps`), no correctness issues.
 
 **This run did not exercise the documented ~5.9GB ceiling**: that figure is

@@ -8,19 +8,19 @@ instead of repeating them.
 
 - Core tool logic MUST NOT depend on the command-line interface.
 - The public API layer MUST NOT depend on the command-line interface.
-- The `match` tool MAY reuse `extend`'s logic; `extend` MUST NOT depend on
-  `match`.
-- The `mosaic` tool MUST NOT depend on `extend` or `match`, and neither
-  MUST depend on `mosaic` (see `docs/explanation/mosaic.md`).
-- The `clean` tool MAY reuse `detect`'s logic; `detect` MUST NOT depend on
-  `clean` (see `docs/explanation/detect.md`, `docs/adr/0028`).
+- The `edge-match` tool MAY reuse `edge-extend`'s logic; `edge-extend` MUST NOT depend on
+  `edge-match`.
+- The `edge-mosaic` tool MUST NOT depend on `edge-extend` or `edge-match`, and neither
+  MUST depend on `edge-mosaic` (see `docs/explanation/edge_mosaic.md`).
+- The `topo-clean` tool MAY reuse `topo-detect`'s logic; `topo-detect` MUST NOT depend on
+  `topo-clean` (see `docs/explanation/topo_detect.md`, `docs/adr/0028`).
 - The shared constants, coverage-validation, file I/O, database-connection,
-  units, assign, clip, detect, and stitch helpers MUST NOT depend on any
-  of the five tool packages (`extend`, `match`, `clean`, `change`,
-  `mosaic`); they are leaf building blocks usable by all of them.
-- The `crosswalk` tool MAY reuse `map`'s and `refactor`'s logic directly;
-  neither `map` nor `refactor` MUST depend on `crosswalk`, or on each
-  other (see `docs/explanation/crosswalk.md`).
+  units, assign, edge-clip, topo-detect, and edge-stitch helpers MUST NOT depend on any
+  of the five tool packages (`edge-extend`, `edge-match`, `topo-clean`, `change`,
+  `edge-mosaic`); they are leaf building blocks usable by all of them.
+- The `schema-crosswalk` tool MAY reuse `schema-map`'s and `schema-refactor`'s logic directly;
+  neither `schema-map` nor `schema-refactor` MUST depend on `schema-crosswalk`, or on each
+  other (see `docs/explanation/schema_crosswalk.md`).
 
 ## Coverage-topology checks
 
@@ -69,36 +69,36 @@ CLI maps flags/env vars onto those same kwargs 1:1.
 
 ## Hard gates at each tool's output stage
 
-- `extend` MUST raise if its final output has any overlap or any gap of any
+- `edge-extend` MUST raise if its final output has any overlap or any gap of any
   size: it has no parent/clip layer, so any gap is unambiguously a defect
   in its own coverage (see `docs/adr/0035`).
-- `match` and `mosaic` MUST raise if their final output has any overlap, or
+- `edge-match` and `edge-mosaic` MUST raise if their final output has any overlap, or
   any gap at or below `SNAP_TOLERANCE`. A wider gap MUST NOT raise: it may
   be a legitimate hole in the parent/clip layer's own shape (e.g. one
   country fully enclosing another), not a coverage defect (see
   `docs/adr/0035`). Any such gap MUST still be logged as a warning and
   recorded in the issues report described in each tool's own file.
-- `clean` MUST raise if its final output has any overlap, or any unfilled
+- `topo-clean` MUST raise if its final output has any overlap, or any unfilled
   gap at or below the `gap_maximum_width` actually used for that run (see
   `docs/adr/0037`). It MUST NOT raise over a gap wider than that: gaps
   above the requested fill width may legitimately remain by design and
   are only logged.
-- `stitch` MUST raise if its final output has any overlap, or any gap at
+- `edge-stitch` MUST raise if its final output has any overlap, or any gap at
   or below `SNAP_TOLERANCE` (see `docs/adr/0038`). It MUST NOT raise over
   a wider gap, but MUST log a warning and record it in the issues report
-  described in `docs/reference/stitch.md`.
-- `clip` performs no topology hard gate at all: it clips a child to its
+  described in `docs/reference/edge_stitch.md`.
+- `edge-clip` performs no topology hard gate at all: it clips a child to its
   assigned parent's geometry one `parent_fid` at a time and does not
   itself validate whole-layer coverage. It MAY still produce an issues
   report when a match column is supplied (see below).
 - `change` performs no topology hard gate at all; it is a read-only
   comparison between two inputs, not a fix.
-- `detect` performs no topology hard gate at all; it is a read-only
+- `topo-detect` performs no topology hard gate at all; it is a read-only
   inspection, not a fix.
 
 ## Issues report schema
 
-`clean`, `match`, `mosaic`, and `stitch` each MAY produce an issues report
+`topo-clean`, `edge-match`, `edge-mosaic`, and `edge-stitch` each MAY produce an issues report
 alongside their main output, sharing one column schema: `key`, `kind`,
 `area_m2`, `max_width_m`, `thinness_ratio`, `unit_a`, `unit_b`,
 `parent_fid`, `reason`, `unit_a_area_change_m2`, `unit_b_area_change_m2`,
@@ -115,7 +115,7 @@ previous run, it MUST be deleted rather than left in place.
 
 ## Code-based assignment override
 
-`match`, `mosaic`, and standalone `clip` all MAY accept a `match_column`
+`edge-match`, `edge-mosaic`, and standalone `edge-clip` all MAY accept a `match_column`
 name (same column on both layers) or a `parent_match_column`/
 `child_match_column` pair (different names), mutually exclusive with each
 other; supplying only one of the pair MUST raise `ValueError`. When given,
@@ -133,6 +133,6 @@ rows, reusing the schema above:
 - `kind='code-fallback'`: no code match existed; the spatial result was
   used instead. `unit_a` and `parent_fid` MUST be populated the same way.
 
-This gives standalone `clip` its only issues-report capability: it produces
+This gives standalone `edge-clip` its only issues-report capability: it produces
 one only when `match_column`/`parent_match_column`/`child_match_column` is
-supplied and it yields at least one row (see `docs/reference/clip.md`).
+supplied and it yields at least one row (see `docs/reference/edge_clip.md`).

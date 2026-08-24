@@ -70,29 +70,29 @@ source_modules = ["topo_tools.api"]
 forbidden_modules = ["topo_tools.cli"]
 
 [[tool.importlinter.contracts]]
-id = "match-may-use-extend-not-reverse"
-name = "match may depend on extend; extend must not depend on match"
+id = "edge_match-may-use-edge_extend-not-reverse"
+name = "edge_match may depend on edge_extend; edge_extend must not depend on edge_match"
 type = "forbidden"
-source_modules = ["topo_tools.core.extend"]
-forbidden_modules = ["topo_tools.core.match"]
+source_modules = ["topo_tools.core.edge_extend"]
+forbidden_modules = ["topo_tools.core.edge_match"]
 
 [[tool.importlinter.contracts]]
-id = "change-independent-of-extend"
-name = "change and extend must not depend on each other"
+id = "change-independent-of-edge_extend"
+name = "change and edge_extend must not depend on each other"
 type = "independence"
-modules = ["topo_tools.core.change", "topo_tools.core.extend"]
+modules = ["topo_tools.core.change", "topo_tools.core.edge_extend"]
 
 [[tool.importlinter.contracts]]
-id = "mosaic-independent-of-extend"
-name = "mosaic and extend must not depend on each other"
+id = "edge_mosaic-independent-of-edge_extend"
+name = "edge_mosaic and edge_extend must not depend on each other"
 type = "independence"
-modules = ["topo_tools.core.mosaic", "topo_tools.core.extend"]
+modules = ["topo_tools.core.edge_mosaic", "topo_tools.core.edge_extend"]
 
 [[tool.importlinter.contracts]]
-id = "mosaic-independent-of-match"
-name = "mosaic and match must not depend on each other"
+id = "edge_mosaic-independent-of-edge_match"
+name = "edge_mosaic and edge_match must not depend on each other"
 type = "independence"
-modules = ["topo_tools.core.mosaic", "topo_tools.core.match"]
+modules = ["topo_tools.core.edge_mosaic", "topo_tools.core.edge_match"]
 
 [[tool.importlinter.contracts]]
 id = "core-constants-is-leaf"
@@ -100,11 +100,11 @@ name = "core.constants must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.constants"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -113,11 +113,11 @@ name = "core.coverage must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.coverage"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -126,11 +126,11 @@ name = "core.io must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.io"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -139,11 +139,11 @@ name = "core.duckdb_utils must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.duckdb_utils"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -152,50 +152,50 @@ name = "core.assign must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.assign"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
-id = "core-clip-is-leaf"
-name = "core.clip must not depend on any tool package"
+id = "core-edge_clip-is-leaf"
+name = "core.edge_clip must not depend on any tool package"
 type = "forbidden"
-source_modules = ["topo_tools.core.clip"]
+source_modules = ["topo_tools.core.edge_clip"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
-id = "core-stitch-is-leaf"
-name = "core.stitch must not depend on any tool package"
+id = "core-edge_stitch-is-leaf"
+name = "core.edge_stitch must not depend on any tool package"
 type = "forbidden"
-source_modules = ["topo_tools.core.stitch"]
+source_modules = ["topo_tools.core.edge_stitch"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
-id = "core-detect-is-leaf"
-name = "core.detect must not depend on any tool package"
+id = "core-topo_detect-is-leaf"
+name = "core.topo_detect must not depend on any tool package"
 type = "forbidden"
-source_modules = ["topo_tools.core.detect"]
+source_modules = ["topo_tools.core.topo_detect"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -204,11 +204,11 @@ name = "core.units must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.units"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
@@ -217,29 +217,29 @@ name = "core.dissolve must not depend on any tool package"
 type = "forbidden"
 source_modules = ["topo_tools.core.dissolve"]
 forbidden_modules = [
-    "topo_tools.core.extend",
-    "topo_tools.core.match",
-    "topo_tools.core.clean",
+    "topo_tools.core.edge_extend",
+    "topo_tools.core.edge_match",
+    "topo_tools.core.topo_clean",
     "topo_tools.core.change",
-    "topo_tools.core.mosaic",
+    "topo_tools.core.edge_mosaic",
 ]
 
 [[tool.importlinter.contracts]]
-id = "crosswalk-may-use-map-not-reverse"
-name = "crosswalk may depend on map; map must not depend on crosswalk"
+id = "schema_crosswalk-may-use-schema_map-not-reverse"
+name = "schema_crosswalk may depend on schema_map; schema_map must not depend on schema_crosswalk"
 type = "forbidden"
-source_modules = ["topo_tools.core.map"]
-forbidden_modules = ["topo_tools.core.crosswalk"]
+source_modules = ["topo_tools.core.schema_map"]
+forbidden_modules = ["topo_tools.core.schema_crosswalk"]
 
 [[tool.importlinter.contracts]]
-id = "crosswalk-may-use-refactor-not-reverse"
-name = "crosswalk may depend on refactor; refactor must not depend on crosswalk"
+id = "schema_crosswalk-may-use-schema_refactor-not-reverse"
+name = "schema_crosswalk may depend on schema_refactor; schema_refactor must not depend on schema_crosswalk"
 type = "forbidden"
-source_modules = ["topo_tools.core.refactor"]
-forbidden_modules = ["topo_tools.core.crosswalk"]
+source_modules = ["topo_tools.core.schema_refactor"]
+forbidden_modules = ["topo_tools.core.schema_crosswalk"]
 
 [[tool.importlinter.contracts]]
-id = "map-independent-of-refactor"
-name = "map and refactor must not depend on each other"
+id = "schema_map-independent-of-schema_refactor"
+name = "schema_map and schema_refactor must not depend on each other"
 type = "independence"
-modules = ["topo_tools.core.map", "topo_tools.core.refactor"]
+modules = ["topo_tools.core.schema_map", "topo_tools.core.schema_refactor"]

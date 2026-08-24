@@ -13,6 +13,6 @@ and benchmark data live in `docs/explanation/`). Tests enforce a subset of
 these contracts; reference docs are not a substitute for tests, and a code
 change must keep both in sync.
 
-One file per tool (`clean.md`, ...). A rule identical across more than one
+One file per tool (`topo_clean.md`, ...). A rule identical across more than one
 tool goes in `shared.md`, referenced by name instead of repeated in each
 tool's file.

@@ -11,7 +11,7 @@ STAC-like: `{iso3}/{latest,vNN}/{adm0..adm3,lines,points}/{original,
 extended,matched}.parquet`. Distinct `vNN` dirs are always genuinely
 different content; `latest` is whichever `vNN` is newest.
 
-## Picking a file (`extend` / `match` / `clean`)
+## Picking a file (`edge-extend` / `edge-match` / `topo-clean`)
 
 Any single `{iso3}/{vNN}/{adm_level}/original.parquet` works. Point every
 `--output-path`/`--tmp-dir`/`--debug` export outside the catalog (the
