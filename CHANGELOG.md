@@ -7,18 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Breaking:** `schema-map`/`schema-fill`'s bundled default target schema
-  is now generic (`data/default.yaml`, `code_field: "adm{n}_code"`), not
-  COD-AB-specific (`data/cod-ab.yaml`, `adm{n}_pcode`); a fuller
-  COD-AB-specific schema is planned separately.
-- `schema-map`: a function-passing, non-bijective same-level bracket
-  candidate now numbers as a sibling (`name1`, `name2`, ...) instead of
-  `supplemental` when its own collapse ratio against the level's unit
-  count is `<= 0.30` (see `docs/adr/0076`).
-
-## [0.3.1] - 2026-08-24
+## [0.4.0] - 2026-08-25
 
 ### Added
 
@@ -29,6 +18,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hardcoded naming convention. Run against an already-clipped/stitched
   layer, then `dissolve` each level normally, which carries the depth
   column through automatically.
+- Standalone `edge-clip`: opt-in `carry_columns` (CLI: repeatable/
+  comma-splittable `--carry-column`) copies named parent-layer columns
+  onto every matched child.
+- `edge-mosaic`/`edge-match`: opt-in `merge_columns: list[str] | bool =
+  False` (CLI: `--merge`, a boolean-or-value flag) copies parent-layer
+  columns onto matched children/files, every column when bare, a named
+  subset when given a list, and keeps an otherwise-dropped unmatched
+  child/file's own extended geometry in the output instead, unclipped.
+  For `edge-mosaic` this passthrough is per whole children file; for
+  `edge-match` it's per child, grouped into an orphan group of its own
+  and extended alone, a materially weaker safety profile than
+  `edge-mosaic`'s own passthrough (see `docs/adr/0077`, `docs/adr/0078`,
+  `docs/adr/0079`, `docs/adr/0081`).
+
+### Changed
+
+- **Breaking:** `schema-map`/`schema-fill`'s bundled default target schema
+  is now generic (`data/default.yaml`, `code_field: "adm{n}_code"`), not
+  COD-AB-specific (`data/cod-ab.yaml`, `adm{n}_pcode`); a fuller
+  COD-AB-specific schema is planned separately.
+- `schema-map`: a function-passing, non-bijective same-level bracket
+  candidate now numbers as a sibling (`name1`, `name2`, ...) instead of
+  `supplemental` when its own collapse ratio against the level's unit
+  count is `<= 0.30` (see `docs/adr/0076`).
+- `edge-mosaic`: its multi-file children path now clips one file at a
+  time against a cached parent-tile decomposition instead of loading
+  every file into one combined table, bounding peak memory to roughly
+  one file's own size regardless of batch count (see `docs/adr/0079`).
+  `step` MUST now be omitted when more than one children file is given;
+  `--debug` exports only the final accumulated tables, not one export
+  per input file.
+
+### Removed
+
+- **Breaking:** standalone `edge-clip`'s multi-file batching
+  (repeatable/comma-splittable `--input`/`--output`/`--issues`,
+  `--name`-required mode): reverted to a strict
+  one-children-file/one-parent-file/one-output primitive now that
+  `edge-mosaic` owns batching many children files against one shared
+  parent load (see `docs/adr/0080`, superseding `docs/adr/0022`/`0023`/
+  `0024`).
 
 ## [0.3.0] - 2026-08-24
 
@@ -181,7 +211,8 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OCHA-DAP/topo-tools-py/releases/tag/v0.1.0
