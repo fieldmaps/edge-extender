@@ -18,7 +18,11 @@ class TargetSchema:
 
 def load_target_schema(path: Path | str) -> TargetSchema:
     """Load a target-schema YAML file into a TargetSchema."""
-    data = yaml.safe_load(Path(path).read_text())
+    path = Path(path)
+    if not path.is_file():
+        msg = f"target schema file not found: {path}"
+        raise ValueError(msg)
+    data = yaml.safe_load(path.read_text())
     if (
         not isinstance(data, dict)
         or "name_field" not in data

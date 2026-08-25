@@ -14,6 +14,7 @@ from topo_tools.api import edge_match as _edge_match
 from topo_tools.api import edge_mosaic as _edge_mosaic
 from topo_tools.api import edge_stitch as _edge_stitch
 from topo_tools.api import schema_crosswalk as _schema_crosswalk
+from topo_tools.api import schema_fill as _schema_fill
 from topo_tools.api import schema_map as _schema_map
 from topo_tools.api import schema_refactor as _schema_refactor
 from topo_tools.api import topo_clean as _topo_clean
@@ -921,6 +922,81 @@ def edge_stitch(  # noqa: PLR0913, PLR0917
             overwrite=overwrite,
             debug=debug,
             step=step,
+        )
+    except (FileExistsError, RuntimeError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+
+@cli.command(name="schema-fill")
+@click.argument("input_file", envvar="INPUT_FILE")
+@click.argument(
+    "target_schema_file", envvar="TARGET_SCHEMA_FILE", required=False, default=None
+)
+@click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
+@click.option(
+    "--overwrite",
+    envvar="OVERWRITE",
+    type=bool,
+    default=True,
+    show_default=True,
+    help="Overwrite an existing output; pass --overwrite=false to error instead.",
+)
+@click.option(
+    "--threads", envvar="THREADS", type=int, default=None, help="DuckDB thread count."
+)
+@click.option(
+    "--debug",
+    envvar="DEBUG",
+    is_flag=True,
+    help="Keep intermediate tables, export to Parquet, log timing/memory per query.",
+)
+@click.option(
+    "--tmp-dir",
+    envvar="TMP_DIR",
+    default=None,
+    help="Intermediate DuckDB + Parquet location.",
+)
+@click.option(
+    "--step",
+    envvar="STEP",
+    type=click.Choice(["inputs", "fill", "outputs"]),
+    default=None,
+    help="Run only one named stage.",
+)
+@click.option(
+    "--depth-column",
+    envvar="DEPTH_COLUMN",
+    default="adm_lvl",
+    show_default=True,
+    help="Name of the new column stamping each row's real, pre-fill depth.",
+)
+def schema_fill(  # noqa: PLR0913, PLR0917
+    input_file: str,
+    target_schema_file: str | None,
+    output_file: str | None,
+    overwrite: bool,  # noqa: FBT001
+    threads: int | None,
+    debug: bool,  # noqa: FBT001
+    tmp_dir: str | None,
+    step: str | None,
+    depth_column: str,
+) -> None:
+    r"""Cascade each admin-hierarchy column down from its nearest shallower level.
+
+    Stamps a new depth column (default "adm_lvl") with each row's real depth.
+    """
+    logger.info("--debug=%s", debug)
+    try:
+        _schema_fill(
+            input_file,
+            target_schema_file,
+            Path(output_file) if output_file is not None else None,
+            threads=threads,
+            tmp_dir=tmp_dir,
+            overwrite=overwrite,
+            debug=debug,
+            step=step,
+            depth_column=depth_column,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e

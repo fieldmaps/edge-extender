@@ -1,6 +1,6 @@
 [project]
 name = "topo-tools"
-version = "0.3.0"
+version = "0.3.1"
 description = "DuckDB-powered geospatial topology utilities (edge-matching, topology cleaning, more)"
 readme = "README.md"
 license = "MIT"
@@ -243,3 +243,10 @@ id = "schema_map-independent-of-schema_refactor"
 name = "schema_map and schema_refactor must not depend on each other"
 type = "independence"
 modules = ["topo_tools.core.schema_map", "topo_tools.core.schema_refactor"]
+
+[[tool.importlinter.contracts]]
+id = "schema_fill-may-use-schema_map-not-reverse"
+name = "schema_fill may depend on schema_map; schema_map must not depend on schema_fill"
+type = "forbidden"
+source_modules = ["topo_tools.core.schema_map"]
+forbidden_modules = ["topo_tools.core.schema_fill"]

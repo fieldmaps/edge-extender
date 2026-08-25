@@ -25,3 +25,9 @@ from the previous output.
     topo-tools dissolve adm3.parquet adm2.parquet --group-by adm2_pcode
     topo-tools dissolve adm3.parquet adm1.parquet --group-by adm1_pcode
     topo-tools dissolve adm3.parquet adm0.parquet --group-by adm0_pcode
+
+Leaf-level data with NULL deeper-level id/name columns (e.g. countries whose
+source doesn't reach admin3) needs those columns filled down from the
+nearest shallower level before this grouping works; `schema-fill`
+(`docs/tutorials/schema_fill.md`) fills them down and stamps each row's
+real depth first, then each level above dissolves normally as shown here.

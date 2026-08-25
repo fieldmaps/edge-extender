@@ -211,6 +211,11 @@ def test_target_schema_missing_placeholder_raises(chain_input, tmp_path):
         map(chain_input, schema_path, overwrite=True)
 
 
+def test_target_schema_not_a_file_raises(chain_input, tmp_path):
+    with pytest.raises(ValueError, match="target schema file not found"):
+        map(chain_input, tmp_path, overwrite=True)
+
+
 def test_default_output_path(chain_input, chain_schema):
     map(chain_input, chain_schema, overwrite=True)
 

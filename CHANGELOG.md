@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-24
+
+### Added
+
+- `schema-fill`: new tool that cascades each admin-hierarchy column down
+  from the nearest non-NULL shallower level and stamps a new `adm_lvl`
+  column (overridable via `--depth-column`) with each row's real depth;
+  levels are derived from a `schema-map` target-schema YAML, not a
+  hardcoded naming convention. Run against an already-clipped/stitched
+  layer, then `dissolve` each level normally, which carries the depth
+  column through automatically.
+
 ## [0.3.0] - 2026-08-24
 
 ### Added

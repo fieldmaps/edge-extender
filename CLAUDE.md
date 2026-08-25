@@ -4,7 +4,7 @@
 
 `topo-tools` is a Python package of DuckDB-powered geospatial topology utilities,
 `pip install`-able and importable, mirroring the organization of the sister JS app
-at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships twelve
+at `../topo-tools` (a DuckDB-WASM web app with the same tools). It ships thirteen
 tools, all used for improving administrative boundary datasets and matching
 sub-national boundaries to national boundaries (import-linter contracts
 governing which tool may depend on which are in `docs/reference/shared.md`).
@@ -26,6 +26,7 @@ below them:
 - **schema-map**: maps a source-column → target-schema crosswalk by inferring the admin hierarchy structurally (cardinality/containment, never column names) and classifying code vs. name by value shape, deterministically, no LLM; never renames anything itself. See `docs/explanation/schema_map.md`.
 - **schema-refactor**: renames/drops columns per a crosswalk from `schema-map` (likely hand-edited first). See `docs/explanation/schema_refactor.md`.
 - **schema-crosswalk**: `schema-map` → `schema-refactor`, in one call, so a user can see mapped values right away and iterate by hand-editing the written crosswalk and re-running `schema-refactor` on it. See `docs/explanation/schema_crosswalk.md`.
+- **schema-fill**: cascades each admin-hierarchy column down from its nearest non-NULL shallower level and stamps a new `adm_lvl` column (overridable via `--depth-column`) with each row's real depth, levels derived from a `schema-map` target schema; run against an already-clipped/stitched layer, then `dissolve` each level normally. See `docs/explanation/schema_fill.md`.
 
 ## Deployment Targets
 
@@ -47,20 +48,25 @@ are the one exception, see `docs/explanation/edge_match.md`). Three layers,
 each with a specific job (mirroring `geoparquet-io`'s `core`/`api`/`cli`
 split):
 
-- `topo_tools/core/{edge_extend,assign,edge_clip,edge_stitch,topo_detect,dissolve,edge_match,edge_mosaic,topo_clean,change}/`:
+- `topo_tools/core/{edge_extend,assign,edge_clip,edge_stitch,topo_detect,dissolve,schema_fill,edge_match,edge_mosaic,topo_clean,change}/`:
   stage implementations. `core.edge_match`/`core.edge_mosaic` call
   `core.edge_clip`/`core.edge_stitch` stage functions directly (not through
   their own `api.*()`), the same pattern `core.edge_match` uses to call
   `core.edge_extend`'s stage functions directly, and `core.topo_clean` uses
   to call `core.topo_detect`'s issue-detection stage function directly (see
-  `docs/adr/0028`). `core.assign` has no `api.*()`/CLI pipeline of its
-  own, so it's called one layer up instead, directly from `api.edge_mosaic`/
-  `api.edge_clip`/`api.edge_match`. `core.assign`/`core.edge_clip`/
-  `core.edge_stitch`/`core.topo_detect`/`core.dissolve` are themselves
-  neutral leaves, alongside `core.constants`/`core.coverage`/`core.io`/
-  `core.duckdb_utils`/`core.units`; every tool package may import any of
-  these ten, none of them may import back.
-- `topo_tools/api/{edge_extend,edge_clip,edge_stitch,topo_detect,dissolve,edge_match,edge_mosaic,topo_clean,change}.py`:
+  `docs/adr/0028`). `core.assign` has no `api.*()`/CLI pipeline of its own,
+  so it's called one layer up instead, directly from
+  `api.edge_mosaic`/`api.edge_clip`/`api.edge_match`. `core.assign`/
+  `core.edge_clip`/`core.edge_stitch`/`core.topo_detect`/`core.dissolve` are
+  themselves neutral leaves, alongside `core.constants`/`core.coverage`/
+  `core.io`/`core.duckdb_utils`/`core.units`; every tool package may import
+  any of these ten, none of them may import back. `core.schema_map` is not
+  a neutral leaf but MAY be imported by `core.schema_fill` specifically
+  (the target-schema YAML mechanism), never the reverse (see
+  `docs/adr/0075`); `schema-fill` does not call `core.dissolve` itself,
+  a caller runs `dissolve` separately, once per level, after filling (see
+  `docs/explanation/schema_fill.md`).
+- `topo_tools/api/{edge_extend,edge_clip,edge_stitch,topo_detect,dissolve,schema_fill,edge_match,edge_mosaic,topo_clean,change}.py`:
   public API functions; each chains its own tool's stages for exactly one
   file (or file pair) per call, except `edge-mosaic`'s and `edge-clip`'s
   children role, which MAY span multiple files (see
@@ -126,6 +132,7 @@ per-tool table names are in `docs/explanation/{tool}.md`.
 - **`topo-clean`'s `--maximum-gap-width`/`--snapping-distance` are decimal degrees, not meters** (`_01` is always EPSG:4326). See `docs/explanation/topo_clean.md`.
 - **A read-role file argument MAY be an `http://`/`https://` URL to a `.parquet` file**, resolved via `core.io.resolve_input_path()`/`input_basename()`, never plain `Path()` (which mangles a URL's `//`); output-role arguments always stay local paths (see `docs/adr/0043`).
 - **`schema-crosswalk` reuses `schema-map`'s and `schema-refactor`'s stage functions directly rather than re-implementing matching or renaming**, the same primitive-reuse pattern as `topo-clean`/`topo-detect` (`docs/adr/0028`), but split across two independent `name` sub-namespaces (`{name}` for `schema-map`'s tables, `f"{name}_apply"` for `schema-refactor`'s) since both hardcode `"{name}_02"` for different data. The apply namespace's `_01` table is a DuckDB **view** over the already-loaded input, not a copy, per this project's memory-constrained deployment targets; it MUST be dropped before any `DROP TABLE IF EXISTS` targets that name, since DuckDB raises a Catalog Error dropping a view as a table even with `IF EXISTS`. See `docs/explanation/schema_crosswalk.md`.
+- **`schema-fill` derives every hierarchy level from a `schema-map` target-schema YAML, never a hardcoded column-naming convention**, matching `name_field` and `code_field` independently by their own prefixes (they need not match), cascades each level's NULL columns down via `COALESCE`, and stamps a depth column (`adm_lvl` by default, overridable via `depth_column`/`--depth-column`) from the *original* (pre-fill) code columns so a caller can tell a genuine leaf-depth row from one only ever filled down; a plain, unmodified `dissolve` call per level then carries that column through automatically via its existing auto-keep-constant-column behavior (see `docs/adr/0075`).
 
 ### Supported Formats
 
@@ -154,6 +161,9 @@ uv run topo-tools topo-detect example.geojson
 
 # Run the dissolve tool (aggregate a layer into a coarser one by grouping on columns)
 uv run topo-tools dissolve admin3.geojson --group-by adm2_pcode,adm1_pcode
+
+# Run the schema-fill tool (fill down admin columns, stamp each row's real depth)
+uv run topo-tools schema-fill admin4.geojson
 
 # Run the topo-clean tool (topo-detect, then fix gaps+overlaps, reporting the outcome in the issues file)
 uv run topo-tools topo-clean example.geojson
@@ -204,6 +214,6 @@ file (or an old/new comparison pair, for `change`) from the catalog.
 
 - `docs/tutorials/{tool}.md`: GDAL-style getting-started examples per tool
 - `docs/reference/{tool}.md`: behavior contract per tool (`shared.md` for common settings/gates)
-- `docs/explanation/{tool}.md`: stage-by-stage detail for `edge_extend`, `topology`, `assign`, `edge_clip`, `edge_stitch`, `topo_detect`, `dissolve`, `edge_match`, `edge_mosaic`, `topo_clean`, `change`, `schema_map`, `schema_refactor`, `schema_crosswalk`; notable: `topology.md` has the SPATIAL_JOIN memory bug, `performance.md` has thread-scaling benchmarks + the RTREE experiment, `voronoi-memory.md` has per-file resampling distance and memory ceilings for `phl_admin3`/`idn_admin3`, `edge_match.md` has the `check_gaps` caveat
+- `docs/explanation/{tool}.md`: stage-by-stage detail for `edge_extend`, `topology`, `assign`, `edge_clip`, `edge_stitch`, `topo_detect`, `dissolve`, `edge_match`, `edge_mosaic`, `topo_clean`, `change`, `schema_map`, `schema_refactor`, `schema_crosswalk`, `schema_fill`; notable: `topology.md` has the SPATIAL_JOIN memory bug, `performance.md` has thread-scaling benchmarks + the RTREE experiment, `voronoi-memory.md` has per-file resampling distance and memory ceilings for `phl_admin3`/`idn_admin3`, `edge_match.md` has the `check_gaps` caveat
 - `docs/how-to/`: `publishing.md` (PyPI release via OIDC), `verify-duckdb-function.md` (DuckDB/spatial function lookup), `at-scale-testing.md` (portolan catalog layout, picking a test file/pair)
 - `docs/adr/README.md`: how to decide ADR vs. `docs/explanation/` vs. CLAUDE.md's Key Patterns; `docs/adr/` itself holds the decision records
