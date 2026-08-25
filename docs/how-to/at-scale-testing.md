@@ -17,6 +17,14 @@ Any single `{iso3}/{vNN}/{adm_level}/original.parquet` works. Point every
 `--output-path`/`--tmp-dir`/`--debug` export outside the catalog (the
 session scratchpad or `/tmp`), never back into `portolan/`.
 
+## Picking a parent/clip layer (`edge-match` / `edge-mosaic`)
+
+Use `/Users/computer/GitHub/fieldmaps/adm0-generator/outputs/adm0/osm/intl/adm0_polygons.parquet`
+as the global admin0 parent/clip layer; it's outside the portolan catalog
+so it's safe to pass directly as `CLIP_FILE`. Also available at
+`https://data.fieldmaps.io/adm0/osm/intl/adm0_polygons.parquet` for anyone
+without local repo access.
+
 ## Picking an old/new pair (`change`)
 
 1. Browse the country's catalog (local path, or fetch `./{iso3}/catalog.json`
