@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Superseded by ADR-0080 (this caching mechanism moved to `edge-mosaic`,
+see ADR-0079; standalone `edge-clip` reverted to a strict 1:1 primitive).
 
 ## Context
 

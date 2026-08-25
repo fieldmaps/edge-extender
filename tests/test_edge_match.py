@@ -280,7 +280,13 @@ def test_record_dropped_group():
             WHERE FALSE
         """)
 
-        _record_dropped_group(conn, "t", 10, "boom: something failed")
+        _record_dropped_group(
+            conn,
+            "t",
+            10,
+            "boom: something failed",
+            'SELECT child_fid FROM "t_02_assign" WHERE parent_fid = 10',
+        )
 
         rows = conn.execute(
             "SELECT child_fid, parent_fid, reason FROM t_03b ORDER BY child_fid"
@@ -450,6 +456,20 @@ def _write_with_code(path, rows):
         conn.execute(f"COPY synth TO '{path}'")
 
 
+def _write_parent_pcode_only(path, rows):
+    """rows: list of (pid, wkt, pcode); no 'id' column, avoids a merge collision."""
+    values = ", ".join(
+        f"({pid}, ST_GeomFromText('{wkt}'), '{code}')" for pid, wkt, code in rows
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE synth AS
+            SELECT * FROM (VALUES {values}) AS t(pid, geom, pcode)
+        """)
+        conn.execute(f"COPY synth TO '{path}'")
+
+
 def test_match_carry_columns_survives_group_subprocess(tmp_path):
     """A carried parent column must survive the per-group extend/merge round-trip."""
     parents_path = tmp_path / "parents.parquet"
@@ -468,7 +488,7 @@ def test_match_carry_columns_survives_group_subprocess(tmp_path):
         children_path,
         parents_path,
         output_path,
-        carry_columns=["pcode"],
+        merge_columns=["pcode"],
         overwrite=True,
     )
 
@@ -480,7 +500,81 @@ def test_match_carry_columns_survives_group_subprocess(tmp_path):
     assert rows == [(1, "P1"), (2, "P1"), (3, "P2")]
 
 
-def test_cli_carry_column_help():
+def test_cli_merge_help():
     result = CliRunner().invoke(cli, ["edge-match", "--help"])
     assert result.exit_code == 0
-    assert "--carry-column" in result.output
+    assert "--merge" in result.output
+    assert "--carry-column" not in result.output
+
+
+def test_match_merge_bare_passthrough_keeps_orphan_and_carries_columns(tmp_path):
+    """Bare --merge carries every parent column and keeps an orphan unclipped."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_parent_pcode_only(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, _CHILD_WKT)  # fids 1-4; 4 is far, unmatched
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        merge_columns=True,
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(
+            f"SELECT id, pcode FROM '{output_path}' ORDER BY id"
+        ).fetchall()
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+
+    assert rows == [(1, "P1"), (2, "P1"), (3, "P2"), (4, None)]
+    assert "passthrough" in kinds
+    assert "unassigned" not in kinds
+
+
+def test_match_no_merge_still_drops_orphan(tmp_path):
+    """Without --merge, an orphan is dropped and reported unassigned, as before."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, _CHILD_WKT)
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(children_path, parents_path, output_path, issues_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+
+    assert ids == [1, 2, 3]
+    assert kinds == ["unassigned"]

@@ -22,6 +22,7 @@ from topo_tools.core.duckdb_utils import (
 from topo_tools.core.edge_extend import _02_lines as lines
 from topo_tools.core.edge_extend import _05_merge as merge
 from topo_tools.core.edge_extend import attempt
+from topo_tools.core.edge_match._constants import PASSTHROUGH_PARENT_FID
 
 logger = getLogger(__name__)
 
@@ -42,8 +43,13 @@ def main(  # noqa: PLR0913
     threads: int | None,
     debug: bool = False,
     carry_columns: list[str] | None = None,
+    passthrough: bool = False,
 ) -> None:
-    """Loop over all groups sequentially, each isolated in its own subprocess."""
+    """Loop over all groups sequentially, each isolated in its own subprocess.
+
+    With passthrough=True and any zero-overlap children present, one extra
+    orphan group is run afterward, tagged with PASSTHROUGH_PARENT_FID.
+    """
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_03b" AS
         SELECT NULL::BIGINT AS child_fid, NULL::BIGINT AS parent_fid,
@@ -53,44 +59,46 @@ def main(  # noqa: PLR0913
 
     carry_sql = "".join(f', a."{c}" AS "{c}"' for c in (carry_columns or []))
     for parent_fid in list_groups(conn, name):
-        gname = f"{name}_g{parent_fid}"
-        group_dir = tmp_dir / gname
-        group_dir.mkdir(parents=True, exist_ok=True)
+        child_select_sql = f"""--sql
+            SELECT c.*{carry_sql}
+            FROM "{name}_child_01" c
+            JOIN "{name}_02_assign" a ON a.child_fid = c.fid
+            WHERE a.parent_fid = {parent_fid}
+        """
+        fids_sql = (
+            f'SELECT child_fid FROM "{name}_02_assign" WHERE parent_fid = {parent_fid}'
+        )
+        _run_group(
+            conn,
+            name,
+            tmp_dir,
+            parent_fid,
+            child_select_sql,
+            fids_sql,
+            threads=threads,
+            debug=debug,
+        )
 
-        conn.execute(f"""--sql
-            COPY (
-                SELECT c.*{carry_sql}
-                FROM "{name}_child_01" c
-                JOIN "{name}_02_assign" a ON a.child_fid = c.fid
-                WHERE a.parent_fid = {parent_fid}
-            ) TO '{group_dir / "child.parquet"}' (FORMAT PARQUET)
-        """)
-
-        # A freshly-spawned process has no logging config of its own (spawn
-        # re-imports everything from scratch; basicConfig only ever runs in
-        # cli/main.py, in the parent), an exception raised inside the
-        # worker would otherwise vanish silently instead of surfacing here.
-        # The worker puts an error string (or None on success) on the queue
-        # instead of relying on its own logging output.
-        exitcode, err = spawn_worker(_group_worker, (group_dir, threads, debug))
-        output_path = group_dir / "output.parquet"
-        if exitcode != 0 or err or not output_path.exists():
-            logger.error(
-                "match: group parent_fid=%s failed, dropping its children from "
-                "the output. exitcode=%s error=%s (see %s for exported inputs)",
-                parent_fid,
-                exitcode,
-                err,
-                group_dir,
+    if passthrough:
+        orphan_count = conn.execute(
+            f'SELECT COUNT(*) FROM "{name}_02_unassigned"'
+        ).fetchone()[0]
+        if orphan_count:
+            child_select_sql = f"""--sql
+                SELECT c.* FROM "{name}_child_01" c
+                WHERE c.fid IN (SELECT child_fid FROM "{name}_02_unassigned")
+            """
+            fids_sql = f'SELECT child_fid FROM "{name}_02_unassigned"'
+            _run_group(
+                conn,
+                name,
+                tmp_dir,
+                PASSTHROUGH_PARENT_FID,
+                child_select_sql,
+                fids_sql,
+                threads=threads,
+                debug=debug,
             )
-            reason = err or f"worker exited with no output (exitcode={exitcode})"
-            _record_dropped_group(conn, name, parent_fid, reason)
-            continue
-
-        _append_to_reassembly(conn, name, parent_fid, output_path)
-
-        if not debug:
-            shutil.rmtree(group_dir, ignore_errors=True)
 
     exists = conn.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [f"{name}_03a"]
@@ -98,6 +106,49 @@ def main(  # noqa: PLR0913
     if exists is None:
         msg = f"match: no group produced any output for {name}"
         raise RuntimeError(msg)
+
+
+def _run_group(  # noqa: PLR0913, PLR0917
+    conn: DuckDBPyConnection,
+    name: str,
+    tmp_dir: Path,
+    parent_fid: int,
+    child_select_sql: str,
+    fids_sql: str,
+    *,
+    threads: int | None,
+    debug: bool,
+) -> None:
+    """Export one group's children, extend them in an isolated subprocess."""
+    gname = f"{name}_g{parent_fid}"
+    group_dir = tmp_dir / gname
+    group_dir.mkdir(parents=True, exist_ok=True)
+
+    conn.execute(f"""--sql
+        COPY ({child_select_sql}) TO '{group_dir / "child.parquet"}' (FORMAT PARQUET)
+    """)
+
+    # spawn re-imports from scratch (no logging config); the worker puts an
+    # error string (or None) on the queue so a raised exception surfaces here.
+    exitcode, err = spawn_worker(_group_worker, (group_dir, threads, debug))
+    output_path = group_dir / "output.parquet"
+    if exitcode != 0 or err or not output_path.exists():
+        logger.error(
+            "match: group parent_fid=%s failed, dropping its children from "
+            "the output. exitcode=%s error=%s (see %s for exported inputs)",
+            parent_fid,
+            exitcode,
+            err,
+            group_dir,
+        )
+        reason = err or f"worker exited with no output (exitcode={exitcode})"
+        _record_dropped_group(conn, name, parent_fid, reason, fids_sql)
+        return
+
+    _append_to_reassembly(conn, name, parent_fid, output_path)
+
+    if not debug:
+        shutil.rmtree(group_dir, ignore_errors=True)
 
 
 def _append_to_reassembly(
@@ -126,7 +177,7 @@ def _append_to_reassembly(
 
 
 def _record_dropped_group(
-    conn: DuckDBPyConnection, name: str, parent_fid: int, reason: str
+    conn: DuckDBPyConnection, name: str, parent_fid: int, reason: str, fids_sql: str
 ) -> None:
     """Record every child of a failed group into `{name}_03b` for the issues report."""
     conn.execute(
@@ -134,11 +185,9 @@ def _record_dropped_group(
             INSERT INTO "{name}_03b"
             SELECT fid AS child_fid, ? AS parent_fid, ? AS reason, geom
             FROM "{name}_child_01"
-            WHERE fid IN (
-                SELECT child_fid FROM "{name}_02_assign" WHERE parent_fid = ?
-            )
+            WHERE fid IN ({fids_sql})
         """,
-        [parent_fid, reason, parent_fid],
+        [parent_fid, reason],
     )
 
 

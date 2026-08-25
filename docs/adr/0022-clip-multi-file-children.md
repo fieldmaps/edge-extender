@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Superseded by ADR-0080 (batching many children files against one shared
+parent load moved to `edge-mosaic`; standalone `edge-clip` reverted to a
+strict 1:1 primitive).
 
 ## Context
 

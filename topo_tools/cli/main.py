@@ -30,6 +30,18 @@ def _split_commas(values: tuple[str, ...]) -> list[str]:
     return [v for raw in values for v in raw.split(",")]
 
 
+_MERGE_ALL_SENTINEL = "__ALL__"
+
+
+def _resolve_merge_flag(value: str | None) -> list[str] | bool:
+    """Turn --merge's raw CLI value into mosaic()/match()'s boolean-or-list."""
+    if value is None:
+        return False
+    if value == _MERGE_ALL_SENTINEL:
+        return True
+    return value.split(",")
+
+
 @click.group()
 @click.version_option(package_name="topo-tools", prog_name="topo-tools")
 def cli() -> None:
@@ -615,13 +627,18 @@ def change(  # noqa: PLR0913, PLR0917
     help="Child-side code column, when it's named differently than the parent's.",
 )
 @click.option(
-    "--carry-column",
-    "carry_columns",
-    envvar="CARRY_COLUMNS",
-    multiple=True,
+    "--merge",
+    "merge_value",
+    envvar="MERGE",
+    is_flag=False,
+    flag_value=_MERGE_ALL_SENTINEL,
+    default=None,
     help=(
-        "Parent column to copy onto each matched child [may be repeated, "
-        "and each value MAY be comma-separated]."
+        "Carry parent columns onto every matched child and keep a "
+        "zero-overlap child's own extended geometry, unclipped, in the "
+        "output instead of dropping it. Bare --merge carries every parent "
+        "column; --merge iso_3,adm0_name narrows it to just those columns "
+        "(comma-separated)."
     ),
 )
 def edge_match(  # noqa: PLR0913, PLR0917
@@ -637,7 +654,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
     match_column: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
-    carry_columns: tuple[str, ...],
+    merge_value: str | None,
 ) -> None:
     r"""Match children to parents by largest overlap, then extend to fill gaps.
 
@@ -658,7 +675,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
 
       \b
       # Copy parent columns onto every matched child
-      topo-tools edge-match adm3.gpkg adm2.gpkg --carry-column iso_3,adm0_name
+      topo-tools edge-match adm3.gpkg adm2.gpkg --merge iso_3,adm0_name
     """
     logger.info("--debug=%s", debug)
     try:
@@ -675,7 +692,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
             match_column=match_column,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
-            carry_columns=_split_commas(carry_columns) or None,
+            merge_columns=_resolve_merge_flag(merge_value),
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -754,24 +771,18 @@ def edge_match(  # noqa: PLR0913, PLR0917
     help="Child-side code column, when it's named differently than the parent's.",
 )
 @click.option(
-    "--carry-column",
-    "carry_columns",
-    envvar="CARRY_COLUMNS",
-    multiple=True,
+    "--merge",
+    "merge_value",
+    envvar="MERGE",
+    is_flag=False,
+    flag_value=_MERGE_ALL_SENTINEL,
+    default=None,
     help=(
-        "Parent column to copy onto each matched child [may be repeated, "
-        "and each value MAY be comma-separated]."
-    ),
-)
-@click.option(
-    "--on-unmatched",
-    envvar="ON_UNMATCHED",
-    type=click.Choice(["drop", "passthrough"]),
-    default="drop",
-    show_default=True,
-    help=(
-        "'passthrough' keeps a whole children file's own geometry, unclipped, "
-        "when it has no overlapping parent at all."
+        "Carry parent columns onto every matched child and keep a fully "
+        "unmatched children file's own geometry, unclipped, in the output "
+        "instead of dropping it. Bare --merge carries every parent column; "
+        "--merge iso_3,adm0_name narrows it to just those columns "
+        "(comma-separated)."
     ),
 )
 def edge_mosaic(  # noqa: PLR0913, PLR0917
@@ -788,8 +799,7 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
     match_column: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
-    carry_columns: tuple[str, ...],
-    on_unmatched: str,
+    merge_value: str | None,
 ) -> None:
     r"""Fit an already-extended children layer into a new parent/clip layer.
 
@@ -820,7 +830,7 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
       \b
       # Keep countries missing from the parent layer, enriched where matched
       topo-tools edge-mosaic "*/latest/adm4/extended.parquet" world_adm0.geojson \
-        out.parquet --carry-column iso_3,adm0_name --on-unmatched passthrough
+        out.parquet --merge
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -849,8 +859,7 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
             match_column=match_column,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
-            carry_columns=_split_commas(carry_columns) or None,
-            on_unmatched=on_unmatched,
+            merge_columns=_resolve_merge_flag(merge_value),
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -1311,26 +1320,6 @@ def schema_crosswalk(  # noqa: PLR0913, PLR0917
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
-    "--input",
-    "extra_inputs",
-    envvar="EXTRA_INPUTS",
-    multiple=True,
-    help=(
-        "Additional children file beyond INPUT_FILE, paired by order with "
-        "--output [may be repeated, and each value MAY be comma-separated]."
-    ),
-)
-@click.option(
-    "--output",
-    "extra_outputs",
-    envvar="EXTRA_OUTPUTS",
-    multiple=True,
-    help=(
-        "Additional output file beyond OUTPUT_FILE, paired by order with "
-        "--input [may be repeated, and each value MAY be comma-separated]."
-    ),
-)
-@click.option(
     "--issues-file",
     envvar="ISSUES_FILE",
     default=None,
@@ -1340,20 +1329,10 @@ def schema_crosswalk(  # noqa: PLR0913, PLR0917
     ),
 )
 @click.option(
-    "--issues",
-    "extra_issues",
-    envvar="EXTRA_ISSUES",
-    multiple=True,
-    help=(
-        "Additional issues report beyond --issues-file, paired by order with "
-        "--input/--output [may be repeated, and each value MAY be comma-separated]."
-    ),
-)
-@click.option(
     "--name",
     envvar="NAME",
     default=None,
-    help="Run name for internal tables/tmp files. Required when --input is given.",
+    help="Run name for internal tables/tmp files.",
 )
 @click.option(
     "--overwrite",
@@ -1421,10 +1400,7 @@ def edge_clip(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
-    extra_inputs: tuple[str, ...],
-    extra_outputs: tuple[str, ...],
     issues_file: str | None,
-    extra_issues: tuple[str, ...],
     name: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
@@ -1453,13 +1429,6 @@ def edge_clip(  # noqa: PLR0913, PLR0917
       topo-tools edge-clip children.parquet adm1.geojson clipped.parquet
 
       \b
-      # Multiple children files sharing one CLIP_FILE load (--input/--output
-      # MAY each be repeated and/or comma-separated; --name is required)
-      topo-tools edge-clip afg.parquet world_adm0.geojson afg_out.parquet \
-        --input ago.parquet,are.parquet --output ago_out.parquet,are_out.parquet \
-        --name portolan_batch
-
-      \b
       # Prefer an existing pcode join over spatial overlap where they disagree
       topo-tools edge-clip children.parquet adm1.geojson --match-column pcode
 
@@ -1468,36 +1437,13 @@ def edge_clip(  # noqa: PLR0913, PLR0917
       topo-tools edge-clip children.parquet adm1.geojson --carry-column iso_3,adm0_name
     """
     logger.info("--debug=%s", debug)
-    if extra_inputs and output_file is None:
-        msg = "OUTPUT_FILE is required when --input is given"
-        raise click.ClickException(msg)
-
-    extra_inputs_split = _split_commas(extra_inputs)
-    extra_outputs_split = _split_commas(extra_outputs)
-    extra_issues_split = _split_commas(extra_issues)
-    if extra_inputs_split:
-        children: str | Path | list[str | Path] = [
-            input_file,
-            *extra_inputs_split,
-        ]
-        outputs: str | Path | list[str | Path] | None = [
-            output_file,
-            *extra_outputs_split,
-        ]
-        issues: str | Path | list[str | Path] | None = (
-            [issues_file, *extra_issues_split] if issues_file is not None else None
-        )
-    else:
-        children = input_file
-        outputs = Path(output_file) if output_file is not None else None
-        issues = Path(issues_file) if issues_file is not None else None
 
     try:
         _edge_clip(
-            children,
+            input_file,
             clip_file,
-            outputs,
-            issues,
+            Path(output_file) if output_file is not None else None,
+            Path(issues_file) if issues_file is not None else None,
             name=name,
             threads=threads,
             tmp_dir=tmp_dir,

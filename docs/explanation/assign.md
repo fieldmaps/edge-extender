@@ -145,16 +145,17 @@ caller-specified, never inferred from either layer's schema, matching this
 project's structural (not name/value-based) matching philosophy elsewhere
 (see `docs/explanation/schema_map.md`). A name colliding with `_02_assign`'s
 own reserved columns (`child_fid`, `parent_fid`, `assignment_method`,
-`spatial_agrees`) raises `ValueError`; a collision with the child layer's
-own schema is left to fail at the SQL layer downstream (DuckDB rejects
-duplicate column names), since `core.assign` has no visibility into the
-child's full schema at this point.
+`spatial_agrees`) raises `ValueError`; a name already present on the child
+layer's own schema also raises `ValueError`, via an explicit `DESCRIBE`
+pre-check, not left to the SQL layer to reject on its own (DuckDB silently
+renames/dedups a duplicate `SELECT` column instead of erroring, see
+`docs/adr/0077`).
 
 Children with no parent match (`_02_unassigned`) never gain these columns.
 A caller that keeps such rows in its own output regardless (e.g.
-`edge-mosaic`'s `on_unmatched="passthrough"`, see
-`docs/explanation/edge_mosaic.md`) gets `NULL` for all of them automatically
-via that caller's own `UNION ALL BY NAME`.
+`edge-mosaic`'s `--merge`, see `docs/explanation/edge_mosaic.md`) gets
+`NULL` for all of them automatically via that caller's own `UNION ALL BY
+NAME`.
 
 ## Comparison
 

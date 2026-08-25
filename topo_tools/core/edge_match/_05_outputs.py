@@ -23,17 +23,26 @@ _ISSUE_COLUMNS = """
 
 
 def _build_issues(
-    conn: DuckDBPyConnection, name: str, *, code_join: bool = False
+    conn: DuckDBPyConnection,
+    name: str,
+    *,
+    code_join: bool = False,
+    passthrough: bool = False,
 ) -> None:
-    """Build `{name}_06`: unassigned/dropped-group children, plus non-noise gaps."""
+    """Build `{name}_06`: unassigned/dropped-group children, plus non-noise gaps.
+
+    passthrough=True omits 'unassigned' (superseded by 'passthrough'/'dropped_group').
+    """
     table = f"{name}_05"
-    parts = [
-        f"""
+    parts = []
+    if not passthrough:
+        parts.append(f"""
         SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
                child_fid AS unit_a, NULL::BIGINT AS parent_fid,
                NULL::VARCHAR AS reason, {_ISSUE_COLUMNS}, geom
         FROM "{name}_02_unassigned"
-        """,
+        """)
+    parts += [
         f"""
         SELECT 'dropped_group-' || child_fid AS key, 'dropped_group' AS kind,
                child_fid AS unit_a, parent_fid, reason, {_ISSUE_COLUMNS}, geom
@@ -41,6 +50,15 @@ def _build_issues(
         """,
         gap_issues_sql(conn, table),
     ]
+    if passthrough:
+        parts.append(f"""
+        SELECT 'passthrough-' || child_fid AS key, 'passthrough' AS kind,
+               child_fid AS unit_a, NULL::BIGINT AS parent_fid,
+               'no overlapping parent; extended alone and kept unclipped in '
+               'the output' AS reason, {_ISSUE_COLUMNS}, geom
+        FROM "{name}_02_unassigned"
+        WHERE child_fid NOT IN (SELECT child_fid FROM "{name}_03b")
+        """)
     if code_join:
         parts.append(assign_issue_rows_sql(name))
     conn.execute(f"""--sql
@@ -56,12 +74,13 @@ def main(  # noqa: PLR0913
     issues_dest: Path,
     *,
     code_join: bool = False,
+    passthrough: bool = False,
     debug: bool = False,
 ) -> None:
     """Output the matched layer + issues report to dest/issues_dest."""
     check_valid_topology(conn, f"{name}_05")
 
-    _build_issues(conn, name, code_join=code_join)
+    _build_issues(conn, name, code_join=code_join, passthrough=passthrough)
 
     remaining = conn.execute(f"""--sql
         SELECT COUNT(*) FROM "{name}_06" WHERE kind = 'gap'

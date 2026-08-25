@@ -53,23 +53,29 @@ Run `topo-tools edge-match --help` for the full, always-current option list.
 2. **assign**: calls `core.assign.assign_many()` directly: assigns each
    child to the parent it shares the largest area with (plurality, not
    majority); drops and logs children with zero overlap with any parent,
-   keeping their geometry for the issues report. See
-   `docs/explanation/assign.md` for the algorithm.
+   keeping their geometry for the issues report (or, when `merge_columns`
+   is truthy, for the orphan group below instead; see "Gap-fill
+   passthrough"). See `docs/explanation/assign.md` for the algorithm.
 3. **`_02_groups`**: groups children by their assigned parent (always, even
    a group of exactly one parent), runs `edge-extend`'s pipeline within each group
    in an isolated subprocess, then reassembles the survivors, tagging each
    row with its group's own `parent_fid`. No clipping happens here anymore
    (see "Two subprocess generations" below). A failed group's children are
    recorded, with the parent id and failure reason, for the issues report.
-4. **`_03_clip`**: one batched call into `core.edge_clip.main()` over the whole
-   reassembled table at once, clipping every row to its own `parent_fid`'s
-   geometry. See `docs/explanation/edge_clip.md` for the algorithm.
+   When `merge_columns` is truthy and any children were unassigned, one more
+   orphan group runs afterward (see "Gap-fill passthrough").
+4. **`_03_clip`**: one batched call into `core.edge_clip.main()` over every
+   real group's rows at once, clipping each to its own `parent_fid`'s
+   geometry. See `docs/explanation/edge_clip.md` for the algorithm. The
+   orphan group's rows (when present) are split out first and unioned back
+   in afterward, unclipped.
 5. **`_04_stitch`**: calls `core.edge_stitch._02_clean.main()` directly: a
    single whole-table `ST_CoverageClean` pass over the clipped output to
    close cross-group seams. See `docs/explanation/edge_stitch.md`.
 6. **`_05_outputs`**: validates topology (any overlap, or a gap at or below
    `SNAP_TOLERANCE`, raises), builds the issues report from the dropped
-   children collected in stages 2/3 plus any leftover gap wider than
+   children collected in stages 2/3 (or the passthrough children, when
+   `merge_columns` is truthy) plus any leftover gap wider than
    `SNAP_TOLERANCE`, logs a warning if any such gap remains, and exports
    both the final layer and the issues report (only when it has rows).
 
@@ -93,6 +99,46 @@ or exhausting `attempt.py`'s 10 retries) still continue, dropping just that
 group, as before; only clip's own hard-fail-on-first-bad-`parent_fid`
 semantics are new, and apply uniformly to every `edge-clip` caller including
 `edge-match` (see `docs/explanation/edge_clip.md`).
+
+## Gap-fill passthrough
+
+Opt-in via `merge_columns` (CLI: `--merge`), off by default, the same
+boolean-or-value flag `edge-mosaic` uses (see `docs/explanation/edge_mosaic.md`).
+`edge-match` uses `assign-many`, a per-child (not per-file) assignment
+strategy, so its passthrough granularity is per-child, not per-file: a
+child with zero overlap with any parent is dropped by default, the same as
+always; with `merge_columns` truthy, that child (along with every other
+zero-overlap child, if any) is instead grouped into one orphan group of its
+own, tagged with the reserved sentinel `PASSTHROUGH_PARENT_FID` (`-1`,
+guaranteed absent from real parent fids) instead of a real `parent_fid`,
+and run through the identical per-group `edge-extend` subprocess as every
+other group. Extension only needs a group's own children, never a parent,
+so a group made of nothing but orphans extends exactly like any other
+group; it just never gets clipped afterward (`_03_clip` splits sentinel
+rows out before calling `core.edge_clip.main()`, unions them back into
+`{name}_04` afterward, unclipped), since there is no parent to clip
+against. A successfully-extended orphan is reported as a
+`kind='passthrough'` issues row rather than `unassigned`; an orphan group
+whose extension itself fails still becomes a `kind='dropped_group'` row,
+same as any other failed group. Any merged parent columns (see
+`docs/explanation/assign.md`) are NULL on passthrough rows, since there's
+no parent to join against; `_02_groups.py`'s `INSERT INTO ... BY NAME`
+fills them in automatically once the orphan group is appended after every
+real group (ordering matters: appending it first would create `{name}_03a}`
+without the carried columns, and a later real group's `INSERT ... BY NAME`
+would then fail with extra, unmatched columns).
+
+**Materially weaker safety profile than `edge-mosaic`'s passthrough.**
+`edge-mosaic`'s passthrough geometry was already a finished, validated
+`edge_extend()` output before the run even started. `edge-match`'s orphan
+group is extended fresh, alone, with zero neighboring-parent context of any
+kind, and its own per-group extension has no majority/plurality vote to
+fall back on if the extension misbehaves (there was nothing to vote on,
+unlike a normal multi-child group where other children can outvote one
+bad one). Treat the two passthrough modes as different risk profiles, not
+interchangeable; a passthrough-heavy `edge-match` run is worth a visual
+spot-check (e.g. via the `geo-preview` skill) before trusting it the way a
+normal matched group would be trusted.
 
 ## Per-group subprocess isolation (edge-extend)
 

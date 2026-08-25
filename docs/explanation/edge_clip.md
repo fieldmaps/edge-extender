@@ -12,8 +12,9 @@ downstream.
 
 ## Pipeline
 
-With a single children file, `api.edge_clip.clip()` runs four named stages once,
-in order (`step` MAY select just one for standalone debugging):
+`api.edge_clip.clip()` is a strict one-children-file/one-parent-file/one-output
+primitive (see `docs/adr/0080`), running four named stages once, in order
+(`step` MAY select just one for standalone debugging):
 
 1. **`inputs`**: `topo_tools.core.assign.load_children()`/`load_parent()`,
    called directly (no local wrapper file, the same pattern `edge-mosaic`
@@ -27,10 +28,6 @@ in order (`step` MAY select just one for standalone debugging):
 4. **`_02_outputs`** (clip's own local stage): exports `{name}_03`
    directly, raising `RuntimeError` first if the result is empty.
 
-With multiple children files, `api.edge_clip.clip()` instead runs a private
-per-file loop (`_clip_each_file()`); `step` is not usable in this case.
-See "Multiple children files, one at a time" below.
-
 `edge-mosaic` and `edge-match` both bypass all four of these steps and call
 `core.edge_clip._engine.main()` directly on their own already-loaded,
 already-assigned tables (via `core.edge_clip.main`, the package's re-exported
@@ -41,43 +38,6 @@ name), the same pattern `core.edge_match`/`core.change` use to call
 already-extended `{name}_03a` table, the second of `edge-match`'s own two
 subprocess generations, see
 `docs/adr/0020-match-clip-two-subprocess-generations.md`.
-
-## Multiple children files, one at a time
-
-Reloading and reprojecting a large parent/clip layer (e.g. a global admin0
-file, hundreds of MB) for every children file dominates runtime when
-clipping many children files against the same parent one call at a time
-(ADR-0022). An initial design shared that load by combining every children
-file into one table before a single `assign`/`edge-clip` pass, reusing
-`core.assign`'s `load_children`/`assign_one` exactly as `edge-mosaic` does.
-Profiled against the full portolan catalog (100+ countries against one
-world admin0 parent), that combined-table `assign` pass alone pushed
-process RSS past 7.6GB and climbing: `assign_one`'s bbox-prefiltered join
-scales with (heavy parent parts) x (every children file's parts combined),
-not just the parts near each individual country.
-
-`_clip_each_file()` (`api.edge_clip.clip()`'s private multi-file loop) instead
-loads the parent once into a pristine `{name}_parent_full` table, then for
-each children file: makes a fresh mutable copy of it (cheap in-connection
-table copy, no re-read/reprojection), loads only that one file's children
-via `core.assign.load_children()`, and runs the unchanged
-`assign_one`/`_01_clip` stages, so each file's join only ever involves that
-file's own children, not every country's combined. Each file's clipped
-result is staged to a hidden temp file next to its real destination and
-only promoted (`Path.replace()`) once every file in the batch has
-succeeded, keeping the same "fully succeed or write nothing" guarantee
-ADR-0022 established without holding every file's result in memory at
-once. See `docs/adr/0023` for the full profiling evidence and design.
-
-Cutting memory this way exposed a separate cost: `core.assign._one.py`'s
-`_build_pairs()` grid-tiles every high-vertex parent part before joining
-children to it, work that depends only on the parent, never the children.
-Run once per file across the full portolan batch, that redundant tiling
-pushed wall-clock into multiple hours, against a ~9.5 minute baseline for
-the same 111 countries clipped as one combined call. `_clip_each_file()`
-now calls `prepare_parent_tiles()` once, before the per-file loop starts,
-and every iteration's `assign_one()` call reuses that cached decomposition
-(`use_cached_tiles=True`) instead of rebuilding it. See `docs/adr/0024`.
 
 ## One parent fid at a time, each in its own subprocess
 

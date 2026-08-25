@@ -16,8 +16,11 @@ def main(  # noqa: PLR0913
     debug: bool = False,
     carry_columns: list[str] | None = None,
     passthrough: bool = False,
+    result_table: str | None = None,
+    raise_if_empty: bool = True,
 ) -> None:
     """Clip every assigned child to its parent's geometry, isolated per parent fid."""
+    result_table = result_table or f"{name}_03"
     carry_sql = "".join(f', a."{c}" AS "{c}"' for c in (carry_columns or []))
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_clip_in" AS
@@ -29,7 +32,7 @@ def main(  # noqa: PLR0913
         conn,
         f"{name}_02_clip_in",
         f'"{name}_parent_01"',
-        f"{name}_03",
+        result_table,
         tmp_dir,
         threads=threads,
         debug=debug,
@@ -50,13 +53,14 @@ def main(  # noqa: PLR0913
             )
         """)
         conn.execute(f"""--sql
-            CREATE OR REPLACE TABLE "{name}_03" AS
-            SELECT * FROM "{name}_03"
+            CREATE OR REPLACE TABLE "{result_table}" AS
+            SELECT * FROM "{result_table}"
             UNION ALL BY NAME
             SELECT * FROM "{name}_02_passthrough"
         """)
 
-    count = conn.execute(f'SELECT COUNT(*) FROM "{name}_03"').fetchone()[0]
-    if count == 0:
-        msg = f"mosaic: no child was assigned to any parent for {name}"
-        raise RuntimeError(msg)
+    if raise_if_empty:
+        count = conn.execute(f'SELECT COUNT(*) FROM "{result_table}"').fetchone()[0]
+        if count == 0:
+            msg = f"mosaic: no child was assigned to any parent for {name}"
+            raise RuntimeError(msg)

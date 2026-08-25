@@ -468,6 +468,20 @@ def _write_with_code(path, rows):
         conn.execute(f"COPY synth TO '{path}'")
 
 
+def _write_parent_pcode_only(path, rows):
+    """rows: list of (pid, wkt, pcode); no `id` column to collide with a child's."""
+    values = ", ".join(
+        f"({pid}, ST_GeomFromText('{wkt}'), '{code}')" for pid, wkt, code in rows
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE synth AS
+            SELECT * FROM (VALUES {values}) AS t(pid, geom, pcode)
+        """)
+        conn.execute(f"COPY synth TO '{path}'")
+
+
 def test_match_overrides_spatial_and_reports_mismatch(tmp_path):
     """A child's own file mostly overlaps parent A, but its code says B."""
     parents_path = tmp_path / "parents.parquet"
@@ -552,7 +566,7 @@ def test_cli_match_help():
     assert "--child-match-column" in result.output
 
 
-def test_mosaic_carry_columns_populates_output(tmp_path):
+def test_mosaic_merge_columns_populates_output(tmp_path):
     parents_path = tmp_path / "parents.parquet"
     _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
     children_path = tmp_path / "children.parquet"
@@ -563,7 +577,7 @@ def test_mosaic_carry_columns_populates_output(tmp_path):
         children_path,
         parents_path,
         output_path,
-        carry_columns=["pcode"],
+        merge_columns=["pcode"],
         overwrite=True,
     )
 
@@ -571,6 +585,23 @@ def test_mosaic_carry_columns_populates_output(tmp_path):
         conn.execute("LOAD spatial")
         pcode = conn.execute(f"SELECT pcode FROM '{output_path}'").fetchone()[0]
     assert pcode == "P1"
+
+
+def test_mosaic_merge_bare_carries_every_parent_column(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_parent_pcode_only(
+        parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")]
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    output_path = tmp_path / "out.parquet"
+    mosaic(children_path, parents_path, output_path, merge_columns=True, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        row = conn.execute(f"SELECT id, pid, pcode FROM '{output_path}'").fetchone()
+    assert row == (1, 1, "P1")
 
 
 @pytest.fixture
@@ -584,16 +615,19 @@ def synthetic_children_one_unmatched_file(tmp_path):
 
 
 def test_mosaic_passthrough_keeps_fully_unmatched_file(
-    synthetic_children_one_unmatched_file, synthetic_parents, tmp_path
+    synthetic_children_one_unmatched_file, tmp_path
 ):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
     mosaic(
         synthetic_children_one_unmatched_file,
-        synthetic_parents,
+        parents_path,
         output_path,
         issues_path,
-        on_unmatched="passthrough",
+        merge_columns=["pcode"],
         overwrite=True,
     )
 
@@ -613,18 +647,27 @@ def test_mosaic_passthrough_keeps_fully_unmatched_file(
     assert kinds == ["passthrough"]
 
 
-def test_mosaic_passthrough_does_not_rescue_individual_child(
-    synthetic_children, synthetic_parents, tmp_path
-):
+def test_mosaic_passthrough_does_not_rescue_individual_child(tmp_path):
     """Children 3/4 share a file with 1/2, which does get matched, stays dropped."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, _CHILD_WKT)
+
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
     mosaic(
-        synthetic_children,
-        synthetic_parents,
+        children_path,
+        parents_path,
         output_path,
         issues_path,
-        on_unmatched="passthrough",
+        merge_columns=["pcode"],
         overwrite=True,
     )
 
@@ -644,7 +687,7 @@ def test_mosaic_passthrough_does_not_rescue_individual_child(
     assert kinds == ["unassigned", "unassigned"]
 
 
-def test_mosaic_passthrough_carried_columns_are_null(
+def test_mosaic_passthrough_merged_columns_are_null(
     synthetic_children_one_unmatched_file, tmp_path
 ):
     parents_path = tmp_path / "parents.parquet"
@@ -655,8 +698,7 @@ def test_mosaic_passthrough_carried_columns_are_null(
         synthetic_children_one_unmatched_file,
         parents_path,
         output_path,
-        carry_columns=["pcode"],
-        on_unmatched="passthrough",
+        merge_columns=["pcode"],
         overwrite=True,
     )
 
@@ -668,22 +710,11 @@ def test_mosaic_passthrough_carried_columns_are_null(
     assert rows == [(1, "P1"), (4, None)]
 
 
-def test_mosaic_invalid_on_unmatched_raises(
-    synthetic_children, synthetic_parents, tmp_path
-):
-    with pytest.raises(ValueError, match="on_unmatched"):
-        mosaic(
-            synthetic_children,
-            synthetic_parents,
-            tmp_path / "out.parquet",
-            on_unmatched="bogus",
-            overwrite=True,
-        )
-
-
-def test_cli_on_unmatched_passthrough(
-    synthetic_children_one_unmatched_file, synthetic_parents, tmp_path
-):
+def test_cli_merge_passthrough(synthetic_children_one_unmatched_file, tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_parent_pcode_only(
+        parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")]
+    )
     matched_path, unmatched_path = synthetic_children_one_unmatched_file
     output_path = tmp_path / "out.parquet"
     result = CliRunner().invoke(
@@ -691,12 +722,11 @@ def test_cli_on_unmatched_passthrough(
         [
             "edge-mosaic",
             str(matched_path),
-            str(synthetic_parents),
+            str(parents_path),
             str(output_path),
             "--input",
             str(unmatched_path),
-            "--on-unmatched",
-            "passthrough",
+            "--merge",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -711,8 +741,101 @@ def test_cli_on_unmatched_passthrough(
     assert ids == [1, 4]
 
 
-def test_cli_carry_column_and_on_unmatched_help():
+def test_cli_merge_help():
     result = CliRunner().invoke(cli, ["edge-mosaic", "--help"])
     assert result.exit_code == 0
-    assert "--carry-column" in result.output
-    assert "--on-unmatched" in result.output
+    assert "--merge" in result.output
+
+
+def test_mosaic_multi_file_zero_overlap_file_does_not_abort_batch(tmp_path):
+    """A zero-overlap file in a 3+ file default-drop batch must not abort the run."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_synthetic(parents_path, _PARENT_WKT)
+    file_a = tmp_path / "file_a.parquet"
+    file_b = tmp_path / "file_b.parquet"
+    file_c = tmp_path / "file_c.parquet"
+    _write_synthetic(file_a, [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))")])
+    _write_synthetic(
+        file_b, [(2, "POLYGON((10.5 0.5, 11 0.5, 11 1, 10.5 1, 10.5 0.5))")]
+    )
+    _write_synthetic(
+        file_c, [(3, "POLYGON((100 100, 101 100, 101 101, 100 101, 100 100))")]
+    )
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    mosaic(
+        [file_a, file_b, file_c], parents_path, output_path, issues_path, overwrite=True
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+    assert ids == [1, 2]
+    assert kinds == ["unassigned"]
+
+
+def test_mosaic_multi_file_code_join_fid_stays_unique(tmp_path):
+    """Per-file fid_offset keeps child_fid globally unique across a 3+ file batch."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+            (3, "POLYGON((20 0, 23 0, 23 3, 20 3, 20 0))", "P3"),
+        ],
+    )
+    file_a = tmp_path / "file_a.parquet"
+    file_b = tmp_path / "file_b.parquet"
+    file_c = tmp_path / "file_c.parquet"
+    _write_with_code(
+        file_a, [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))", "P1")]
+    )
+    _write_with_code(
+        file_b, [(2, "POLYGON((10.5 0.5, 11 0.5, 11 1, 10.5 1, 10.5 0.5))", "P2")]
+    )
+    _write_with_code(
+        file_c, [(3, "POLYGON((20.5 0.5, 21 0.5, 21 1, 20.5 1, 20.5 0.5))", "P3")]
+    )
+
+    output_path = tmp_path / "out.parquet"
+    mosaic(
+        [file_a, file_b, file_c],
+        parents_path,
+        output_path,
+        match_column="pcode",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(
+            f"SELECT id, source_file FROM '{output_path}' ORDER BY id"
+        ).fetchall()
+    assert [r[0] for r in rows] == [1, 2, 3]
+    assert rows[0][1] == str(file_a)
+    assert rows[1][1] == str(file_b)
+    assert rows[2][1] == str(file_c)
+
+
+def test_mosaic_multi_file_step_rejected(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="step is not supported"):
+        mosaic(
+            synthetic_children_split,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            step="assign",
+            overwrite=True,
+        )

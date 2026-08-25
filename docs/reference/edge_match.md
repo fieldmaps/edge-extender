@@ -18,8 +18,11 @@ tools.
   id.
 - A child with no overlap with any parent MUST be dropped, not treated as
   fatal, and `edge-match` MUST log a warning naming it, since this may signal a real
-  data problem even though it isn't fatal. It MUST also be recorded in the
-  issues report described under Outputs.
+  data problem even though it isn't fatal, unless `merge_columns` is truthy
+  (see Configuration), in which case it is instead grouped into one orphan
+  group of its own and extended alone (see "Extending each group"), kept
+  unclipped in the output. Either case MUST also be recorded in the issues
+  report described under Outputs.
 
 ## Extending each group
 
@@ -40,11 +43,13 @@ tools.
 
 ## Clipping
 
-- `edge-match` MUST clip every group's reassembled, extended output to its own
-  `parent_fid`'s geometry, per `docs/reference/edge_clip.md`, one distinct
-  `parent_fid` at a time, each in its own spawned OS subprocess.
+- `edge-match` MUST clip every real group's reassembled, extended output to its
+  own `parent_fid`'s geometry, per `docs/reference/edge_clip.md`, one distinct
+  `parent_fid` at a time, each in its own spawned OS subprocess. The orphan
+  group (`merge_columns` truthy only) MUST NOT be clipped; it has no parent
+  to clip against.
 - Unlike a failed group's extension, `edge-match` MUST raise immediately if any
-  `parent_fid`'s clip subprocess fails, aborting the whole run rather than
+  real `parent_fid`'s clip subprocess fails, aborting the whole run rather than
   dropping just that group.
 
 ## Stitching
@@ -63,14 +68,18 @@ tools.
 - `edge-match` MUST export the final merged layer.
 - `edge-match` MUST also export an issues report alongside it, using the shared
   schema in `docs/reference/shared.md`, listing every dropped child, every
-  child belonging to a dropped group, and every leftover gap wider than
+  child belonging to a dropped group, every passthrough child
+  (`merge_columns` truthy only), and every leftover gap wider than
   `SNAP_TOLERANCE`, so a human can audit what didn't make it into the
   output or what may need review.
-- For an `unassigned`/`dropped_group` row, `unit_a` MUST hold the child's
-  own fid; for a `dropped_group` row, `parent_fid` and `reason` MUST record
-  the group's assigned parent and drop reason. For a `gap` row, `area_m2`,
-  `max_width_m`, and `thinness_ratio` MUST be populated instead. A field
-  that doesn't apply to a row's kind MUST be null.
+- For an `unassigned`/`dropped_group`/`passthrough` row, `unit_a` MUST hold
+  the child's own fid; for a `dropped_group` row, `parent_fid` and `reason`
+  MUST record the group's assigned parent and drop reason. For a
+  `passthrough` row, `reason` MUST explain that the child had no overlapping
+  parent and was extended alone and kept unclipped in the output; a
+  passthrough child MUST NOT also appear as an `unassigned` row. For a `gap`
+  row, `area_m2`, `max_width_m`, and `thinness_ratio` MUST be populated
+  instead. A field that doesn't apply to a row's kind MUST be null.
 - `edge-match` MUST produce the issues report only when it has at least one
   row; when it would be empty, no file MUST be written (and a stale file
   from a previous run at that path MUST be removed).
@@ -89,6 +98,12 @@ tools.
 - `edge-match` MAY accept `match_column`/`parent_match_column`/`child_match_column`
   to override spatial assignment with an exact code join (see
   `docs/reference/shared.md`, `docs/explanation/assign.md`).
-- `edge-match` MAY accept `carry_columns` (CLI: `--carry-column`) to copy
-  named parent columns onto every matched child (see
-  `docs/reference/shared.md`, `docs/adr/0077`).
+- `edge-match` MAY accept `merge_columns: list[str] | bool = False` (CLI:
+  `--merge`, a boolean-or-value flag): `False` (default) copies no parent
+  columns and drops an unmatched child; `True` (bare `--merge`) copies every
+  parent column (excluding `fid`/`geom`) onto every matched child and keeps
+  an unmatched child's own extended geometry in the output instead,
+  unclipped; a list (`--merge iso_3,adm0_name`) narrows the copied columns
+  to just those, with the same unmatched-child passthrough still on. There
+  is no way to enable one behavior without the other (see
+  `docs/reference/shared.md`, `docs/adr/0077`, `docs/adr/0081`).

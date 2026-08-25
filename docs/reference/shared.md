@@ -139,15 +139,46 @@ supplied and it yields at least one row (see `docs/reference/edge_clip.md`).
 
 ## Parent-column carry-forward
 
-`edge-match`, `edge-mosaic`, and standalone `edge-clip` all MAY accept a
-`carry_columns` list (CLI: repeatable, comma-splittable `--carry-column`)
-naming parent-layer columns to copy onto every matched child. Names are
-always caller-specified, never inferred from either layer's schema (see
+`edge-match`, `edge-mosaic`, and standalone `edge-clip` all MAY copy named
+parent-layer columns onto every matched child. Names are always
+caller-specified, never inferred from either layer's schema (see
 `docs/adr/0077`). A name colliding with `core.assign`'s own reserved
 columns (`child_fid`, `parent_fid`, `assignment_method`, `spatial_agrees`)
-MUST raise `ValueError`; a collision with the child's own schema fails at
-the SQL layer instead. A child that never matched any parent (dropped as
-`unassigned`, or, for `edge-mosaic` with `on_unmatched="passthrough"`, kept
-unclipped) never gains these columns; `edge-mosaic`'s passthrough rows fill
-them as NULL via `UNION ALL BY NAME` rather than through any join (see
-`docs/adr/0078`, `docs/reference/edge_mosaic.md`).
+MUST raise `ValueError`; a name colliding with the child layer's own
+schema MUST also raise `ValueError` (an explicit pre-check, not left to
+the SQL layer to reject on its own, see `docs/adr/0077`).
+
+Standalone `edge-clip` exposes this as a plain `carry_columns` list (CLI:
+repeatable, comma-splittable `--carry-column`), attribute-carrying only,
+with no gap-fill concept of its own (`edge-clip` is a strict 1:1
+primitive, see `docs/reference/edge_clip.md`).
+
+`edge-mosaic` exposes this as `merge_columns: list[str] | bool = False`
+(CLI: `--merge`, a boolean-or-value flag), coupled with gap-fill
+passthrough rather than independent of it: `False` (omitted) turns both
+off; `True` (bare `--merge`) carries every parent column (resolved once
+from the parent layer's own schema, excluding `fid`/`geom`) and keeps a
+fully unmatched children file's own geometry unclipped in the output
+instead of dropping it; a list (`--merge iso_3,adm0_name`) narrows the
+carried columns to just those, passthrough still on. There is no way to
+get one behavior without the other, by design, since a country kept via
+passthrough is far more useful with its parent attributes populated too
+(see `docs/adr/0079`). A child that never matched any parent (dropped as
+`unassigned`, or, when `--merge` is set, kept as a `passthrough` row)
+never gains these columns through a join; `edge-mosaic`'s passthrough rows
+fill them as NULL via `UNION ALL BY NAME` instead (see `docs/adr/0078`,
+`docs/reference/edge_mosaic.md`).
+
+`edge-match` exposes this the same shape as `edge-mosaic`:
+`merge_columns: list[str] | bool = False` (CLI: `--merge`), coupled with
+gap-fill passthrough for zero-overlap children rather than independent of
+it, using the same three-state semantics. Unlike `edge-mosaic`'s per-file
+passthrough, `edge-match`'s is per-child (it uses `assign-many`, a
+per-child assignment strategy): every zero-overlap child is grouped into
+one orphan group of its own and extended alone, then kept unclipped in the
+output instead of dropped. `edge-match`'s passthrough has a materially
+weaker safety profile than `edge-mosaic`'s: `edge-mosaic`'s passthrough
+geometry was already a finished, validated `edge_extend()` output before
+the run started, while `edge-match`'s orphan group is extended fresh,
+alone, with zero neighboring-parent context and no majority/plurality vote
+to catch a bad extension (see `docs/adr/0081`).

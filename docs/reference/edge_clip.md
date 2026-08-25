@@ -9,24 +9,20 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   neither coverage-checked nor -cleaned.
 - `edge-clip` MUST NOT require or read a `parent_fid` column on the children
   layer.
-- Unlike every tool here except `edge-mosaic`, the children role MAY span
-  multiple files, sharing a single load of the parent/clip layer; the
-  parent/clip layer itself MUST remain a single file. With multiple
-  children files, `edge-clip` processes one file at a time behind that shared
-  parent load, not all of them combined into one table (see
-  `docs/adr/0023`).
-- Every output row MUST carry a `source_file` column recording the exact
-  path of the children file it came from.
+- `edge-clip` MUST accept exactly one children file and exactly one
+  parent/clip file per call, a strict 1:1 primitive (see `docs/adr/0080`);
+  batching many children files against one shared parent load is
+  `edge-mosaic`'s job (see `docs/reference/edge_mosaic.md`).
+- The output row MUST carry a `source_file` column recording the path of
+  the children file it came from.
 
 ## Assignment
 
 - `edge-clip` MUST internally assign every child to exactly one parent before
-  clipping, via `assign-one`'s per-file majority-vote strategy (see
-  `docs/explanation/assign.md`): every child in one children file is forced
-  onto the one parent that wins a majority vote by count of that file's
-  children, not evaluated per child. With multiple children files, each is
-  its own independent majority-vote group, not one vote across all of them.
-- A child that does not agree with its file's majority-vote parent MUST be
+  clipping, via `assign-one`'s file-wide majority-vote strategy (see
+  `docs/explanation/assign.md`): every child is forced onto the one parent
+  that wins a majority vote by count, not evaluated per child.
+- A child that does not agree with the file's majority-vote parent MUST be
   dropped, not clipped against the wrong parent.
 
 ## Clipping
@@ -49,41 +45,20 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   on its own output: closing seams between clipped pieces is `edge-stitch`'s
   job, not `edge-clip`'s.
 - `edge-clip` MUST raise `RuntimeError` if the clipped result has zero rows.
-- With multiple children files, `edge-clip` MUST raise `RuntimeError` naming
-  any children file whose rows are all gone after clipping, before writing
-  any output file: a multi-file call MUST either fully succeed or write
-  nothing, never a partial set of outputs.
-- `edge-clip` MUST export the clipped layer, one output file per children file.
+- `edge-clip` MUST export the clipped layer to the output file.
 
 ## Configuration (`api.edge_clip.clip()` / CLI)
 
-- `edge-clip` MUST accept one or more children files and exactly one
-  parent/clip file per call.
-- With a single children file, the output path MUST default to that
-  input path with a `_clipped` suffix. With multiple children files,
-  `output_paths` MUST be given explicitly as a list the same length as
-  `children_paths`, paired by position; `edge-clip` MUST raise `ValueError` on
-  a length mismatch. There is no auto-naming or output-directory
-  convention for the multi-file case.
-- With multiple children files, `name` (the run's internal table/tmp-file
-  identifier) MUST be given explicitly; `edge-clip` MUST raise `ValueError` if
-  it is omitted, since there is no single input path to derive one from.
-- `edge-clip` MUST raise `FileExistsError` if any output already exists and
+- The output path MUST default to the input path with a `_clipped` suffix.
+- `edge-clip` MUST raise `FileExistsError` if the output already exists and
   overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `assign`, `edge-clip`, `outputs`;
-  any other value MUST raise `ValueError`. `step` MUST be `None` when
-  `children_paths` is a list; `edge-clip` MUST raise `ValueError` otherwise,
-  since the multi-file case processes one children file at a time and
-  doesn't map onto four independently resumable stages (see
-  `docs/adr/0023`).
-- The CLI additionally accepts `--input`/`--output` (each repeatable and
-  comma-separable), appending more children/output pairs beyond the first
-  positional pair; `--name` is required whenever `--input` is given.
+  any other value MUST raise `ValueError`.
 - `edge-clip` MAY accept `match_column`/`parent_match_column`/`child_match_column`
   to override spatial assignment with an exact code join (see
   `docs/reference/shared.md`, `docs/explanation/assign.md`); doing so gives
-  `edge-clip` its only issues report, `issues_paths` (same shape as
-  `output_paths`, defaulting to each output path with an `_issues` suffix).
+  `edge-clip` its only issues report, `issues_path`, defaulting to the
+  output path with an `_issues` suffix.
 - `edge-clip` MAY accept `carry_columns` (CLI: `--carry-column`) to copy
   named parent columns onto every matched child (see
   `docs/reference/shared.md`, `docs/adr/0077`).
