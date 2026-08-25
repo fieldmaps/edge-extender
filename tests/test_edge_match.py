@@ -16,11 +16,8 @@ from topo_tools.cli.main import cli
 from topo_tools.core.edge_match import _03_clip as match_clip
 from topo_tools.core.edge_match._02_groups import _record_dropped_group
 
-# Parent A (large square) contains children 1 & 2 with a gap between them,
-# exercises multi-child grouping, within-group Voronoi fill, and clip-to-
-# parent. Parent B (disjoint large square) contains only child 3 alone,
-# exercises the "always group, even size 1" path. Child 4 sits far outside
-# both parents, exercises the drop-unmatched-with-a-warning path.
+# Parent A contains children 1 & 2, Parent B contains only child 3, child 4
+# is far from both; --multi-parent restores this per-child grouping.
 _CHILD_WKT = [
     (1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))"),
     (2, "POLYGON((1.5 0.5, 2 0.5, 2 1, 1.5 1, 1.5 0.5))"),
@@ -146,10 +143,35 @@ def test_match_agrees_with_spatial_is_a_noop(
 
 
 def test_match_full_run(synthetic_children, synthetic_parents, tmp_path):
+    """Default assign-one forces the whole file onto Parent A; child 3 clip-empties."""
     output_path = tmp_path / "out.parquet"
     match(synthetic_children, synthetic_parents, output_path, overwrite=True)
 
     assert output_path.exists()
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+    assert ids == [1, 2, 4]
+
+
+def test_match_multi_parent_preserves_per_child_grouping(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    """--multi-parent restores the old per-child groups: 1&2, 3, and 4 dropped."""
+    output_path = tmp_path / "out.parquet"
+    match(
+        synthetic_children,
+        synthetic_parents,
+        output_path,
+        multi_parent=True,
+        overwrite=True,
+    )
+
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
         ids = [
@@ -164,9 +186,16 @@ def test_match_full_run(synthetic_children, synthetic_parents, tmp_path):
 def test_match_drops_unassigned_and_warns(
     synthetic_children, synthetic_parents, tmp_path, caplog
 ):
+    """Only --multi-parent's per-child assign can leave a child with no winner."""
     output_path = tmp_path / "out.parquet"
     with caplog.at_level(logging.WARNING):
-        match(synthetic_children, synthetic_parents, output_path, overwrite=True)
+        match(
+            synthetic_children,
+            synthetic_parents,
+            output_path,
+            multi_parent=True,
+            overwrite=True,
+        )
 
     assert any("dropping" in r.message and "4" in r.message for r in caplog.records)
 
@@ -184,6 +213,7 @@ def test_match_issues_file_default_path(
 def test_match_issues_file_records_unassigned_child(
     synthetic_children, synthetic_parents, tmp_path
 ):
+    """--multi-parent's per-child assign leaves child 4 with no winner at all."""
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
     match(
@@ -191,6 +221,7 @@ def test_match_issues_file_records_unassigned_child(
         synthetic_parents,
         output_path,
         issues_path,
+        multi_parent=True,
         overwrite=True,
     )
 
@@ -209,6 +240,37 @@ def test_match_issues_file_records_unassigned_child(
     assert row["parent_fid"] is None
     assert row["reason"] is None
     assert row["geometry"] is not None
+
+
+def test_match_default_issues_file_records_clip_empty_child(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    """Default assign-one forces child 3 onto Parent A; its clip comes back empty."""
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(
+        synthetic_children,
+        synthetic_parents,
+        output_path,
+        issues_path,
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(f"SELECT * FROM '{issues_path}'").fetchall()
+        cols = [
+            d[0] for d in conn.execute(f"SELECT * FROM '{issues_path}'").description
+        ]
+
+    clip_empty_child_fid = 3
+    winning_parent_fid = 1
+    assert len(rows) == 1
+    row = dict(zip(cols, rows[0], strict=True))
+    assert row["kind"] == "clip-empty"
+    assert row["unit_a"] == clip_empty_child_fid
+    assert row["parent_fid"] == winning_parent_fid
+    assert row["reason"] is not None
 
 
 def test_match_issues_file_absent_when_nothing_dropped(tmp_path):
@@ -489,6 +551,7 @@ def test_match_carry_columns_survives_group_subprocess(tmp_path):
         parents_path,
         output_path,
         merge_columns=["pcode"],
+        multi_parent=True,
         overwrite=True,
     )
 
@@ -528,6 +591,7 @@ def test_match_merge_bare_passthrough_keeps_orphan_and_carries_columns(tmp_path)
         output_path,
         issues_path,
         merge_columns=True,
+        multi_parent=True,
         overwrite=True,
     )
 
@@ -561,7 +625,14 @@ def test_match_no_merge_still_drops_orphan(tmp_path):
 
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
-    match(children_path, parents_path, output_path, issues_path, overwrite=True)
+    match(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        multi_parent=True,
+        overwrite=True,
+    )
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")

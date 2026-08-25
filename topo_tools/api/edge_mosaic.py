@@ -31,9 +31,9 @@ logger = getLogger(__name__)
 _STEP_ORDER = ["inputs", "assign", "clip", "stitch", "outputs"]
 
 _STEP_TABLES = {
-    "inputs": ["{n}_child_01", "{n}_parent_01"],
+    "inputs": ["{n}_child_01", "{n}_parent_01", "{n}_parent_full"],
     "assign": ["{n}_02_pairs", "{n}_02_assign", "{n}_02_unassigned"],
-    "clip": ["{n}_03", "{n}_02_passthrough"],
+    "clip": ["{n}_03", "{n}_03_dropped", "{n}_02_gap_fill"],
     "stitch": ["{n}_04"],
     "outputs": [],
 }
@@ -154,6 +154,11 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 if s == "inputs":
                     load_children(conn, name, paths)
                     load_parent(conn, name, clip_path)
+                    if passthrough:
+                        conn.execute(f"""--sql
+                            CREATE OR REPLACE TABLE "{name}_parent_full" AS
+                            SELECT * FROM "{name}_parent_01"
+                        """)
                 elif s == "assign":
                     if not merge_resolved:
                         resolved_merge = _resolve_merge_columns(
@@ -180,8 +185,23 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         threads=threads,
                         debug=debug,
                         carry_columns=resolved_merge,
-                        passthrough=passthrough,
+                        result_table=f"{name}_03",
+                        raise_if_empty=False,
                     )
+                    if passthrough:
+                        clip.fill_gaps(
+                            conn,
+                            name,
+                            carry_columns=resolved_merge,
+                            result_table=f"{name}_03",
+                            parent_snapshot_table=f"{name}_parent_full",
+                        )
+                    count = conn.execute(
+                        f'SELECT COUNT(*) FROM "{name}_03"'
+                    ).fetchone()[0]
+                    if count == 0:
+                        msg = f"mosaic: no child was assigned to any parent for {name}"
+                        raise RuntimeError(msg)
                 elif s == "stitch":
                     stitch.main(conn, name, debug=debug)
                 elif s == "outputs":
@@ -191,7 +211,7 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         output_path,
                         issues_path,
                         code_join=bool(parent_match_column and child_match_column),
-                        passthrough=passthrough,
+                        fill_gaps=passthrough,
                         debug=debug,
                     )
         maybe_export_debug_tables(
@@ -243,8 +263,8 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0917
     acc_child = f"{name}_child_01_acc"
     acc_assign = f"{name}_02_assign_acc"
     acc_unassigned = f"{name}_02_unassigned_acc"
-    acc_passthrough = f"{name}_02_passthrough_acc"
-    for tbl in (acc_child, acc_assign, acc_unassigned, acc_passthrough, f"{name}_03"):
+    acc_dropped = f"{name}_03_dropped_acc"
+    for tbl in (acc_child, acc_assign, acc_unassigned, acc_dropped, f"{name}_03"):
         conn.execute(f'DROP TABLE IF EXISTS "{tbl}"')
 
     fid_offset = 0
@@ -270,7 +290,6 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0917
             threads=threads,
             debug=debug,
             carry_columns=resolved_merge,
-            passthrough=passthrough,
             result_table=f"{name}_03_iter",
             raise_if_empty=False,
         )
@@ -280,12 +299,12 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0917
         _fold(conn, acc_child, f"{name}_child_01", seeded=seeded)
         _fold(conn, acc_assign, f"{name}_02_assign", seeded=seeded)
         _fold(conn, acc_unassigned, f"{name}_02_unassigned", seeded=seeded)
-        if passthrough:
-            _fold(conn, acc_passthrough, f"{name}_02_passthrough", seeded=seeded)
+        _fold(conn, acc_dropped, f"{name}_03_iter_dropped", seeded=seeded)
 
         new_max = conn.execute(f'SELECT MAX(fid) FROM "{name}_child_01"').fetchone()[0]
         fid_offset = new_max if new_max is not None else fid_offset
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03_iter"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_03_iter_dropped"')
 
     conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
     conn.execute(f'ALTER TABLE "{acc_child}" RENAME TO "{name}_child_01"')
@@ -293,10 +312,16 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0917
     conn.execute(f'ALTER TABLE "{acc_assign}" RENAME TO "{name}_02_assign"')
     conn.execute(f'DROP TABLE IF EXISTS "{name}_02_unassigned"')
     conn.execute(f'ALTER TABLE "{acc_unassigned}" RENAME TO "{name}_02_unassigned"')
+    conn.execute(f'DROP TABLE IF EXISTS "{name}_03_dropped"')
+    conn.execute(f'ALTER TABLE "{acc_dropped}" RENAME TO "{name}_03_dropped"')
+
     if passthrough:
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_passthrough"')
-        conn.execute(
-            f'ALTER TABLE "{acc_passthrough}" RENAME TO "{name}_02_passthrough"'
+        clip.fill_gaps(
+            conn,
+            name,
+            carry_columns=resolved_merge,
+            result_table=f"{name}_03",
+            parent_snapshot_table=f"{name}_parent_full",
         )
 
     count = conn.execute(f'SELECT COUNT(*) FROM "{name}_03"').fetchone()[0]
@@ -320,6 +345,6 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0917
         output_path,
         issues_path,
         code_join=bool(parent_match_column and child_match_column),
-        passthrough=passthrough,
+        fill_gaps=passthrough,
         debug=debug,
     )

@@ -25,7 +25,7 @@ _STEP_ORDER = ["inputs", "assign", "clip", "outputs"]
 _STEP_TABLES = {
     "inputs": ["{n}_child_01", "{n}_parent_01"],
     "assign": ["{n}_02_pairs", "{n}_02_assign", "{n}_02_unassigned"],
-    "clip": ["{n}_03"],
+    "clip": ["{n}_03", "{n}_03_dropped"],
     "outputs": [],
 }
 
@@ -70,27 +70,21 @@ def clip(  # noqa: C901, PLR0912, PLR0913
         if output_path is not None
         else default_output_path(children_path, "_clipped")
     )
-
-    resolved_issues_path: Path | None = None
-    if code_join:
-        resolved_issues_path = (
-            Path(issues_path)
-            if issues_path is not None
-            else output_path.with_stem(output_path.stem + "_issues")
-        )
+    resolved_issues_path = (
+        Path(issues_path)
+        if issues_path is not None
+        else output_path.with_stem(output_path.stem + "_issues")
+    )
 
     if name is None:
         name = input_basename(children_path).replace(".", "_") + "_edge_clip"
 
     if step in (None, "outputs"):
         check_overwrite(output_path, overwrite=overwrite)
-        if resolved_issues_path is not None:
-            check_overwrite(resolved_issues_path, overwrite=overwrite)
+        check_overwrite(resolved_issues_path, overwrite=overwrite)
 
     dest_by_source = {str(children_path): output_path}
-    issues_dest_by_source = (
-        {str(children_path): resolved_issues_path} if resolved_issues_path else None
-    )
+    issues_dest_by_source = {str(children_path): resolved_issues_path}
 
     with (
         resolve_tmp_dir(tmp_dir, debug=debug) as tmp_dir_path,

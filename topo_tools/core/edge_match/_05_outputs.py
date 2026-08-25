@@ -48,6 +48,13 @@ def _build_issues(
                child_fid AS unit_a, parent_fid, reason, {_ISSUE_COLUMNS}, geom
         FROM "{name}_03b"
         """,
+        f"""
+        SELECT 'clip-empty-' || fid AS key, 'clip-empty' AS kind,
+               fid AS unit_a, parent_fid,
+               'clip intersection with its assigned parent was empty' AS reason,
+               {_ISSUE_COLUMNS}, geom
+        FROM "{name}_04_dropped"
+        """,
         gap_issues_sql(conn, table),
     ]
     if passthrough:
@@ -103,5 +110,6 @@ def main(  # noqa: PLR0913
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_assign"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_unassigned"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03b"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_04_dropped"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_05"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_06"')

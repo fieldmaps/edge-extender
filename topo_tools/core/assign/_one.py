@@ -245,15 +245,13 @@ def assign_one(  # noqa: PLR0913
         winner_table = f"{name}_02_file_winner"
         extra_cols = ""
 
+    # Every child rides its file's winner unconditionally; a truly
+    # non-overlapping one still drops later, at clip time.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_assign" AS
         SELECT c.fid AS child_fid, w.parent_fid{extra_cols}
         FROM "{name}_child_01" c
         JOIN "{winner_table}" w ON w.source_file = c.source_file
-        JOIN "{name}_02_pairs" pr
-          ON pr.child_fid = c.fid
-         AND pr.parent_fid = w.parent_fid
-         AND pr.shared_area > 0
     """)
     if parent_match_column and child_match_column:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_file_final"')
@@ -273,8 +271,8 @@ def assign_one(  # noqa: PLR0913
     if unassigned:
         fids = [row[0] for row in unassigned]
         logger.warning(
-            "assign-one: dropping %d child fid(s) not in their file's "
-            "assigned parent: %s",
+            "assign-one: dropping %d child fid(s) whose file had no parent "
+            "overlap at all: %s",
             len(fids),
             fids,
         )

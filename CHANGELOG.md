@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-25
+
+### Fixed
+
+- `edge-mosaic`'s `--merge` gap-fill now keeps an unmatched **parent**
+  (zero matched children) in the output using the parent's own geometry
+  and attributes, instead of keeping an unmatched whole **children file**
+  unclipped, which was the wrong entity (see `docs/adr/0083`, superseding
+  `docs/adr/0078`).
+- `assign_one` no longer drops an individual child with zero overlap with
+  its file's majority-vote winner; every child in a file with a
+  determined winner is now forced onto it unconditionally. This is now
+  the default assignment strategy for both `edge-mosaic` and `edge-match`
+  (see `docs/adr/0082`).
+
+### Added
+
+- `edge-match`: new opt-in `--multi-parent`/`multi_parent` flag, reverting
+  to the old per-child `assign-many` behavior for files whose children
+  genuinely scatter across multiple parents (e.g. a poorly-digitized
+  admin4 layer fitting into many admin3 units) (see `docs/adr/0082`).
+- A child whose clip intersection with its assigned parent comes back
+  empty is now tracked and reported as a `kind='clip-empty'` issue row
+  instead of silently dropped, across `edge-mosaic`, `edge-match`, and
+  standalone `edge-clip`; never raises (see `docs/adr/0082`).
+- Standalone `edge-clip` gains a general issues file for the first time:
+  previously it only existed when a code-join was configured; it now
+  always resolves an issues path and always writes it whenever there's
+  at least one `clip-empty` or `code-mismatch` row.
+
 ## [0.4.0] - 2026-08-25
 
 ### Added

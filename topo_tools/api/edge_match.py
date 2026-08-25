@@ -5,7 +5,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.assign import assign_many
+from topo_tools.core.assign import assign_many, assign_one
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
@@ -34,7 +34,7 @@ _STEP_TABLES = {
     # (dynamic "{n}_g{parent_fid}" names), so it falls through to the
     # "export everything currently in the connection" default below, same as
     # a full (no --step) run.
-    "clip": ["{n}_04"],
+    "clip": ["{n}_04", "{n}_04_dropped"],
     "stitch": ["{n}_05"],
     "outputs": [],
 }
@@ -70,6 +70,7 @@ def match(  # noqa: C901, PLR0912, PLR0913
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
     merge_columns: list[str] | bool = False,
+    multi_parent: bool = False,
 ) -> None:
     """Match children to their best-overlapping parent, then extend to fill gaps."""
     if match_column is not None and (parent_match_column or child_match_column):
@@ -130,7 +131,8 @@ def match(  # noqa: C901, PLR0912, PLR0913
                         conn, name, merge_columns=merge_columns
                     )
                     merge_resolved = True
-                assign_many(
+                assign_fn = assign_many if multi_parent else assign_one
+                assign_fn(
                     conn,
                     name,
                     parent_match_column=parent_match_column,

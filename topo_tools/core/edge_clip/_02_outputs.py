@@ -17,15 +17,9 @@ def main(  # noqa: PLR0913
     code_join: bool = False,
     debug: bool = False,
 ) -> None:
-    """Export each children file's own clipped rows to its paired destination.
+    """Export each children file's own clipped rows and per-file issues report.
 
-    Validates every children file has surviving rows before writing any
-    output, so a multi-file call either fully succeeds or writes nothing.
-
-    When code_join is set, also exports a per-file issues report of
-    code-mismatch/code-fallback rows (clip has no topology hard gate of its
-    own, so this is the only issue kind it can report); issues_dest_by_source
-    is otherwise unused.
+    clip-empty rows always included; code-mismatch/code-fallback when code_join.
     """
     count = conn.execute(f'SELECT COUNT(*) FROM "{name}_03"').fetchone()[0]
     if count == 0:
@@ -43,11 +37,27 @@ def main(  # noqa: PLR0913
         msg = f"clip: no child survived clipping for: {missing}"
         raise RuntimeError(msg)
 
+    issue_parts = [
+        f"""
+        SELECT 'clip-empty-' || fid AS key, 'clip-empty' AS kind,
+               fid AS unit_a, NULL::BIGINT AS unit_b, parent_fid,
+               'clip intersection with its assigned parent was empty' AS reason,
+               NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
+               NULL::DOUBLE AS thinness_ratio,
+               NULL::DOUBLE AS unit_a_area_change_m2,
+               NULL::DOUBLE AS unit_b_area_change_m2,
+               NULL::DOUBLE AS filled_area_m2, FALSE AS fixed, source_file, geom
+        FROM "{name}_03_dropped"
+    """
+    ]
     if code_join:
-        conn.execute(f"""--sql
-            CREATE OR REPLACE TABLE "{name}_02_issues" AS
-            {assign_issue_rows_sql(name, source_file_expr="c.source_file")}
-        """)
+        issue_parts.append(
+            assign_issue_rows_sql(name, source_file_expr="c.source_file")
+        )
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{name}_02_issues" AS
+        {" UNION ALL BY NAME ".join(issue_parts)}
+    """)
 
     for source_file, dest in dest_by_source.items():
         conn.execute(f"""--sql
@@ -57,7 +67,7 @@ def main(  # noqa: PLR0913
         """)
         export_geometry_table(conn, f"{name}_03_one", dest)
 
-        if code_join and issues_dest_by_source and source_file in issues_dest_by_source:
+        if issues_dest_by_source and source_file in issues_dest_by_source:
             conn.execute(f"""--sql
                 CREATE OR REPLACE TEMP VIEW "{name}_02_issues_one" AS
                 SELECT * EXCLUDE (source_file) FROM "{name}_02_issues"
@@ -77,3 +87,4 @@ def main(  # noqa: PLR0913
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_assign"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_unassigned"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_03_dropped"')

@@ -1,28 +1,28 @@
 # Assign Explanation
 
 `assign-many` and `assign-one` are two internal crosswalk strategies in
-`core/assign/`, picked between by `edge-match` (`assign-many`) and `edge-mosaic`
-(`assign-one`); neither is a standalone CLI/API tool. Both build a
+`core/assign/`; neither is a standalone CLI/API tool. Both build a
 `(child_fid, parent_fid)` pairing from a bbox-prefiltered, part-exploded
 overlap-area join; they differ only in how that pairing gets finalized
-once per-pair shared area is known. The right one to use is decided by
-the input's geometry state, not by which tool you're eventually headed
-toward:
+once per-pair shared area is known.
 
-- **`assign-many`**: each child decides independently which parent it
-  overlaps most; one input file's children MAY scatter across **many**
-  different parents. Correct for raw/unextended geometry, where a child
-  can only ever overlap its true parent (there is no overshoot to
-  misassign it).
-- **`assign-one`**: every child in one input file is forced onto **one**
-  shared parent, chosen by majority vote of that file's children. Needed
-  for already-extended (post-`edge_extend()`, overshoot) geometry, where a
-  handful of border-crossing children could otherwise plurality-assign
-  themselves to the wrong neighboring parent.
+`assign-one` is the default for **both** `edge-mosaic` and `edge-match`:
+every child in one input file is forced onto **one** shared parent, chosen
+by majority vote of that file's children, once that file has any winner at
+all. This is the safest choice for a large group of polygons resolving
+against a single true parent, since a per-child rule could otherwise let a
+handful of stragglers (a border-crossing overshoot on extended geometry, or
+a genuinely non-overlapping outlying island on raw geometry) get pulled
+onto the wrong neighbor or dropped outright, even though the rest of the
+file clearly belongs together.
 
-This is a decision-granularity distinction (per-child vs. per-file), not a
-tool-of-origin one: `assign-many` is `edge-match`'s assignment logic,
-`assign-one` is `edge-mosaic`'s.
+`assign-many` is `edge-match`'s opt-in (`--multi-parent`): each child
+decides independently which parent it overlaps most, so one input file's
+children MAY scatter across **many** different parents. Use it only when
+that's actually true of the input, e.g. a poorly-digitized admin4 layer
+whose children genuinely belong to many different admin3 parents. It is
+never used for `edge-mosaic`/`edge-clip`, whose already-extended (overshoot)
+geometry makes per-child voting unsafe (see `docs/adr/0019`).
 
 ## Modules
 
@@ -46,11 +46,12 @@ directories).
 loads its own children via `core.edge_match._01_inputs` instead.
 
 `_many.py` / `_one.py` hold the actual assignment logic (see below):
-`api.edge_match` calls `core.assign.assign_many()`, `api.edge_mosaic` and
-standalone `api.edge_clip` both call `core.assign.assign_one()`, all directly
-on their own already-loaded tables. `edge-mosaic` calls it once per run;
-`edge-clip`'s multi-file loop calls it once per children file, reusing a
-cached parent-tile decomposition across every call (see below and
+`api.edge_mosaic`, standalone `api.edge_clip`, and `api.edge_match` (by
+default) all call `core.assign.assign_one()`; `api.edge_match` calls
+`core.assign.assign_many()` only when `--multi-parent` is given. All call
+directly on their own already-loaded tables. `edge-mosaic` calls it once
+per run; `edge-clip`'s multi-file loop calls it once per children file,
+reusing a cached parent-tile decomposition across every call (see below and
 `docs/adr/0024`). Neither function runs a coverage hard gate: an unclipped
 crosswalk is expected to still overlap/gap between neighboring children,
 that's `edge-clip`'s and `edge-stitch`'s job downstream.
@@ -104,6 +105,16 @@ parent wins that count, since a single file's children are always one
 group. This guards against cross-country border overshoot misassigning a
 file by per-child area alone; see `docs/adr/0019-mosaic-per-file-majority-vote.md`
 for why a per-child rule isn't enough and what it was measured to break.
+
+Once a file has a winner, every child in that file rides it unconditionally,
+including a child with literally zero overlap with the winning parent (e.g.
+a tiny offshore island whose true parent it can only reach after
+`edge-match`'s own post-assign Voronoi extension). Only a file whose
+children have **no** overlap with any parent at all lands in
+`_02_unassigned`. A forced-in child that still doesn't physically reach its
+parent by clip time produces an empty `ST_Intersection` and is dropped
+there instead, reported as a `kind='clip-empty'` issue row rather than an
+`assign`-time one (see `docs/explanation/edge_clip.md`).
 
 ## Code-column join (optional)
 
@@ -161,20 +172,27 @@ NAME`.
 
 | | `assign-many` | `assign-one` |
 | --- | --- | --- |
+| Used by | `edge-match --multi-parent` only | `edge-mosaic`, `edge-clip`, `edge-match` (default) |
 | Decision granularity | Per child | Per source file |
-| Input assumption | Raw, unextended geometry | Already-extended (overshoot) geometry |
+| Zero-overlap child in an otherwise-matched file | Dropped, logged, `_02_unassigned` | Forced onto the file's winner; dropped later at clip time if it still doesn't reach it |
 | Vote signal | N/A (each child stands alone) | Count of intersecting children per file |
 | Misassignment risk | None from overshoot (there is none) | A file too small to form a real majority (single-child file, tied vote) |
 
 ## Caveats
 
-**`assign-one` runs against overshoot geometry.** It never sees a child's
-pre-extension footprint, only the already-extended geometry, so the bbox
-prefilter is less selective than `assign-many`'s, and in principle the
-per-child overlap signal underlying the vote could be skewed by a child
-whose overshoot bulges further into a neighboring parent than into its
-true one. The per-file majority vote mitigates this because a file's other,
-unaffected children still outvote a single misbehaving one by count, but
-a single-child file has no other vote to correct it, and a tied vote (e.g.
-a two-child file split one-and-one between two parents) falls back to the
-lower parent id rather than any geometric signal.
+**`assign-one` runs against overshoot geometry (for `edge-mosaic`/`edge-clip`).**
+It never sees a child's pre-extension footprint, only the already-extended
+geometry, so the bbox prefilter is less selective than `assign-many`'s, and
+in principle the per-child overlap signal underlying the vote could be
+skewed by a child whose overshoot bulges further into a neighboring parent
+than into its true one. The per-file majority vote mitigates this because a
+file's other, unaffected children still outvote a single misbehaving one by
+count, but a single-child file has no other vote to correct it, and a tied
+vote (e.g. a two-child file split one-and-one between two parents) falls
+back to the lower parent id rather than any geometric signal.
+
+**`assign-one` forces every child onto its file's winner, even a
+non-overlapping one.** This is intentional (see above), but it means
+`edge-match`'s default no longer drops a straggler at assign time; a
+caller relying on `_02_unassigned` to catch every non-overlapping child
+must also check the `kind='clip-empty'` issue rows produced downstream.

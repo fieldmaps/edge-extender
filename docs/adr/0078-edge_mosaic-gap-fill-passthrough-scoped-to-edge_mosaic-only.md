@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Superseded by ADR-0083: the passthrough entity was found to be the wrong
+one (child-orphan, not parent-orphan).
 
 ## Context
 

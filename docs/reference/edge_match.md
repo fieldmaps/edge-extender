@@ -12,17 +12,31 @@ tools.
 
 ## Assigning children to parents
 
-- `edge-match` MUST assign each child polygon to the single parent polygon it
-  shares the largest overlapping area with.
-- A tie between two candidate parents MUST be broken by the lower parent
-  id.
-- A child with no overlap with any parent MUST be dropped, not treated as
-  fatal, and `edge-match` MUST log a warning naming it, since this may signal a real
-  data problem even though it isn't fatal, unless `merge_columns` is truthy
-  (see Configuration), in which case it is instead grouped into one orphan
-  group of its own and extended alone (see "Extending each group"), kept
-  unclipped in the output. Either case MUST also be recorded in the issues
-  report described under Outputs.
+- By default, `edge-match` MUST assign every child from the input file to a
+  single parent polygon shared by the whole file, chosen by majority vote
+  of that file's children (`assign-one`, see `docs/explanation/assign.md`);
+  a tie between two candidate parents MUST be broken by the lower parent
+  id. Once the file has a winner, every child in it MUST be assigned to
+  that parent unconditionally, including a child with zero individual
+  overlap with it; such a child is not dropped here, but MAY still drop
+  later at clip time if its extended geometry never reaches the parent
+  (see Clipping), reported as a `kind='clip-empty'` issue row.
+- When `--multi-parent` (`multi_parent=True`) is given, `edge-match` MUST
+  instead assign each child polygon independently to the single parent
+  polygon it shares the largest overlapping area with (`assign-many`), so
+  one input file's children MAY scatter across many different parents.
+  Use this only when children genuinely belong to different parents, e.g.
+  a poorly-digitized admin4 layer fitting into many admin3 units.
+- Under `assign-one` (default), a whole input file with no child
+  overlapping any parent at all MUST be dropped, not treated as fatal, and
+  `edge-match` MUST log a warning naming its children. Under `assign-many`
+  (`--multi-parent`), an individual child with no overlap with any parent
+  MUST be dropped the same way. Either case, unless `merge_columns` is
+  truthy (see Configuration), in which case the dropped child(ren) are
+  instead grouped into one orphan group of their own and extended
+  together (see "Extending each group"), kept unclipped in the output.
+  Either case MUST also be recorded in the issues report described under
+  Outputs.
 
 ## Extending each group
 
@@ -68,18 +82,21 @@ tools.
 - `edge-match` MUST export the final merged layer.
 - `edge-match` MUST also export an issues report alongside it, using the shared
   schema in `docs/reference/shared.md`, listing every dropped child, every
-  child belonging to a dropped group, every passthrough child
-  (`merge_columns` truthy only), and every leftover gap wider than
-  `SNAP_TOLERANCE`, so a human can audit what didn't make it into the
-  output or what may need review.
-- For an `unassigned`/`dropped_group`/`passthrough` row, `unit_a` MUST hold
-  the child's own fid; for a `dropped_group` row, `parent_fid` and `reason`
-  MUST record the group's assigned parent and drop reason. For a
-  `passthrough` row, `reason` MUST explain that the child had no overlapping
-  parent and was extended alone and kept unclipped in the output; a
-  passthrough child MUST NOT also appear as an `unassigned` row. For a `gap`
-  row, `area_m2`, `max_width_m`, and `thinness_ratio` MUST be populated
-  instead. A field that doesn't apply to a row's kind MUST be null.
+  child belonging to a dropped group, every child dropped for an empty
+  clip intersection, every passthrough child (`merge_columns` truthy
+  only), and every leftover gap wider than `SNAP_TOLERANCE`, so a human
+  can audit what didn't make it into the output or what may need review.
+- For an `unassigned`/`dropped_group`/`clip-empty`/`passthrough` row,
+  `unit_a` MUST hold the child's own fid; for a `dropped_group` row,
+  `parent_fid` and `reason` MUST record the group's assigned parent and
+  drop reason. For a `clip-empty` row, `parent_fid` MUST hold the child's
+  assigned parent's fid and `reason` MUST explain that the clip
+  intersection came back empty. For a `passthrough` row, `reason` MUST
+  explain that the child had no overlapping parent and was extended alone
+  and kept unclipped in the output; a passthrough child MUST NOT also
+  appear as an `unassigned` row. For a `gap` row, `area_m2`,
+  `max_width_m`, and `thinness_ratio` MUST be populated instead. A field
+  that doesn't apply to a row's kind MUST be null.
 - `edge-match` MUST produce the issues report only when it has at least one
   row; when it would be empty, no file MUST be written (and a stale file
   from a previous run at that path MUST be removed).
@@ -98,6 +115,12 @@ tools.
 - `edge-match` MAY accept `match_column`/`parent_match_column`/`child_match_column`
   to override spatial assignment with an exact code join (see
   `docs/reference/shared.md`, `docs/explanation/assign.md`).
+- `edge-match` MAY accept `multi_parent: bool = False` (CLI:
+  `--multi-parent`): `False` (default) assigns the whole input file to one
+  majority-vote parent (`assign-one`); `True` assigns each child
+  independently to whichever parent it overlaps most (`assign-many`), for
+  files whose children genuinely scatter across multiple parents (see
+  `docs/explanation/assign.md`, `docs/adr/0082`).
 - `edge-match` MAY accept `merge_columns: list[str] | bool = False` (CLI:
   `--merge`, a boolean-or-value flag): `False` (default) copies no parent
   columns and drops an unmatched child; `True` (bare `--merge`) copies every

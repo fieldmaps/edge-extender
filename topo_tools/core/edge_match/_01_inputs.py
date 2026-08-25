@@ -13,3 +13,8 @@ def main(
     """Load and coverage-clean both the child and parent/clip layers."""
     read_reproject_and_clean(conn, f"{name}_child", input_path)
     read_reproject_and_clean(conn, f"{name}_parent", clip_path)
+    # assign_one groups children by source_file (the whole input is one group).
+    conn.execute(f"""--sql
+        ALTER TABLE "{name}_child_01"
+        ADD COLUMN source_file VARCHAR DEFAULT '{input_path}'
+    """)

@@ -29,13 +29,17 @@ tools.
   children cannot misassign a file whose other children overwhelmingly
   point to their true parent.
 - A tie between two candidate parents MUST be broken by the lower parent id.
-- A child that does not itself overlap its file's assigned parent MUST be
-  dropped, not treated as fatal, and `edge-mosaic` MUST log a warning naming it.
-  A whole file with no child overlapping any parent MUST be dropped the
-  same way, unless `merge_columns` is truthy (see Configuration), in which
-  case that whole file's own geometry is kept unclipped instead. Either
-  case MUST also be recorded in the issues report described under
-  Outputs.
+- Once a file has a winning parent, every child in that file MUST be
+  assigned to it unconditionally, including a child with zero individual
+  overlap with the winner; such a child is not dropped at assign time (see
+  `docs/explanation/assign.md`). A whole file with no child overlapping
+  any parent at all MUST be dropped, not treated as fatal, and
+  `edge-mosaic` MUST log a warning naming its children; this case MUST also
+  be recorded in the issues report described under Outputs.
+- A parent matched by zero children MUST be dropped, unless `merge_columns`
+  is truthy (see Configuration), in which case that parent's own geometry
+  and attributes are kept unclipped in the output instead. Either case
+  MUST also be recorded in the issues report described under Outputs.
 
 ## Clipping
 
@@ -50,8 +54,11 @@ tools.
   count exceeds an adaptive threshold, sizing the tile grid from that
   parent's own vertex density, and MUST join children to tiles via bbox
   comparison, never `ST_Intersects`.
-- A child whose clipped result is empty MUST be dropped from the output.
-- `edge-mosaic` MUST raise if zero children were ever assigned to any parent.
+- A child whose clipped result is empty MUST be dropped from the output,
+  not treated as fatal, and MUST be recorded in the issues report as a
+  `kind='clip-empty'` row (see Outputs).
+- `edge-mosaic` MUST raise if zero children were ever assigned to any parent,
+  unless `merge_columns` gap-filled at least one parent (see Configuration).
 
 ## Stitching
 
@@ -69,19 +76,23 @@ tools.
 - `edge-mosaic` MUST export the final merged layer.
 - `edge-mosaic` MUST also export an issues report alongside it, using the
   shared schema in `docs/reference/shared.md`, listing every unassigned
-  child, every passthrough child (when `merge_columns` is truthy), and
-  every leftover gap wider than `SNAP_TOLERANCE`, so a human can audit what
-  didn't make it into the output or what may need review.
+  child (a whole unmatched file), every child dropped for an empty clip
+  intersection, every gap-filled parent (when `merge_columns` is truthy),
+  and every leftover gap wider than `SNAP_TOLERANCE`, so a human can audit
+  what didn't make it into the output or what may need review.
 - For an `unassigned` row, `unit_a` MUST hold the child's own fid and
   `source_file` MUST record its origin file; parent id and reason fields
-  MUST be null, since `edge-mosaic` has no per-group failure concept. For a
-  `passthrough` row (`merge_columns` truthy only), `unit_a` and
-  `source_file` MUST be populated the same way, and `reason` MUST explain
-  that the file was kept unclipped for lack of an overlapping parent; a
-  passthrough child MUST NOT also appear as an `unassigned` row. For a
-  `gap` row, `area_m2`, `max_width_m`, and `thinness_ratio` MUST be
-  populated instead. A field that doesn't apply to a row's kind MUST be
-  null.
+  MUST be null, since this only happens for a whole file with no parent
+  overlap at all. For a `clip-empty` row, `unit_a` MUST hold the child's
+  fid, `parent_fid` MUST hold its assigned parent's fid, and `reason` MUST
+  explain that the clip intersection came back empty. For a `gap-fill`
+  row (`merge_columns` truthy only), `parent_fid` MUST hold the gap-filled
+  parent's fid and `reason` MUST explain that the parent had no matched
+  children and was kept unclipped in the output; `unit_a` and
+  `source_file` MUST be null, since the row is the parent itself, not a
+  child. For a `gap` row, `area_m2`, `max_width_m`, and `thinness_ratio`
+  MUST be populated instead. A field that doesn't apply to a row's kind
+  MUST be null.
 - `edge-mosaic` MUST produce the issues report only when it has at least one
   row; when it would be empty, no file MUST be written (and a stale file
   from a previous run at that path MUST be removed).
@@ -107,11 +118,12 @@ tools.
   `docs/reference/shared.md`, `docs/explanation/assign.md`).
 - `edge-mosaic` MAY accept `merge_columns: list[str] | bool = False` (CLI:
   `--merge`, a boolean-or-value flag): `False` (default) copies no parent
-  columns and drops a fully unmatched children file; `True` (bare
+  columns and drops a parent matched by zero children; `True` (bare
   `--merge`) copies every parent column (excluding `fid`/`geom`) onto
-  every matched child and keeps a fully unmatched children file's own
-  geometry unclipped in the output instead; a list (`--merge
-  iso_3,adm0_name`) narrows the copied columns to just those, with
-  passthrough still on. There is no way to enable one behavior without the
-  other (see `docs/reference/shared.md`, `docs/adr/0077`,
-  `docs/adr/0078`, `docs/adr/0079`).
+  every matched child and keeps a zero-children parent's own geometry
+  unclipped in the output instead; a list (`--merge iso_3,adm0_name`)
+  narrows the copied columns to just those, with gap-fill still on. There
+  is no way to enable one behavior without the other (see
+  `docs/reference/shared.md`, `docs/adr/0077`, `docs/adr/0079`,
+  `docs/adr/0083`; supersedes the child-orphan passthrough of
+  `docs/adr/0078`).

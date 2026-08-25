@@ -114,14 +114,18 @@ def test_mosaic_full_run(synthetic_children, synthetic_parents, tmp_path):
     assert ids == [1, 2]
 
 
-def test_mosaic_drops_unassigned_and_warns(
-    synthetic_children, synthetic_parents, tmp_path, caplog
-):
+def test_mosaic_drops_unassigned_and_warns(synthetic_parents, tmp_path, caplog):
+    """A whole file with no parent overlap at all is dropped and warned about."""
+    file_far = tmp_path / "file_far.parquet"
+    file_a = tmp_path / "file_a.parquet"
+    _write_synthetic(file_far, [_CHILD_WKT[3]])  # sole child, far from any parent
+    _write_synthetic(file_a, [_CHILD_WKT[0], _CHILD_WKT[1]])  # tiles Parent A
+
     output_path = tmp_path / "out.parquet"
     with caplog.at_level(logging.WARNING):
-        mosaic(synthetic_children, synthetic_parents, output_path, overwrite=True)
+        mosaic([file_far, file_a], synthetic_parents, output_path, overwrite=True)
 
-    assert any("dropping" in r.message and "4" in r.message for r in caplog.records)
+    assert any("dropping 1 child fid(s)" in r.message for r in caplog.records)
 
 
 def test_mosaic_issues_file_default_path(
@@ -134,10 +138,10 @@ def test_mosaic_issues_file_default_path(
     assert expected_issues_path.exists()
 
 
-def test_mosaic_issues_file_records_unassigned_child(
+def test_mosaic_issues_file_records_clip_empty_child(
     synthetic_children, synthetic_parents, tmp_path
 ):
-    """Child 3 loses to the file's majority (Parent A); both 3 and 4 are unassigned."""
+    """Children 3/4 are forced onto Parent A, then dropped as clip-empty."""
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
     mosaic(
@@ -155,15 +159,15 @@ def test_mosaic_issues_file_records_unassigned_child(
             d[0] for d in conn.execute(f"SELECT * FROM '{issues_path}'").description
         ]
 
-    expected_unassigned_fids = {3, 4}
-    assert len(rows) == len(expected_unassigned_fids)
+    expected_clip_empty_fids = {3, 4}
+    assert len(rows) == len(expected_clip_empty_fids)
     by_fid = {dict(zip(cols, row, strict=True))["unit_a"]: row for row in rows}
-    assert set(by_fid) == expected_unassigned_fids
+    assert set(by_fid) == expected_clip_empty_fids
     for row in rows:
         parsed = dict(zip(cols, row, strict=True))
-        assert parsed["kind"] == "unassigned"
-        assert parsed["parent_fid"] is None
-        assert parsed["reason"] is None
+        assert parsed["kind"] == "clip-empty"
+        assert parsed["parent_fid"] == 1
+        assert parsed["reason"] is not None
         assert parsed["geometry"] is not None
 
 
@@ -604,51 +608,8 @@ def test_mosaic_merge_bare_carries_every_parent_column(tmp_path):
     assert row == (1, 1, "P1")
 
 
-@pytest.fixture
-def synthetic_children_one_unmatched_file(tmp_path):
-    """One file that matches Parent A, one file (fid 4) with no overlap at all."""
-    matched_path = tmp_path / "matched.parquet"
-    unmatched_path = tmp_path / "unmatched.parquet"
-    _write_synthetic(matched_path, [_CHILD_WKT[0]])
-    _write_synthetic(unmatched_path, [_CHILD_WKT[3]])
-    return [matched_path, unmatched_path]
-
-
-def test_mosaic_passthrough_keeps_fully_unmatched_file(
-    synthetic_children_one_unmatched_file, tmp_path
-):
-    parents_path = tmp_path / "parents.parquet"
-    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
-
-    output_path = tmp_path / "out.parquet"
-    issues_path = tmp_path / "issues.parquet"
-    mosaic(
-        synthetic_children_one_unmatched_file,
-        parents_path,
-        output_path,
-        issues_path,
-        merge_columns=["pcode"],
-        overwrite=True,
-    )
-
-    with duckdb.connect() as conn:
-        conn.execute("LOAD spatial")
-        ids = [
-            row[0]
-            for row in conn.execute(
-                f"SELECT id FROM '{output_path}' ORDER BY id"
-            ).fetchall()
-        ]
-        kinds = [
-            row[0]
-            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
-        ]
-    assert ids == [1, 4]
-    assert kinds == ["passthrough"]
-
-
-def test_mosaic_passthrough_does_not_rescue_individual_child(tmp_path):
-    """Children 3/4 share a file with 1/2, which does get matched, stays dropped."""
+def test_mosaic_gap_fill_keeps_unmatched_parent(tmp_path):
+    """Parent B (fid 2) gets zero matched children, so it carries through unclipped."""
     parents_path = tmp_path / "parents.parquet"
     _write_with_code(
         parents_path,
@@ -673,29 +634,67 @@ def test_mosaic_passthrough_does_not_rescue_individual_child(tmp_path):
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        ids = [
+        rows = conn.execute(
+            f"SELECT parent_fid, pcode FROM '{output_path}' WHERE parent_fid = 2"
+        ).fetchall()
+        issue_rows = conn.execute(
+            f"SELECT kind, parent_fid FROM '{issues_path}' WHERE kind = 'gap-fill'"
+        ).fetchall()
+    assert rows == [(2, "P2")]
+    assert issue_rows == [("gap-fill", 2)]
+
+
+def test_mosaic_gap_fill_still_reports_clip_empty_children(tmp_path):
+    """Gap-fill rescues Parent B; children 3/4 still clip-empty against Parent A."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, _CHILD_WKT)
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    mosaic(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        merge_columns=["pcode"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        clip_empty_fids = {
             row[0]
             for row in conn.execute(
-                f"SELECT id FROM '{output_path}' ORDER BY id"
+                f"SELECT unit_a FROM '{issues_path}' WHERE kind = 'clip-empty'"
             ).fetchall()
-        ]
-        kinds = [
-            row[0]
-            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
-        ]
-    assert ids == [1, 2]
-    assert kinds == ["unassigned", "unassigned"]
+        }
+    assert clip_empty_fids == {3, 4}
 
 
-def test_mosaic_passthrough_merged_columns_are_null(
-    synthetic_children_one_unmatched_file, tmp_path
-):
+def test_mosaic_gap_fill_merged_columns_populated(tmp_path):
+    """A gap-filled parent's carried columns hold its own real value, not NULL."""
     parents_path = tmp_path / "parents.parquet"
-    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, _CHILD_WKT)
 
     output_path = tmp_path / "out.parquet"
     mosaic(
-        synthetic_children_one_unmatched_file,
+        children_path,
         parents_path,
         output_path,
         merge_columns=["pcode"],
@@ -704,41 +703,45 @@ def test_mosaic_passthrough_merged_columns_are_null(
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        rows = conn.execute(
-            f"SELECT id, pcode FROM '{output_path}' ORDER BY id"
-        ).fetchall()
-    assert rows == [(1, "P1"), (4, None)]
+        pcode = conn.execute(
+            f"SELECT pcode FROM '{output_path}' WHERE parent_fid = 2"
+        ).fetchone()[0]
+    assert pcode == "P2"
 
 
-def test_cli_merge_passthrough(synthetic_children_one_unmatched_file, tmp_path):
+def test_cli_merge_gap_fill(tmp_path):
     parents_path = tmp_path / "parents.parquet"
     _write_parent_pcode_only(
-        parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")]
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
     )
-    matched_path, unmatched_path = synthetic_children_one_unmatched_file
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, _CHILD_WKT)
     output_path = tmp_path / "out.parquet"
     result = CliRunner().invoke(
         cli,
         [
             "edge-mosaic",
-            str(matched_path),
+            str(children_path),
             str(parents_path),
             str(output_path),
-            "--input",
-            str(unmatched_path),
             "--merge",
         ],
     )
     assert result.exit_code == 0, result.output
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        ids = [
+        parent_fids = {
             row[0]
             for row in conn.execute(
-                f"SELECT id FROM '{output_path}' ORDER BY id"
+                f"SELECT parent_fid FROM '{output_path}'"
             ).fetchall()
-        ]
-    assert ids == [1, 4]
+        }
+    gap_filled_parent_fid = 2
+    assert gap_filled_parent_fid in parent_fids
 
 
 def test_cli_merge_help():

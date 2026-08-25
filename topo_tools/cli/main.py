@@ -641,6 +641,18 @@ def change(  # noqa: PLR0913, PLR0917
         "(comma-separated)."
     ),
 )
+@click.option(
+    "--multi-parent",
+    envvar="MULTI_PARENT",
+    is_flag=True,
+    help=(
+        "Assign each child independently to whichever parent it overlaps "
+        "most (assign-many), instead of forcing the whole input file onto "
+        "one majority-vote parent (assign-one, the default). Use this when "
+        "children genuinely belong to different parents, e.g. a "
+        "poorly-digitized admin4 layer fitting into many admin3 units."
+    ),
+)
 def edge_match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -655,6 +667,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
     parent_match_column: str | None,
     child_match_column: str | None,
     merge_value: str | None,
+    multi_parent: bool,  # noqa: FBT001
 ) -> None:
     r"""Match children to parents by largest overlap, then extend to fill gaps.
 
@@ -676,6 +689,11 @@ def edge_match(  # noqa: PLR0913, PLR0917
       \b
       # Copy parent columns onto every matched child
       topo-tools edge-match adm3.gpkg adm2.gpkg --merge iso_3,adm0_name
+
+      \b
+      # A poorly-digitized admin4 layer whose children legitimately
+      # scatter across many different admin3 parents
+      topo-tools edge-match adm4.gpkg adm3.gpkg --multi-parent
     """
     logger.info("--debug=%s", debug)
     try:
@@ -693,6 +711,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
             merge_columns=_resolve_merge_flag(merge_value),
+            multi_parent=multi_parent,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e

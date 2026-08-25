@@ -27,32 +27,33 @@ def _build_issues(
     name: str,
     *,
     code_join: bool = False,
-    passthrough: bool = False,
+    fill_gaps: bool = False,
 ) -> None:
-    """Build `{name}_05`: every unassigned/passthrough child, plus non-noise gaps."""
+    """Build `{name}_05`: every unassigned child, plus gap-fill rows and gaps."""
     table = f"{name}_04"
-    unassigned_where = (
-        f'WHERE child_fid NOT IN (SELECT fid FROM "{name}_02_passthrough")'
-        if passthrough
-        else ""
-    )
     parts = [
         f"""
         SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
                child_fid AS unit_a, NULL::BIGINT AS parent_fid,
                NULL::VARCHAR AS reason, {_ISSUE_COLUMNS}, source_file, geom
         FROM "{name}_02_unassigned"
-        {unassigned_where}
+        """,
+        f"""
+        SELECT 'clip-empty-' || fid AS key, 'clip-empty' AS kind,
+               fid AS unit_a, parent_fid,
+               'clip intersection with its assigned parent was empty' AS reason,
+               {_ISSUE_COLUMNS}, source_file, geom
+        FROM "{name}_03_dropped"
         """,
         gap_issues_sql(conn, table),
     ]
-    if passthrough:
+    if fill_gaps:
         parts.append(f"""
-        SELECT 'passthrough-' || fid AS key, 'passthrough' AS kind,
-               fid AS unit_a, NULL::BIGINT AS parent_fid,
-               'file had no overlapping parent; kept unclipped in the output' AS reason,
-               {_ISSUE_COLUMNS}, source_file, geom
-        FROM "{name}_02_passthrough"
+        SELECT 'gap-fill-' || parent_fid AS key, 'gap-fill' AS kind,
+               NULL::BIGINT AS unit_a, parent_fid,
+               'parent had no matched children; kept unclipped in the output' AS reason,
+               {_ISSUE_COLUMNS}, NULL::VARCHAR AS source_file, geom
+        FROM "{name}_02_gap_fill"
         """)
     if code_join:
         parts.append(assign_issue_rows_sql(name, source_file_expr="c.source_file"))
@@ -69,13 +70,13 @@ def main(  # noqa: PLR0913
     issues_dest: Path,
     *,
     code_join: bool = False,
-    passthrough: bool = False,
+    fill_gaps: bool = False,
     debug: bool = False,
 ) -> None:
     """Output the mosaicked layer + issues report to dest/issues_dest."""
     check_valid_topology(conn, f"{name}_04")
 
-    _build_issues(conn, name, code_join=code_join, passthrough=passthrough)
+    _build_issues(conn, name, code_join=code_join, fill_gaps=fill_gaps)
 
     remaining = conn.execute(f"""--sql
         SELECT COUNT(*) FROM "{name}_05" WHERE kind = 'gap'
@@ -97,6 +98,7 @@ def main(  # noqa: PLR0913
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_pairs"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_assign"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_unassigned"')
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_passthrough"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_03_dropped"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_gap_fill"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_04"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_05"')

@@ -31,16 +31,18 @@ def main(  # noqa: PLR0913 (each param is a distinct required input)
     threads: int | None = None,
     debug: bool = False,
 ) -> None:
-    """Clip every row of table_in to its own parent_fid's geometry, dropping empties.
+    """Clip every row of table_in to its own parent_fid's geometry.
 
-    table_in MUST already carry a parent_fid column (assign's own output
-    contract). Every distinct parent_fid is clipped in its own spawned
-    subprocess, its boundary adaptively grid-tiled first; the first failed
-    parent_fid raises immediately, aborting the whole run.
+    table_in MUST already carry a parent_fid column; an empty-intersection
+    child is dropped from table_out but kept in "{table_out}_dropped".
     """
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{table_out}" AS
         SELECT * EXCLUDE (parent_fid) FROM "{table_in}" WHERE FALSE
+    """)
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{table_out}_dropped" AS
+        SELECT * FROM "{table_in}" WHERE FALSE
     """)
     parent_fids = [
         row[0]
@@ -81,6 +83,11 @@ def main(  # noqa: PLR0913 (each param is a distinct required input)
             INSERT INTO "{table_out}" BY NAME
             SELECT * FROM read_parquet('{output_path}')
         """)
+        conn.execute(f"""--sql
+            INSERT INTO "{table_out}_dropped" BY NAME
+            SELECT *, {parent_fid} AS parent_fid
+            FROM read_parquet('{group_dir / "dropped.parquet"}')
+        """)
 
         if not debug:
             shutil.rmtree(group_dir, ignore_errors=True)
@@ -118,19 +125,30 @@ def _clip_one_worker(
                 CREATE TABLE clip_btile AS
                 SELECT geom, {bbox_columns_sql("geom")} FROM clip_btile_raw
             """)
+        # LEFT JOIN: a child whose bbox misses every tile still emits a row.
+        worker_conn.execute("""--sql
+                CREATE TABLE clip_result AS
+                SELECT c.* EXCLUDE (geom, xmin, xmax, ymin, ymax),
+                       c.geom AS orig_geom,
+                       ST_SetCRS(ST_Multi(ST_CollectionExtract(
+                           ST_Union_Agg(ST_Intersection(c.geom, b.geom)), 3
+                       ))::GEOMETRY, 'EPSG:4326') AS geom
+                FROM clip_children c
+                LEFT JOIN clip_btile b
+                  ON b.xmax >= c.xmin AND b.xmin <= c.xmax
+                 AND b.ymax >= c.ymin AND b.ymin <= c.ymax
+                GROUP BY ALL
+            """)
         worker_conn.execute(f"""--sql
                 COPY (
-                    SELECT * FROM (
-                        SELECT c.* EXCLUDE (geom, xmin, xmax, ymin, ymax),
-                               ST_SetCRS(ST_Multi(ST_CollectionExtract(
-                                   ST_Union_Agg(ST_Intersection(c.geom, b.geom)), 3
-                               ))::GEOMETRY, 'EPSG:4326') AS geom
-                        FROM clip_children c
-                        JOIN clip_btile b
-                          ON b.xmax >= c.xmin AND b.xmin <= c.xmax
-                         AND b.ymax >= c.ymin AND b.ymin <= c.ymax
-                        GROUP BY ALL
-                    ) WHERE NOT ST_IsEmpty(geom)
+                    SELECT * EXCLUDE (orig_geom) FROM clip_result
+                    WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
                 ) TO '{group_dir / "output.parquet"}' (FORMAT PARQUET)
+            """)
+        worker_conn.execute(f"""--sql
+                COPY (
+                    SELECT * EXCLUDE (geom) RENAME (orig_geom AS geom)
+                    FROM clip_result WHERE geom IS NULL OR ST_IsEmpty(geom)
+                ) TO '{group_dir / "dropped.parquet"}' (FORMAT PARQUET)
             """)
         worker_conn.close()
