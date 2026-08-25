@@ -15,29 +15,29 @@ _LEVEL_1, _LEVEL_2, _LEVEL_3 = 1, 2, 3
 
 _LEAF_ROWS = [
     {
-        "adm1_pcode": "AA",
+        "adm1_code": "AA",
         "adm1_name": "Country A",
-        "adm2_pcode": "AA01",
+        "adm2_code": "AA01",
         "adm2_name": "Prov1",
-        "adm3_pcode": "AA0101",
+        "adm3_code": "AA0101",
         "adm3_name": "Dist1",
         "wkt": "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
     },
     {
-        "adm1_pcode": "AA",
+        "adm1_code": "AA",
         "adm1_name": "Country A",
-        "adm2_pcode": "AA02",
+        "adm2_code": "AA02",
         "adm2_name": "Prov2",
-        "adm3_pcode": None,
+        "adm3_code": None,
         "adm3_name": None,
         "wkt": "POLYGON((0 1, 1 1, 1 2, 0 2, 0 1))",
     },
     {
-        "adm1_pcode": "BB",
+        "adm1_code": "BB",
         "adm1_name": "Country B",
-        "adm2_pcode": None,
+        "adm2_code": None,
         "adm2_name": None,
-        "adm3_pcode": None,
+        "adm3_code": None,
         "adm3_name": None,
         "wkt": "POLYGON((5 5, 6 5, 6 6, 5 6, 5 5))",
     },
@@ -78,8 +78,8 @@ def _fetch(path):
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
         rows = conn.execute(
-            f"SELECT * EXCLUDE (geometry) FROM '{path}' ORDER BY adm1_pcode, "
-            "adm2_pcode, adm3_pcode"
+            f"SELECT * EXCLUDE (geometry) FROM '{path}' ORDER BY adm1_code, "
+            "adm2_code, adm3_code"
         ).fetchall()
         cols = [d[0] for d in conn.description]
     return cols, {r[0:3]: r for r in rows}
@@ -96,8 +96,8 @@ def leaf_input(tmp_path):
 def admin1_only_input(tmp_path):
     path = tmp_path / "leaf1.parquet"
     rows = [
-        {"adm1_pcode": "AA", "adm1_name": "Country A", "wkt": _LEAF_ROWS[0]["wkt"]},
-        {"adm1_pcode": "BB", "adm1_name": "Country B", "wkt": _LEAF_ROWS[2]["wkt"]},
+        {"adm1_code": "AA", "adm1_name": "Country A", "wkt": _LEAF_ROWS[0]["wkt"]},
+        {"adm1_code": "BB", "adm1_name": "Country B", "wkt": _LEAF_ROWS[2]["wkt"]},
     ]
     _write_synthetic(path, rows)
     return path
@@ -137,14 +137,14 @@ def test_extends_to_a_single_level(admin1_only_input, tmp_path):
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
         rows = conn.execute(
-            f"SELECT adm1_pcode, adm_lvl FROM '{output_path}' ORDER BY adm1_pcode"
+            f"SELECT adm1_code, adm_lvl FROM '{output_path}' ORDER BY adm1_code"
         ).fetchall()
     assert rows == [("AA", 1), ("BB", 1)]
 
 
 def test_missing_level_column_raises(tmp_path):
     path = tmp_path / "missing_level.parquet"
-    rows = [{k: v for k, v in row.items() if k != "adm2_pcode"} for row in _LEAF_ROWS]
+    rows = [{k: v for k, v in row.items() if k != "adm2_code"} for row in _LEAF_ROWS]
     _write_synthetic(path, rows)
     with pytest.raises(ValueError, match="missing code column"):
         fill(path, overwrite=True)
@@ -262,6 +262,64 @@ def test_custom_depth_column_name(leaf_input, tmp_path):
     assert "adm_lvl" not in cols
 
 
+def test_fills_fieldmaps_shaped_column_family_set(tmp_path):
+    """adm{n}_id/_src/_name/_name1/_name2 (fieldmaps' own convention) all cascade."""
+    schema_path = _write_schema(
+        tmp_path / "fieldmaps_schema.yaml",
+        name_field="adm{n}_name",
+        code_field="adm{n}_id",
+    )
+    rows = [
+        {
+            "adm1_id": "AA",
+            "adm1_src": "src-AA",
+            "adm1_name": "Country A",
+            "adm1_name1": "Country A (fr)",
+            "adm1_name2": "Country A (es)",
+            "adm2_id": "AA01",
+            "adm2_src": "src-AA01",
+            "adm2_name": "Prov1",
+            "adm2_name1": "Prov1 (fr)",
+            "adm2_name2": "Prov1 (es)",
+            "wkt": "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
+        },
+        {
+            "adm1_id": "AA",
+            "adm1_src": "src-AA",
+            "adm1_name": "Country A",
+            "adm1_name1": "Country A (fr)",
+            "adm1_name2": "Country A (es)",
+            "adm2_id": None,
+            "adm2_src": None,
+            "adm2_name": None,
+            "adm2_name1": None,
+            "adm2_name2": None,
+            "wkt": "POLYGON((0 1, 1 1, 1 2, 0 2, 0 1))",
+        },
+    ]
+    input_path = tmp_path / "fieldmaps_leaf.parquet"
+    _write_synthetic(input_path, rows)
+
+    output_path = tmp_path / "fieldmaps_out.parquet"
+    fill(
+        input_path,
+        target_schema_path=schema_path,
+        output_path=output_path,
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        result = conn.execute(
+            f"SELECT adm2_src, adm2_name, adm2_name1, adm2_name2, adm_lvl "
+            f"FROM '{output_path}' ORDER BY adm1_id, adm2_id"
+        ).fetchall()
+    assert result == [
+        ("src-AA", "Country A", "Country A (fr)", "Country A (es)", _LEVEL_1),
+        ("src-AA01", "Prov1", "Prov1 (fr)", "Prov1 (es)", _LEVEL_2),
+    ]
+
+
 def test_dissolve_after_fill_keeps_lvl_column(leaf_input, tmp_path):
     """Once filled, plain dissolve builds each level, auto-keeping adm_lvl."""
     filled_path = tmp_path / "filled.parquet"
@@ -269,13 +327,13 @@ def test_dissolve_after_fill_keeps_lvl_column(leaf_input, tmp_path):
 
     adm2_path = tmp_path / "adm2.parquet"
     dissolve(
-        filled_path, adm2_path, group_by=["adm2_pcode", "adm1_pcode"], overwrite=True
+        filled_path, adm2_path, group_by=["adm2_code", "adm1_code"], overwrite=True
     )
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
         rows = conn.execute(
-            f"SELECT adm2_pcode, adm_lvl FROM '{adm2_path}' ORDER BY adm2_pcode"
+            f"SELECT adm2_code, adm_lvl FROM '{adm2_path}' ORDER BY adm2_code"
         ).fetchall()
     assert rows == [("AA01", 3), ("AA02", 2), ("BB", 1)]
 

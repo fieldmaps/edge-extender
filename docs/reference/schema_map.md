@@ -9,9 +9,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   every other tool does, via `core.io.read_and_reproject()`.
 - `schema-map` MUST take a target-schema YAML file with top-level `name_field`/
   `code_field` string keys, each containing a `{n}` placeholder (e.g.
-  `adm{n}_name`/`adm{n}_pcode`); these supply output naming only, never
-  matching vocabulary. If omitted, it MUST default to the bundled COD-AB
-  schema (`topo_tools/core/schema_map/data/cod-ab.yaml`).
+  `adm{n}_name`/`adm{n}_code`); these supply output naming only, never
+  matching vocabulary. If omitted, it MUST default to the bundled generic
+  schema (`topo_tools/core/schema_map/data/default.yaml`).
 - `schema-map` MUST raise `ValueError` (not a raw `KeyError`/silent empty
   result) if the target-schema YAML is missing either key or either
   value lacks a `{n}` placeholder.
@@ -105,16 +105,21 @@ empirical justification.
   confidence `ambiguous`, `target_column` empty.
 - A function-passing column MUST be confidence `supplemental`,
   `target_column` empty, when its level's chain group already has a
-  resolved `name` role member; a bijective (exact) same-level companion
-  cannot reach the bracket step at all, since bijection would already
-  have merged it into the chain group at the grouping step, so a
-  function-passing bracket candidate is always a genuine, coarser
-  superset of the level (by pigeonhole, an onto function between
-  equal-cardinality sets is also one-to-one, so a non-bijective
-  function-passing candidate must be coarser). When the level's chain
-  group has no `name` role member yet, function-passing candidates MUST
-  instead resolve to confidence `name`, numbered `target_column` from
-  `name_field` (same numbering scheme as code companions above).
+  resolved `name` role member AND its own collapse ratio (`1 -
+  COUNT(DISTINCT candidate) / level_unit_count`) exceeds `0.30`; a
+  bijective (exact) same-level companion cannot reach the bracket step at
+  all, since bijection would already have merged it into the chain group
+  at the grouping step, so a function-passing bracket candidate is always
+  a genuine, coarser superset of the level (by pigeonhole, an onto
+  function between equal-cardinality sets is also one-to-one, so a
+  non-bijective function-passing candidate must be coarser) unless its
+  collapse is within that tolerance, in which case it's treated as a
+  same-level translation/transcription variant instead (see
+  `docs/adr/0076`). When the level's chain group has no `name` role
+  member yet, or the candidate's collapse ratio is `<= 0.30`,
+  function-passing candidates MUST instead resolve to confidence `name`,
+  numbered `target_column` from `name_field` (same numbering scheme as
+  code companions above).
 - A column landing in no bracket at all MUST be confidence `unmatched`,
   `target_column` and `note` both empty.
 - A resolved level MUST be excluded from output (fall through to

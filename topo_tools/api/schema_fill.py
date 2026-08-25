@@ -48,7 +48,7 @@ def fill(  # noqa: PLR0913
 ) -> None:
     """Cascade admin-hierarchy columns down for one input file.
 
-    target_schema_path defaults to the bundled COD-AB schema.
+    target_schema_path defaults to the bundled generic schema.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"

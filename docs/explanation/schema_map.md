@@ -52,7 +52,7 @@ from topo_tools.api.schema_map import map
 map("example.parquet")
 ```
 
-`TARGET_SCHEMA_FILE` (positional, optional) defaults to the bundled COD-AB
+`TARGET_SCHEMA_FILE` (positional, optional) defaults to the bundled generic
 schema. `OUTPUT_FILE` (positional, optional) defaults to `INPUT_FILE` with a
 `_crosswalk.csv` name.
 
@@ -63,9 +63,9 @@ list.
 
 The target schema is config, not hardcoded, so `schema-map` works on any
 dataset, not just COD-AB; omit `TARGET_SCHEMA_FILE` to use the bundled
-default (`topo_tools/core/schema_map/data/cod-ab.yaml`), or pass your own. A
+default (`topo_tools/core/schema_map/data/default.yaml`), or pass your own. A
 config is just two naming templates, `name_field` and `code_field` (e.g.
-`"adm{n}_name"`/`"adm{n}_pcode"`), each containing a `{n}` placeholder for
+`"adm{n}_name"`/`"adm{n}_code"`), each containing a `{n}` placeholder for
 the discovered admin level. They control output naming only; `schema-map` never
 reads them while deciding what belongs to which level.
 
@@ -168,11 +168,17 @@ reads them while deciding what belongs to which level.
    between equal-cardinality sets is automatically one-to-one too, so a
    non-bijective function-passing candidate can't have the level's own
    cardinality. When the level's chain group already has a resolved
-   `name` role member, a function-passing candidate becomes
-   `supplemental` (see `docs/adr/0065`); when it doesn't yet, the
-   function-passing candidate resolves to `name` directly. A bracketed
-   column that fails the function check entirely (neither a subset nor
-   superset of the level) stays `ambiguous`.
+   `name` role member, a function-passing candidate becomes `supplemental`
+   (see `docs/adr/0065`) unless its own collapse relative to the level's
+   unit count (`1 - COUNT(DISTINCT candidate) / level_unit_count`) is
+   `<= 0.30`, in which case it's numbered as an additional sibling instead
+   (`name1`, `name2`, ...), the same numbering scheme step 5 describes: a
+   same-level translation/transcription variant rather than a genuinely
+   coarser grouping (see `docs/adr/0076`). When the level's chain group
+   has no `name` role member yet, the function-passing candidate resolves
+   to `name` directly, with no collapse-ratio check. A bracketed column
+   that fails the function check entirely (neither a subset nor superset
+   of the level) stays `ambiguous`.
 5. **Number and emit rows**: a chain position's level number is always
    its relative rank (0 = coarsest). `schema-map` never takes a real admin
    number as input, it only infers nesting depth (see `docs/adr/0058`).
@@ -181,9 +187,9 @@ reads them while deciding what belongs to which level.
    schema template at that level; when two or more qualify at the same
    level and role (bijective companions, or multiple function-passing
    name matches), each is numbered by source-column order, the first
-   getting the bare template (`adm2_name`, `adm2_pcode`) and each next
+   getting the bare template (`adm2_name`, `adm2_code`) and each next
    one the template plus an appended integer (`adm2_name1`,
-   `adm2_pcode1`, ...) (see `docs/adr/0056`). **A resolved level is
+   `adm2_code1`, ...) (see `docs/adr/0056`). **A resolved level is
    excluded from output only when its own `COUNT(DISTINCT)` is exactly
    1**, a true constant; a non-constant level is resolved regardless of
    its rank in the chain, even at position 0 (see `docs/adr/0066`, which
@@ -214,7 +220,9 @@ states its tier and level, in one of two fixed forms: `"ambiguous, level
 - `supplemental`: bracketed at a resolved chain level, function-passing
   against that level's code, but a confirmed coarser (superset) grouping
   rather than the level's own code/name, because the level's chain group
-  already has a resolved `name` (see `docs/adr/0065`, `docs/adr/0066`).
+  already has a resolved `name` and the candidate's own collapse ratio
+  exceeds `0.30` (see `docs/adr/0065`, `docs/adr/0066`, `docs/adr/0076`).
+  Below that ratio it resolves `name` instead, numbered as a sibling.
 - `ambiguous`: landed at a resolved chain level but failed the function
   check entirely (neither a subset nor superset of the level).
 - `unmatched`: never joined the chain and never bracketed into any

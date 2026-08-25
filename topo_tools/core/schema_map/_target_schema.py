@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_TARGET_SCHEMA_PATH = Path(__file__).parent / "data" / "cod-ab.yaml"
+DEFAULT_TARGET_SCHEMA_PATH = Path(__file__).parent / "data" / "default.yaml"
 
 
 @dataclass(frozen=True)

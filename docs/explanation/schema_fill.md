@@ -1,8 +1,8 @@
 # schema-fill
 
 `schema-fill` cascades every admin-hierarchy column down from its nearest
-non-NULL shallower level (e.g. a row with only `adm1_pcode`/`adm1_name`
-set gets `adm2_pcode`/`adm2_name`/`adm3_pcode`/`adm3_name` filled in from
+non-NULL shallower level (e.g. a row with only `adm1_code`/`adm1_name`
+set gets `adm2_code`/`adm2_name`/`adm3_code`/`adm3_name` filled in from
 that same admin1 unit), and stamps a new depth column, `adm_lvl` by
 default (overridable via `depth_column`/`--depth-column`), recording each
 row's real, pre-fill depth. It reuses `schema-map`'s `TargetSchema`
@@ -61,7 +61,11 @@ from yet.
    `COALESCE` chain per family from the deepest requested level up to
    level 1, and appends the `depth_column` CASE expression
    (`_depth_column_sql()`) keyed off the *original*, pre-fill code columns
-   (`{name}_02`).
+   (`{name}_02`). The prefix scan picks up every same-prefix suffix it
+   finds, not just `code_field`/`name_field` themselves: fieldmaps'
+   `adm{n}_id`, `adm{n}_src`, `adm{n}_name`, `adm{n}_name1`, `adm{n}_name2`
+   (one alt-language name column per language) land in five independent
+   families and all cascade, with no extra configuration.
 3. **`_03_outputs`**: exports `{name}_02` directly. No hard gate: like
    `schema-map`, this tool only touches attribute columns, never geometry.
 

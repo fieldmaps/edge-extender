@@ -21,6 +21,10 @@ _EXCLUDED_COLUMNS = {"fid", "geom"}
 
 _CODE_SHAPE_MAJORITY = 0.5
 
+# A same-role bracket winner above this collapse ratio is a coarser
+# grouping (ADR-0065), not a same-level translation variant (ADR-0076).
+_WINNER_MAX_COLLAPSE_RATIO = 0.30
+
 
 @dataclass
 class _Row:
@@ -300,6 +304,13 @@ def _assign_chain_roles(
     return rows
 
 
+def _collapse_ratio(
+    counts: dict[str, int], column: str, level_unit_count: int
+) -> float:
+    """Fraction of a level's own units a winning candidate's values collapse away."""
+    return 1 - counts[column] / level_unit_count
+
+
 def _bracket_level(  # noqa: PLR0913, PLR0917
     conn: DuckDBPyConnection,
     table: str,
@@ -312,17 +323,20 @@ def _bracket_level(  # noqa: PLR0913, PLR0917
 ) -> dict[str, "_Row"]:
     """Resolve one bracketed level's candidates into name/supplemental/ambiguous rows.
 
-    A winner is `name` only if the level has no chain name yet, else `supplemental`.
+    A winner is `name` unless the level already has one and the winner's own
+    collapse ratio exceeds `_WINNER_MAX_COLLAPSE_RATIO` (docs/adr/0076).
     """
-    code_column = chain[level][1][0]
+    level_count, level_cols = chain[level]
+    code_column = level_cols[0]
     winners = {
         c
         for c in candidates
         if _containment_holds(conn, table, coarser=c, finer=code_column)
     }
-    level_has_name = any(
-        chain_rows[m].role == "name" for m in chain[level][1] if m in chain_rows
-    )
+    existing_name_members = [
+        m for m in level_cols if m in chain_rows and chain_rows[m].role == "name"
+    ]
+    level_has_name = bool(existing_name_members)
     parent_code_column = chain[level - 1][1][0] if level > 0 else None
 
     def unique_count_for(column: str) -> int:
@@ -331,7 +345,7 @@ def _bracket_level(  # noqa: PLR0913, PLR0917
         return _combined_distinct_count(conn, table, parent_code_column, column)
 
     rows: dict[str, _Row] = {}
-    winner_index = 0
+    winner_index = len(existing_name_members)
     for column in candidates:
         unique_count = unique_count_for(column)
         if column not in winners:
@@ -342,7 +356,11 @@ def _bracket_level(  # noqa: PLR0913, PLR0917
                 level=level,
                 unique_count=unique_count,
             )
-        elif level_has_name:
+        elif (
+            level_has_name
+            and _collapse_ratio(counts, column, level_count)
+            > _WINNER_MAX_COLLAPSE_RATIO
+        ):
             rows[column] = _Row(
                 column,
                 None,

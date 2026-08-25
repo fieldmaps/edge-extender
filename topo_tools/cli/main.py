@@ -1060,14 +1060,14 @@ def schema_map(  # noqa: PLR0913, PLR0917
     r"""Map a source-column -> target-schema crosswalk for one input file.
 
     TARGET_SCHEMA_FILE is a YAML config of canonical target fields; if
-    omitted, defaults to the bundled COD-AB schema
-    (topo_tools/core/schema_map/data/cod-ab.yaml). OUTPUT_FILE defaults to
+    omitted, defaults to the bundled generic schema
+    (topo_tools/core/schema_map/data/default.yaml). OUTPUT_FILE defaults to
     INPUT_FILE with a "_crosswalk.csv" name if omitted. Never renames
     anything itself; review/edit the crosswalk, then run schema-refactor.
 
     \b
     Examples:
-      # Basic run: default (COD-AB) schema, output name chosen automatically
+      # Basic run: default (generic) schema, output name chosen automatically
       topo-tools schema-map example.geojson
 
       \b
@@ -1226,7 +1226,7 @@ def schema_crosswalk(  # noqa: PLR0913, PLR0917
 ) -> None:
     r"""Map a crosswalk, then apply it (schema-map + schema-refactor, combined).
 
-    TARGET_SCHEMA_FILE defaults to the bundled COD-AB schema. OUTPUT_FILE
+    TARGET_SCHEMA_FILE defaults to the bundled generic schema. OUTPUT_FILE
     defaults to INPUT_FILE with a "_mapped" suffix; CROSSWALK_FILE defaults
     to INPUT_FILE with a "_crosswalk.csv" name. To iterate, hand-edit the
     written crosswalk CSV and re-run schema-refactor on it, not schema-crosswalk
@@ -1234,7 +1234,7 @@ def schema_crosswalk(  # noqa: PLR0913, PLR0917
 
     \b
     Examples:
-      # Basic run: default (COD-AB) schema, output names chosen automatically
+      # Basic run: default (generic) schema, output names chosen automatically
       topo-tools schema-crosswalk example.geojson
 
       \b

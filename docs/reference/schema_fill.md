@@ -9,8 +9,8 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   way every other tool does, via `core.io.read_and_reproject()`.
 - `schema-fill` MUST take the same target-schema YAML shape `schema-map`
   takes (top-level `name_field`/`code_field` string keys, each containing
-  a `{n}` placeholder). If omitted, it MUST default to the bundled COD-AB
-  schema (`topo_tools/core/schema_map/data/cod-ab.yaml`).
+  a `{n}` placeholder). If omitted, it MUST default to the bundled generic
+  schema (`topo_tools/core/schema_map/data/default.yaml`).
 - `schema-fill` MUST detect every admin level 1..N present via the
   schema's `code_field` prefix (e.g. `adm`), N being the deepest level
   column found, and MUST raise `ValueError` if any level in that 1..N

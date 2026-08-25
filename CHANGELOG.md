@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `schema-map`/`schema-fill`'s bundled default target schema
+  is now generic (`data/default.yaml`, `code_field: "adm{n}_code"`), not
+  COD-AB-specific (`data/cod-ab.yaml`, `adm{n}_pcode`); a fuller
+  COD-AB-specific schema is planned separately.
+- `schema-map`: a function-passing, non-bijective same-level bracket
+  candidate now numbers as a sibling (`name1`, `name2`, ...) instead of
+  `supplemental` when its own collapse ratio against the level's unit
+  count is `<= 0.30` (see `docs/adr/0076`).
+
 ## [0.3.1] - 2026-08-24
 
 ### Added

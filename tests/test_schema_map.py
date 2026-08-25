@@ -159,7 +159,7 @@ def test_output_ordering_level_desc_name_before_code_unmatched_last(
     assert ordered == ["adm1_name", "adm1_pcode", "decoy_code", "adm0_pcode", "notes"]
 
 
-def test_target_schema_defaults_to_bundled_cod_ab(tmp_path):
+def test_target_schema_defaults_to_bundled_default(tmp_path):
     path = tmp_path / "cod_ab_like.parquet"
     rows = [
         (_unit_square(0), "MG", "MG1", "Alpha"),
@@ -170,7 +170,7 @@ def test_target_schema_defaults_to_bundled_cod_ab(tmp_path):
     map(path, output_path=out, overwrite=True)
 
     rows_out = _crosswalk(out)
-    assert rows_out["adm1_pcode"]["target_column"] == "adm1_pcode"
+    assert rows_out["adm1_pcode"]["target_column"] == "adm1_code"
     assert rows_out["adm1_pcode"]["note"] == ""
     assert rows_out["adm1_pcode"]["unique_count"] == "2"
     assert rows_out["adm1_name"]["target_column"] == "adm1_name"
@@ -178,7 +178,7 @@ def test_target_schema_defaults_to_bundled_cod_ab(tmp_path):
     assert rows_out["adm1_name"]["unique_count"] == "2"
 
 
-def test_cli_target_schema_defaults_to_bundled_cod_ab(tmp_path):
+def test_cli_target_schema_defaults_to_bundled_default(tmp_path):
     path = tmp_path / "cod_ab_like.parquet"
     _write_table(
         path,
@@ -360,6 +360,111 @@ def test_exact_bijective_match_wins_over_looser_function_match(tmp_path):
     assert rows_out["adm1_name"]["target_column"] == "level1_name"
     assert rows_out["region_group"]["target_column"] == ""
     assert rows_out["region_group"]["note"] == "supplemental, superset of level 1"
+
+
+def _twenty_unit_rows(cand_values):
+    """20 admin1 units (bijective pcode/name), plus one candidate column.
+
+    adm1_name uses letters, not digits, so it isn't mistaken for code-shaped.
+    """
+    return [
+        (_unit_square(i), "R0", f"R0R{i}", f"Region{chr(64 + i)}", cand_values[i - 1])
+        for i in range(1, 21)
+    ]
+
+
+def _write_twenty_unit_table(tmp_path, name, cand_values):
+    path = tmp_path / f"{name}.parquet"
+    _write_table(
+        path,
+        ["geom", "adm0_pcode", "adm1_pcode", "adm1_name", "alt_name"],
+        _twenty_unit_rows(cand_values),
+    )
+    schema = _write_schema(
+        tmp_path / f"{name}_schema.yaml",
+        name_field="level{n}_name",
+        code_field="level{n}_pcode",
+    )
+    return path, schema
+
+
+def test_near_bijective_alt_name_becomes_numbered_sibling(tmp_path):
+    """A 5%-collapse candidate (1 coincidental duplicate) still numbers as name1."""
+    values = [f"Nom{i}" for i in range(1, 21)]
+    values[1] = values[0]  # Nom1 reused for unit 2: 19/20 distinct, 5% collapse.
+    path, schema = _write_twenty_unit_table(tmp_path, "near_bijective", values)
+    out = tmp_path / "crosswalk.csv"
+    map(path, schema, out, overwrite=True)
+
+    rows_out = _crosswalk(out)
+    assert rows_out["adm1_name"]["target_column"] == "level1_name"
+    assert rows_out["alt_name"]["target_column"] == "level1_name1"
+    assert rows_out["alt_name"]["note"] == ""
+
+
+def test_collapse_over_threshold_stays_supplemental(tmp_path):
+    """A 65%-collapse candidate (Algeria-shaped) is still a coarser grouping."""
+    values = [f"Group{(i - 1) % 7}" for i in range(1, 21)]  # 7/20 distinct, 65%.
+    path, schema = _write_twenty_unit_table(tmp_path, "coarse_collapse", values)
+    out = tmp_path / "crosswalk.csv"
+    map(path, schema, out, overwrite=True)
+
+    rows_out = _crosswalk(out)
+    assert rows_out["alt_name"]["target_column"] == ""
+    assert rows_out["alt_name"]["note"] == "supplemental, superset of level 1"
+
+
+def test_collapse_near_threshold_boundary(tmp_path):
+    """Pins the 0.30 cutoff region: 25% numbered, 35% stays supplemental.
+
+    Avoids testing the literal 0.30 value itself: 1 - 14/20 float-rounds to
+    0.30000000000000004, an unreliable equality to assert against.
+    """
+    numbered_values = [f"Nom{(i - 1) % 15}" for i in range(1, 21)]  # 15/20, 25%.
+    path, schema = _write_twenty_unit_table(tmp_path, "under_boundary", numbered_values)
+    out = tmp_path / "crosswalk.csv"
+    map(path, schema, out, overwrite=True)
+    rows_out = _crosswalk(out)
+    assert rows_out["alt_name"]["target_column"] == "level1_name1"
+
+    over_values = [f"Nom{(i - 1) % 13}" for i in range(1, 21)]  # 13/20, 35%.
+    path2, schema2 = _write_twenty_unit_table(tmp_path, "over_boundary", over_values)
+    out2 = tmp_path / "crosswalk2.csv"
+    map(path2, schema2, out2, overwrite=True)
+    rows_out2 = _crosswalk(out2)
+    assert rows_out2["alt_name"]["target_column"] == ""
+    assert rows_out2["alt_name"]["note"] == "supplemental, superset of level 1"
+
+
+def test_two_tolerated_siblings_get_sequential_numbering_no_collision(tmp_path):
+    """Two in-tolerance bracket winners at an already-named level don't collide."""
+    path = tmp_path / "two_siblings.parquet"
+    values1 = [f"Nom{i}" for i in range(1, 21)]
+    values1[1] = values1[0]  # 19/20 distinct.
+    values2 = [f"Autre{i}" for i in range(1, 21)]
+    values2[1] = values2[0]
+    values2[3] = values2[2]  # 18/20 distinct.
+    rows = [(*row, values2[i]) for i, row in enumerate(_twenty_unit_rows(values1))]
+    _write_table(
+        path,
+        ["geom", "adm0_pcode", "adm1_pcode", "adm1_name", "alt_name1", "alt_name2"],
+        rows,
+    )
+    schema = _write_schema(
+        tmp_path / "two_siblings_schema.yaml",
+        name_field="level{n}_name",
+        code_field="level{n}_pcode",
+    )
+    out = tmp_path / "crosswalk.csv"
+    map(path, schema, out, overwrite=True)
+
+    rows_out = _crosswalk(out)
+    targets = {
+        rows_out["adm1_name"]["target_column"],
+        rows_out["alt_name1"]["target_column"],
+        rows_out["alt_name2"]["target_column"],
+    }
+    assert targets == {"level1_name", "level1_name1", "level1_name2"}
 
 
 def test_code_bracket_group_numbers_bijective_code_companions(tmp_path):

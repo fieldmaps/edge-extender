@@ -4,7 +4,7 @@ Maps a source-column -> target-schema crosswalk for one input file,
 deterministically (no LLM). Never renames anything; review/edit the
 crosswalk, then run `schema-refactor`.
 
-### Example 1: basic run, default (COD-AB) schema, output name chosen automatically
+### Example 1: basic run, default (generic) schema, output name chosen automatically
 
     topo-tools schema-map example.geojson
 
@@ -16,5 +16,5 @@ crosswalk, then run `schema-refactor`.
 
     topo-tools schema-map example.gpkg target-schema.yaml crosswalk.csv
 
-See `topo_tools/core/schema_map/data/cod-ab.yaml` for the bundled
+See `topo_tools/core/schema_map/data/default.yaml` for the bundled
 default target schema, also usable as a template for your own.
