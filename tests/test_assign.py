@@ -3,7 +3,12 @@
 import duckdb
 import pytest
 
-from topo_tools.core.assign import assign_many, assign_one
+from topo_tools.core.assign import (
+    assign_many,
+    assign_one,
+    child_bbox_extent,
+    prepare_parent_tiles,
+)
 
 # Two disjoint parents, far enough apart that a child spans the empty gap
 # between them without touching anything else.
@@ -102,6 +107,56 @@ def test_assign_many_carry_columns_populates_parent_attributes():
         SELECT child_fid, parent_fid, pcode FROM "t_02_assign"
     """).fetchone()
     assert row == (1, 1, "P1")
+
+
+def test_child_bbox_extent_combines_child_rows():
+    """Returns the combined (xmin, ymin, xmax, ymax) across every child row."""
+    conn = duckdb.connect()
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    conn.execute("""--sql
+        CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
+            (2, ST_GeomFromText('POLYGON((5 5, 6 5, 6 6, 5 6, 5 5))'))
+        ) AS v(fid, geom)
+    """)
+    assert child_bbox_extent(conn, "t") == (0.0, 0.0, 6.0, 6.0)
+
+
+def test_child_bbox_extent_none_when_empty():
+    """Returns None rather than a row of NULLs for a table with zero rows."""
+    conn = duckdb.connect()
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    conn.execute("CREATE TABLE t_child_01 (fid BIGINT, geom GEOMETRY)")
+    assert child_bbox_extent(conn, "t") is None
+
+
+def test_prepare_parent_tiles_child_bbox_filters_distant_parts():
+    """A child_bbox drops parent parts whose bbox can't overlap it."""
+    conn = duckdb.connect()
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    conn.execute("""--sql
+        CREATE TABLE t_parent_01 AS SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
+            (2, ST_GeomFromText(
+                'POLYGON((100 100, 101 100, 101 101, 100 101, 100 100))'
+            )),
+            (3, ST_GeomFromText(
+                'POLYGON((200 200, 201 200, 201 201, 200 201, 200 200))'
+            ))
+        ) AS v(fid, geom)
+    """)
+
+    prepare_parent_tiles(conn, "t", child_bbox=(0.0, 0.0, 1.0, 1.0))
+    filtered_fids = {
+        row[0] for row in conn.execute('SELECT fid FROM "t_02_parent_parts"').fetchall()
+    }
+    assert filtered_fids == {1}
+
+    prepare_parent_tiles(conn, "t")
+    all_fids = {
+        row[0] for row in conn.execute('SELECT fid FROM "t_02_parent_parts"').fetchall()
+    }
+    assert all_fids == {1, 2, 3}
 
 
 def test_assign_one_carry_columns_populates_parent_attributes():

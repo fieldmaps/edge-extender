@@ -11,20 +11,44 @@ from topo_tools.core.edge_clip import subdivide_boundary
 logger = getLogger(__name__)
 
 
-def prepare_parent_tiles(conn: DuckDBPyConnection, name: str) -> None:
-    """Precompute the parent's part/tile decomposition, independent of any children.
+def child_bbox_extent(
+    conn: DuckDBPyConnection, name: str
+) -> tuple[float, float, float, float] | None:
+    """Return the combined bbox of every row in `{name}_child_01`, or None if empty."""
+    row = conn.execute(f"""--sql
+        SELECT MIN(xmin), MIN(ymin), MAX(xmax), MAX(ymax)
+        FROM (SELECT {bbox_columns_sql("geom")} FROM "{name}_child_01")
+    """).fetchone()
+    return None if row[0] is None else (row[0], row[1], row[2], row[3])
 
-    Callers with many children files against one parent build this once and
-    reuse it via use_cached_tiles, instead of re-tiling it per file.
-    """
+
+def prepare_parent_tiles(
+    conn: DuckDBPyConnection,
+    name: str,
+    *,
+    child_bbox: tuple[float, float, float, float] | None = None,
+) -> None:
+    """Precompute the parent's tile decomposition, skipping parts outside child_bbox."""
+    bbox_where = ""
+    if child_bbox is not None:
+        cxmin, cymin, cxmax, cymax = child_bbox
+        bbox_where = f"""
+            WHERE xmax >= {cxmin} AND xmin <= {cxmax}
+              AND ymax >= {cymin} AND ymin <= {cymax}
+        """
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_parent_parts" AS
         WITH parts AS (
             SELECT fid, UNNEST(ST_Dump(geom)).geom AS part_geom FROM "{name}_parent_01"
+        ),
+        bboxed AS (
+            SELECT fid, part_geom,
+                   ST_NPoints(part_geom) AS n_points, {bbox_columns_sql("part_geom")}
+            FROM parts
         )
-        SELECT row_number() OVER () AS part_id, fid, part_geom,
-               ST_NPoints(part_geom) AS n_points, {bbox_columns_sql("part_geom")}
-        FROM parts
+        SELECT row_number() OVER () AS part_id, *
+        FROM bboxed
+        {bbox_where}
     """)
 
     conn.execute(f"""--sql
@@ -70,7 +94,7 @@ def _build_pairs(
     instead of rebuilding them.
     """
     if not use_cached_tiles:
-        prepare_parent_tiles(conn, name)
+        prepare_parent_tiles(conn, name, child_bbox=child_bbox_extent(conn, name))
 
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp1" AS

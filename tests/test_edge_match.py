@@ -13,6 +13,9 @@ from click.testing import CliRunner
 
 from topo_tools.api.edge_match import match
 from topo_tools.cli.main import cli
+from topo_tools.core.constants import SNAP_TOLERANCE
+from topo_tools.core.coverage import has_gaps
+from topo_tools.core.edge_match import _01_inputs
 from topo_tools.core.edge_match import _03_clip as match_clip
 from topo_tools.core.edge_match._02_groups import _record_dropped_group
 
@@ -56,6 +59,37 @@ def synthetic_parents(tmp_path):
     path = tmp_path / "parents.parquet"
     _write_synthetic(path, _PARENT_WKT)
     return path
+
+
+def test_inputs_cleans_child_but_loads_parent_raw(tmp_path):
+    """The child's sub-tolerance gap is closed; the same gap in the parent is not."""
+    w = SNAP_TOLERANCE / 2
+    wkt = [
+        (1, f"POLYGON((0 0, 101 0, 101 50, {50 + w} 50, 50 50, 0 50, 0 0))"),
+        (
+            2,
+            (
+                f"POLYGON((0 {50 + w}, 50 {50 + w}, {50 + w} {50 + w}, "
+                f"101 {50 + w}, 101 101, 0 101, 0 {50 + w}))"
+            ),
+        ),
+        (3, f"POLYGON((0 50, 50 50, 50 {50 + w}, 0 {50 + w}, 0 50))"),
+        (
+            4,
+            (
+                f"POLYGON(({50 + w} 50, 101 50, 101 {50 + w}, "
+                f"{50 + w} {50 + w}, {50 + w} 50))"
+            ),
+        ),
+    ]
+    path = tmp_path / "gapped.parquet"
+    _write_synthetic(path, wkt)
+
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        _01_inputs.main(conn, "t", path, path)
+        assert not has_gaps(conn, "t_child_01", gap_maximum_width=0)
+        assert has_gaps(conn, "t_parent_01", gap_maximum_width=0)
 
 
 def test_cli_help():

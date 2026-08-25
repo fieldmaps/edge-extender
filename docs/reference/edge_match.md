@@ -6,9 +6,10 @@ tools.
 
 ## Inputs
 
-- `edge-match` MUST load and coverage-clean both the child layer and the
-  parent/clip layer, the same way `edge-extend`'s own inputs stage does (see
-  `docs/reference/edge_extend.md`).
+- `edge-match` MUST coverage-clean the child layer, the same way
+  `edge-extend`'s own inputs stage does (see `docs/reference/edge_extend.md`),
+  and MUST load the parent/clip layer raw, uncleaned, the same way
+  `edge-mosaic`'s parent load does (see `docs/adr/0086`).
 - The child role MAY span multiple files (e.g. one raw admin boundary file
   per country), combined internally. The parent/clip layer MUST remain a
   single file.

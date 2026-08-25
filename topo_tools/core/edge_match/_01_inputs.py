@@ -1,9 +1,10 @@
-"""Loads and cleans the child and parent/clip layers."""
+"""Coverage-cleans the child layer; loads the parent/clip layer raw."""
 
 from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.assign import load_parent
 from topo_tools.core.io import read_reproject_and_clean
 
 
@@ -19,16 +20,9 @@ def load_and_clean_child(
     """)
 
 
-def load_and_clean_parent(
-    conn: DuckDBPyConnection, name: str, clip_path: Path | str
-) -> None:
-    """Load and coverage-clean the parent/clip layer."""
-    read_reproject_and_clean(conn, f"{name}_parent", clip_path)
-
-
 def main(
     conn: DuckDBPyConnection, name: str, input_path: Path | str, clip_path: Path | str
 ) -> None:
-    """Load and coverage-clean both the child and parent/clip layers."""
+    """Coverage-clean the child layer; load the parent/clip layer raw."""
     load_and_clean_child(conn, name, input_path)
-    load_and_clean_parent(conn, name, clip_path)
+    load_parent(conn, name, clip_path)

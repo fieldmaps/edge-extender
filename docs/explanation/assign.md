@@ -87,16 +87,21 @@ itself grid-tiles around. So `assign_one` builds its own pairs table
 parent part at or above `CLIP_TILE_MIN_VERTICES` before intersecting, the
 same threshold and tiling logic `edge-clip` uses.
 
-That tiling is pure parent geometry, independent of which children are
-loaded, so it's split into its own function, `prepare_parent_tiles()`. A
-caller processing one children file per run (`edge-mosaic`, single-file `edge-clip`)
-never notices: `assign_one()`'s default `use_cached_tiles=False` calls it
-once internally, same as before. `edge-clip`'s multi-file loop instead calls
-`prepare_parent_tiles()` once before iterating and passes
-`use_cached_tiles=True` on every file's `assign_one()` call, so the same
-parent's tiles aren't grid-subdivided from scratch on every one of
+That tiling is split into its own function, `prepare_parent_tiles()`, which
+takes an optional `child_bbox` (`xmin, ymin, xmax, ymax`) that skips any
+parent part whose bbox can't overlap it, so a handful of children matched
+against one much larger shared parent (e.g. a global admin0 file) doesn't
+tile parts nothing will ever be assigned to (see `docs/adr/0085`). A caller
+processing one children file per run (`edge-mosaic`, single-file
+`edge-clip`) never notices: `assign_one()`'s default `use_cached_tiles=False`
+calls it internally with the already-loaded child's own bbox. `edge-mosaic`'s
+multi-file loop instead pre-scans every children file's bbox, unions them,
+and calls `prepare_parent_tiles()` once before iterating with the combined
+bbox, passing `use_cached_tiles=True` on every file's `assign_one()` call, so
+the same parent's tiles aren't grid-subdivided from scratch on every one of
 possibly hundreds of files. See `docs/adr/0024` for the profiling
-discrepancy that motivated this split.
+discrepancy that motivated the caching split, and `docs/adr/0085` for the
+bbox prefilter.
 
 For each `source_file`, `assign_one` counts how many of that file's children
 intersect each candidate parent (a count of intersecting children, not

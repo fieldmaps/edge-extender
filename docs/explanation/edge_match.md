@@ -54,9 +54,11 @@ Run `topo-tools edge-match --help` for the full, always-current option list.
 
 ## Pipeline
 
-1. **`_01_inputs`**: loads and coverage-cleans both layers by calling the
-   shared `core.io.read_reproject_and_clean()` helper twice
-   (`{name}_child_01`, `{name}_parent_01`).
+1. **`_01_inputs`**: coverage-cleans the child layer via the shared
+   `core.io.read_reproject_and_clean()` helper (`{name}_child_01`), and
+   loads the parent/clip layer raw via `core.assign.load_parent()`
+   (`{name}_parent_01`), the same loader `edge-mosaic` uses (see
+   `docs/adr/0086`).
 2. **assign**: calls `core.assign.assign_many()` directly: assigns each
    child to the parent it shares the largest area with (plurality, not
    majority); drops and logs children with zero overlap with any parent,
@@ -256,10 +258,10 @@ because many *independent* per-fid `ST_Difference` calls against
 floating-point crossing points for what should be the same vertex. Two
 variants of the same idea were tried in what was then `edge-match`'s own inline
 clip step (now `core.edge_clip`), on the theory that a shared, exact parent
-boundary (parent layer is itself coverage-cleaned in `_01_inputs.py`, so two
-adjacent parents' shared edge is vertex-identical) should let two
-independently-clipped groups tile seamlessly if their output vertices land
-on that same exact reference:
+boundary (the parent layer was coverage-cleaned in `_01_inputs.py` at the
+time, so two adjacent parents' shared edge was vertex-identical) should let
+two independently-clipped groups tile seamlessly if their output vertices
+land on that same exact reference:
 
 1. Snap each group's pre-clip geometry onto the parent's vertices, *before*
    `ST_Intersection(t.geom, p.geom)`.
@@ -292,7 +294,10 @@ border. No vertex-snapping tolerance in a sane range closes a
 meters-to-hundreds-of-meters gap; that's real gap-filling work, which is
 exactly what `edge-stitch`'s whole-table `ST_CoverageClean` pass is for (see
 `docs/explanation/edge_stitch.md`). Reverted both variants; the clip step stays
-a plain `ST_Intersection`.
+a plain `ST_Intersection`. This null result is also why `_01_inputs.py`
+later dropped coverage-cleaning the parent layer entirely: seam quality
+never came from parent vertex identity in the first place (see
+`docs/adr/0086`).
 
 ## `check_valid_topology` and parent-layer gaps
 

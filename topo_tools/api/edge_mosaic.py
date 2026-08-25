@@ -7,6 +7,7 @@ from duckdb import DuckDBPyConnection
 
 from topo_tools.core.assign import (
     assign_one,
+    child_bbox_extent,
     load_children,
     load_parent,
     prepare_parent_tiles,
@@ -220,6 +221,13 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
         logger.info("done: %s", name)
 
 
+def _union_bbox(
+    a: tuple[float, float, float, float], b: tuple[float, float, float, float]
+) -> tuple[float, float, float, float]:
+    """Combine two (xmin, ymin, xmax, ymax) bboxes into their enclosing bbox."""
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
 def _fold(
     conn: DuckDBPyConnection, acc_table: str, iter_table: str, *, seeded: bool
 ) -> None:
@@ -235,7 +243,7 @@ def _fold(
         """)
 
 
-def _mosaic_multi_file(  # noqa: PLR0913, PLR0917
+def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
     conn: DuckDBPyConnection,
     name: str,
     paths: list[Path],
@@ -255,7 +263,17 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0917
     conn.execute(f"""--sql
         CREATE TABLE "{name}_parent_full" AS SELECT * FROM "{name}_parent_01"
     """)
-    prepare_parent_tiles(conn, name)
+
+    combined_bbox: tuple[float, float, float, float] | None = None
+    for child_path in paths:
+        load_children(conn, name, [child_path])
+        bbox = child_bbox_extent(conn, name)
+        if bbox is not None:
+            combined_bbox = (
+                bbox if combined_bbox is None else _union_bbox(combined_bbox, bbox)
+            )
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
+    prepare_parent_tiles(conn, name, child_bbox=combined_bbox)
 
     resolved_merge = _resolve_merge_columns(conn, name, merge_columns=merge_columns)
     passthrough = bool(merge_columns)

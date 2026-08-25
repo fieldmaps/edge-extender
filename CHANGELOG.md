@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   determined winner is now forced onto it unconditionally. This is now
   the default assignment strategy for both `edge-mosaic` and `edge-match`
   (see `docs/adr/0082`).
+- `edge-match` no longer coverage-cleans the parent/clip layer before
+  assignment; it loads it raw, the same way `edge-mosaic` already does,
+  fixing a pathological stall on large real-world parent files (see
+  `docs/adr/0086`).
 
 ### Added
 
@@ -49,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at least one `clip-empty` or `code-mismatch` row.
 - Issue rows now populate a real `source_file` value for `edge-match`
   (previously always NULL), including for `assign-many`'s unassigned rows.
+- `prepare_parent_tiles()` now skips tiling any parent part outside the
+  children's combined bbox, so matching a handful of children against one
+  much larger shared parent (e.g. a global admin0 file) no longer tiles
+  parts nothing will ever be assigned to (see `docs/adr/0085`).
 
 ## [0.4.0] - 2026-08-25
 
