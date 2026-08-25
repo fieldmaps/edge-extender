@@ -1,0 +1,4 @@
+# Generic default target schema, not tied to any one source convention.
+# map discovers hierarchy levels and code/name roles from the data alone.
+name_field: "adm{n}_name"
+code_field: "adm{n}_code"
