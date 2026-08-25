@@ -26,18 +26,24 @@ docs); `edge-mosaic` is a thin wrapper chaining `assign-one` → `edge-clip` →
    `{name}_child_01` from `{name}_02_assign`, then calling
    `core.edge_clip.main()`, the same per-`parent_fid`-subprocess, adaptively
    grid-tiled clip `edge-clip` exposes standalone, see `docs/explanation/edge_clip.md`.
+   When `on_unmatched="passthrough"` (see "Gap-fill passthrough" below),
+   this stage also builds `{name}_02_passthrough` (every whole child file
+   with no parent overlap at all) and `UNION ALL BY NAME`s it into
+   `{name}_03` immediately after the normal clip, before stitch ever runs.
 4. **`_02_stitch`**: calls `core.edge_stitch._02_clean.main()` directly, the
    same whole-table `ST_CoverageClean` pass `edge-stitch` exposes standalone,
-   see `docs/explanation/edge_stitch.md`.
+   see `docs/explanation/edge_stitch.md`. Passthrough rows (if any) are
+   already part of `{name}_03` by this point, so they get the same chance
+   to resolve seams against their clipped neighbors as everything else.
 5. **`_03_outputs`**: the same `check_valid_topology()` hard gate as
    `edge-match`, using its default `gap_maximum_width=SNAP_TOLERANCE` for the same
    parent-layer-hole reason (see `docs/explanation/edge_match.md`'s
    "`check_valid_topology` and parent-layer gaps", `docs/adr/0035`,
    `docs/adr/0039`), an
    issues report listing unassigned children (no dropped-group kind, since
-   there are no groups) plus any leftover gap wider than `SNAP_TOLERANCE`,
-   a warning log if any such gap remains, and export (only when the
-   issues report has rows).
+   there are no groups), any passthrough children, plus any leftover gap
+   wider than `SNAP_TOLERANCE`, a warning log if any such gap remains, and
+   export (only when the issues report has rows).
 
 ## Multi-file children
 
@@ -52,6 +58,27 @@ schemas (e.g. different countries' original admin-boundary columns) fill
 missing columns with NULL instead of erroring. `fid` is renumbered fresh
 after the union. `output_path` MUST be given explicitly whenever multiple
 paths are passed, since there's no single filename to default one from.
+
+## Gap-fill passthrough
+
+Opt-in via `on_unmatched="passthrough"` (default `"drop"`, unchanged
+behavior). A whole child file with no overlap with any parent (a country
+genuinely missing from the parent/clip layer) is dropped by default, the
+same as always; with passthrough set, that file's own already-extended
+geometry is kept in the output unclipped instead, reported as a
+`kind='passthrough'` issues row rather than `unassigned`. Scope is
+whole-file only: an individual child dropped from an otherwise-matched
+file (`core.assign`'s per-file majority vote already decided it doesn't
+belong there) is unaffected either way, computed as a set difference of
+distinct `source_file` between `{name}_child_01` and its assigned subset,
+inside `_01_clip.py` rather than inside `core.assign` itself (see
+`docs/adr/0078`). Any `carry_columns` (see `docs/explanation/assign.md`)
+are NULL on passthrough rows, filled automatically by the `UNION ALL BY
+NAME` that adds them to `{name}_03`, since there's no parent to join
+against. `edge-clip` and `edge-match` have no equivalent option: only
+`edge-mosaic`'s children are contractually guaranteed to already be a
+complete, valid coverage layer, which is what makes an unclipped
+passthrough safe here specifically.
 
 ## Why neither input is coverage pre-checked
 
@@ -96,3 +123,12 @@ should have its parent-parent boundaries spot-checked visually (e.g. via
 the `geo-preview` skill), not just trusted because the hard gate passed.
 Use the output's `source_file` column to find which two files actually
 meet at a flagged seam.
+
+**Unclipped geometry meeting clipped neighbors.** With
+`on_unmatched="passthrough"`, a passthrough file's boundary was never
+intersected against the parent layer, unlike every clipped neighbor
+around it; any seam disagreement there is on top of the ordinary
+cross-provenance risk above, not instead of it. Stitch gets a chance to
+resolve it like any other seam, and the hard gate still raises if it
+can't, but a passthrough run is worth the same visual spot-check as a
+multi-provenance one.

@@ -84,3 +84,6 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   `docs/reference/shared.md`, `docs/explanation/assign.md`); doing so gives
   `edge-clip` its only issues report, `issues_paths` (same shape as
   `output_paths`, defaulting to each output path with an `_issues` suffix).
+- `edge-clip` MAY accept `carry_columns` (CLI: `--carry-column`) to copy
+  named parent columns onto every matched child (see
+  `docs/reference/shared.md`, `docs/adr/0077`).

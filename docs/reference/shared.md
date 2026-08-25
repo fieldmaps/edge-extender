@@ -136,3 +136,18 @@ rows, reusing the schema above:
 This gives standalone `edge-clip` its only issues-report capability: it produces
 one only when `match_column`/`parent_match_column`/`child_match_column` is
 supplied and it yields at least one row (see `docs/reference/edge_clip.md`).
+
+## Parent-column carry-forward
+
+`edge-match`, `edge-mosaic`, and standalone `edge-clip` all MAY accept a
+`carry_columns` list (CLI: repeatable, comma-splittable `--carry-column`)
+naming parent-layer columns to copy onto every matched child. Names are
+always caller-specified, never inferred from either layer's schema (see
+`docs/adr/0077`). A name colliding with `core.assign`'s own reserved
+columns (`child_fid`, `parent_fid`, `assignment_method`, `spatial_agrees`)
+MUST raise `ValueError`; a collision with the child's own schema fails at
+the SQL layer instead. A child that never matched any parent (dropped as
+`unassigned`, or, for `edge-mosaic` with `on_unmatched="passthrough"`, kept
+unclipped) never gains these columns; `edge-mosaic`'s passthrough rows fill
+them as NULL via `UNION ALL BY NAME` rather than through any join (see
+`docs/adr/0078`, `docs/reference/edge_mosaic.md`).

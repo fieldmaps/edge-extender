@@ -89,3 +89,6 @@ tools.
 - `edge-match` MAY accept `match_column`/`parent_match_column`/`child_match_column`
   to override spatial assignment with an exact code join (see
   `docs/reference/shared.md`, `docs/explanation/assign.md`).
+- `edge-match` MAY accept `carry_columns` (CLI: `--carry-column`) to copy
+  named parent columns onto every matched child (see
+  `docs/reference/shared.md`, `docs/adr/0077`).

@@ -52,19 +52,9 @@ def match(  # noqa: C901, PLR0912, PLR0913
     match_column: str | None = None,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
+    carry_columns: list[str] | None = None,
 ) -> None:
-    """Match child polygons to their best-overlapping parent, then extend to fill gaps.
-
-    Processes exactly one child file + one parent/clip file per call.
-
-    match_column names one column shared by both layers to use as an exact
-    code join (e.g. a pcode), winning over the spatial plurality pick where
-    the two disagree; parent_match_column/child_match_column do the same
-    with two differently-named columns. match_column is mutually exclusive
-    with the pair. A child whose code has no match falls back to the
-    spatial pick. Both outcomes are recorded as issue rows
-    ('code-mismatch'/'code-fallback') alongside match's usual issues report.
-    """
+    """Match children to their best-overlapping parent, then extend to fill gaps."""
     if match_column is not None and (parent_match_column or child_match_column):
         msg = "match_column is mutually exclusive with parent/child_match_column"
         raise ValueError(msg)
@@ -120,6 +110,7 @@ def match(  # noqa: C901, PLR0912, PLR0913
                     name,
                     parent_match_column=parent_match_column,
                     child_match_column=child_match_column,
+                    carry_columns=carry_columns,
                 )
             elif s == "groups":
                 groups.main(
@@ -128,6 +119,7 @@ def match(  # noqa: C901, PLR0912, PLR0913
                     tmp_dir_path,
                     threads=threads,
                     debug=debug,
+                    carry_columns=carry_columns,
                 )
             elif s == "clip":
                 clip.main(conn, name, tmp_dir_path, threads=threads, debug=debug)

@@ -32,8 +32,10 @@ tools.
 - A child that does not itself overlap its file's assigned parent MUST be
   dropped, not treated as fatal, and `edge-mosaic` MUST log a warning naming it.
   A whole file with no child overlapping any parent MUST be dropped the
-  same way. Either case MUST also be recorded in the issues report
-  described under Outputs.
+  same way, unless `on_unmatched="passthrough"` is set (see Configuration),
+  in which case that whole file's own geometry is kept unclipped instead.
+  Either case MUST also be recorded in the issues report described under
+  Outputs.
 
 ## Clipping
 
@@ -67,11 +69,16 @@ tools.
 - `edge-mosaic` MUST export the final merged layer.
 - `edge-mosaic` MUST also export an issues report alongside it, using the
   shared schema in `docs/reference/shared.md`, listing every unassigned
-  child and every leftover gap wider than `SNAP_TOLERANCE`, so a human can
-  audit what didn't make it into the output or what may need review.
+  child, every passthrough child (when `on_unmatched="passthrough"`), and
+  every leftover gap wider than `SNAP_TOLERANCE`, so a human can audit what
+  didn't make it into the output or what may need review.
 - For an `unassigned` row, `unit_a` MUST hold the child's own fid and
   `source_file` MUST record its origin file; parent id and reason fields
   MUST be null, since `edge-mosaic` has no per-group failure concept. For a
+  `passthrough` row (`on_unmatched="passthrough"` only), `unit_a` and
+  `source_file` MUST be populated the same way, and `reason` MUST explain
+  that the file was kept unclipped for lack of an overlapping parent; a
+  passthrough child MUST NOT also appear as an `unassigned` row. For a
   `gap` row, `area_m2`, `max_width_m`, and `thinness_ratio` MUST be
   populated instead. A field that doesn't apply to a row's kind MUST be
   null.
@@ -96,3 +103,13 @@ tools.
 - `edge-mosaic` MAY accept `match_column`/`parent_match_column`/`child_match_column`
   to override spatial assignment with an exact code join (see
   `docs/reference/shared.md`, `docs/explanation/assign.md`).
+- `edge-mosaic` MAY accept `carry_columns` (CLI: `--carry-column`) to copy
+  named parent columns onto every matched child (see
+  `docs/reference/shared.md`, `docs/adr/0077`).
+- `edge-mosaic` MAY accept `on_unmatched` (CLI: `--on-unmatched
+  [drop|passthrough]`, default `drop`), validated against
+  `("drop", "passthrough")`; any other value MUST raise `ValueError`. With
+  `passthrough`, a whole child file with no overlapping parent is kept in
+  the output unclipped instead of dropped, with any `carry_columns` filled
+  NULL; a child dropped from an otherwise-matched file is unaffected either
+  way (see `docs/adr/0078`).

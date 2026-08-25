@@ -434,3 +434,53 @@ def test_match_all_unassigned(tmp_path):
     output_path = tmp_path / "out.parquet"
     with pytest.raises(RuntimeError, match="no group produced any output"):
         match(children_path, parents_path, output_path, overwrite=True)
+
+
+def _write_with_code(path, rows):
+    """rows: list of (fid, wkt, pcode)."""
+    values = ", ".join(
+        f"({fid}, ST_GeomFromText('{wkt}'), '{code}')" for fid, wkt, code in rows
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE synth AS
+            SELECT * FROM (VALUES {values}) AS t(id, geom, pcode)
+        """)
+        conn.execute(f"COPY synth TO '{path}'")
+
+
+def test_match_carry_columns_survives_group_subprocess(tmp_path):
+    """A carried parent column must survive the per-group extend/merge round-trip."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, _CHILD_WKT[:3])  # fids 1, 2, 3, all matched
+
+    output_path = tmp_path / "out.parquet"
+    match(
+        children_path,
+        parents_path,
+        output_path,
+        carry_columns=["pcode"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(
+            f"SELECT id, pcode FROM '{output_path}' ORDER BY id"
+        ).fetchall()
+    assert rows == [(1, "P1"), (2, "P1"), (3, "P2")]
+
+
+def test_cli_carry_column_help():
+    result = CliRunner().invoke(cli, ["edge-match", "--help"])
+    assert result.exit_code == 0
+    assert "--carry-column" in result.output

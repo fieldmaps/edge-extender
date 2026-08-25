@@ -34,13 +34,14 @@ def list_groups(conn: DuckDBPyConnection, name: str) -> list[int]:
     return [row[0] for row in rows]
 
 
-def main(
+def main(  # noqa: PLR0913
     conn: DuckDBPyConnection,
     name: str,
     tmp_dir: Path,
     *,
     threads: int | None,
     debug: bool = False,
+    carry_columns: list[str] | None = None,
 ) -> None:
     """Loop over all groups sequentially, each isolated in its own subprocess."""
     conn.execute(f"""--sql
@@ -50,6 +51,7 @@ def main(
         WHERE FALSE
     """)
 
+    carry_sql = "".join(f', a."{c}" AS "{c}"' for c in (carry_columns or []))
     for parent_fid in list_groups(conn, name):
         gname = f"{name}_g{parent_fid}"
         group_dir = tmp_dir / gname
@@ -57,11 +59,10 @@ def main(
 
         conn.execute(f"""--sql
             COPY (
-                SELECT * FROM "{name}_child_01"
-                WHERE fid IN (
-                    SELECT child_fid FROM "{name}_02_assign"
-                    WHERE parent_fid = {parent_fid}
-                )
+                SELECT c.*{carry_sql}
+                FROM "{name}_child_01" c
+                JOIN "{name}_02_assign" a ON a.child_fid = c.fid
+                WHERE a.parent_fid = {parent_fid}
             ) TO '{group_dir / "child.parquet"}' (FORMAT PARQUET)
         """)
 

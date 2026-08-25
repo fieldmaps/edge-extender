@@ -26,13 +26,15 @@ _STEP_ORDER = ["inputs", "assign", "clip", "stitch", "outputs"]
 _STEP_TABLES = {
     "inputs": ["{n}_child_01", "{n}_parent_01"],
     "assign": ["{n}_02_pairs", "{n}_02_assign", "{n}_02_unassigned"],
-    "clip": ["{n}_03"],
+    "clip": ["{n}_03", "{n}_02_passthrough"],
     "stitch": ["{n}_04"],
     "outputs": [],
 }
 
+_ON_UNMATCHED_CHOICES = ("drop", "passthrough")
 
-def mosaic(  # noqa: C901, PLR0912, PLR0913
+
+def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
     input_paths: str | Path | list[str | Path],
     clip_path: str | Path,
     output_path: str | Path | None = None,
@@ -46,20 +48,10 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
     match_column: str | None = None,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
+    carry_columns: list[str] | None = None,
+    on_unmatched: str = "drop",
 ) -> None:
-    """Fit one or more already-extended children layers into a new parent/clip layer.
-
-    input_paths MAY be a list; output_path is then required, since there's
-    no single filename to default from.
-
-    match_column names one column shared by both layers to use as an exact
-    code join (e.g. a pcode), winning over the spatial file-vote pick where
-    the two disagree; parent_match_column/child_match_column do the same
-    with two differently-named columns. match_column is mutually exclusive
-    with the pair. A file with no code matches at all falls back to the
-    spatial pick. Both outcomes are recorded as issue rows
-    ('code-mismatch'/'code-fallback') alongside mosaic's usual issues report.
-    """
+    """Fit one or more already-extended children layers into a new parent/clip layer."""
     if match_column is not None and (parent_match_column or child_match_column):
         msg = "match_column is mutually exclusive with parent/child_match_column"
         raise ValueError(msg)
@@ -72,6 +64,12 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
+    if on_unmatched not in _ON_UNMATCHED_CHOICES:
+        msg = (
+            f"on_unmatched must be one of {_ON_UNMATCHED_CHOICES}, got {on_unmatched!r}"
+        )
+        raise ValueError(msg)
+    passthrough = on_unmatched == "passthrough"
 
     if isinstance(input_paths, (str, Path)):
         paths = [resolve_input_path(input_paths)]
@@ -126,9 +124,18 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
                     name,
                     parent_match_column=parent_match_column,
                     child_match_column=child_match_column,
+                    carry_columns=carry_columns,
                 )
             elif s == "clip":
-                clip.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
+                clip.main(
+                    conn,
+                    name,
+                    tmp_dir_path,
+                    threads=threads,
+                    debug=debug,
+                    carry_columns=carry_columns,
+                    passthrough=passthrough,
+                )
             elif s == "stitch":
                 stitch.main(conn, name, debug=debug)
             elif s == "outputs":
@@ -138,6 +145,7 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913
                     output_path,
                     issues_path,
                     code_join=bool(parent_match_column and child_match_column),
+                    passthrough=passthrough,
                     debug=debug,
                 )
         maybe_export_debug_tables(

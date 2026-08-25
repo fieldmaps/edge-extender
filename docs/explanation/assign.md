@@ -133,6 +133,29 @@ Neither function derives issues rows itself; that's each calling
 disagreement instead of spatial, and why an unmatched code falls back
 instead of dropping the child/file.
 
+## Carry-forward columns (optional)
+
+Both `assign_many` and `assign_one` accept an optional `carry_columns` list
+of parent column names. `None` (the default) leaves `_02_assign`'s schema
+unchanged. When given, each name is projected from `{name}_parent_01` onto
+every matched child row, joined on the already-resolved `parent_fid` (after
+any code-column join above has picked a winner), so it costs one extra join
+regardless of which path assigned the parent. Column names are always
+caller-specified, never inferred from either layer's schema, matching this
+project's structural (not name/value-based) matching philosophy elsewhere
+(see `docs/explanation/schema_map.md`). A name colliding with `_02_assign`'s
+own reserved columns (`child_fid`, `parent_fid`, `assignment_method`,
+`spatial_agrees`) raises `ValueError`; a collision with the child layer's
+own schema is left to fail at the SQL layer downstream (DuckDB rejects
+duplicate column names), since `core.assign` has no visibility into the
+child's full schema at this point.
+
+Children with no parent match (`_02_unassigned`) never gain these columns.
+A caller that keeps such rows in its own output regardless (e.g.
+`edge-mosaic`'s `on_unmatched="passthrough"`, see
+`docs/explanation/edge_mosaic.md`) gets `NULL` for all of them automatically
+via that caller's own `UNION ALL BY NAME`.
+
 ## Comparison
 
 | | `assign-many` | `assign-one` |

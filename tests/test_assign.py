@@ -1,6 +1,7 @@
 """Direct core.assign tests: code-join precedence, fallback, and default schema."""
 
 import duckdb
+import pytest
 
 from topo_tools.core.assign import assign_many, assign_one
 
@@ -79,6 +80,62 @@ def test_assign_many_code_join_precedence_and_fallback():
 
     unassigned = conn.execute('SELECT COUNT(*) FROM "t_02_unassigned"').fetchone()[0]
     assert unassigned == 0
+
+
+def test_assign_many_carry_columns_populates_parent_attributes():
+    """carry_columns copies named parent columns onto every matched child row."""
+    conn = _connect_with_parents()
+    conn.execute("""--sql
+        CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'))
+        ) AS v(fid, geom)
+    """)
+    assign_many(conn, "t", carry_columns=["pcode"])
+    row = conn.execute("""--sql
+        SELECT child_fid, parent_fid, pcode FROM "t_02_assign"
+    """).fetchone()
+    assert row == (1, 1, "P1")
+
+
+def test_assign_one_carry_columns_populates_parent_attributes():
+    """carry_columns copies named parent columns onto every matched child row."""
+    conn = _connect_with_parents()
+    conn.execute("""--sql
+        CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
+            (10, ST_GeomFromText(
+                'POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'
+            ), 'fileA')
+        ) AS v(fid, geom, source_file)
+    """)
+    assign_one(conn, "t", carry_columns=["pcode"])
+    row = conn.execute("""--sql
+        SELECT child_fid, parent_fid, pcode FROM "t_02_assign"
+    """).fetchone()
+    assert row == (10, 1, "P1")
+
+
+def test_assign_carry_columns_collision_raises():
+    """A carry_columns name reserved by `_02_assign` itself raises ValueError."""
+    conn = _connect_with_parents()
+    conn.execute("""--sql
+        CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'))
+        ) AS v(fid, geom)
+    """)
+    with pytest.raises(ValueError, match="reserved assign column"):
+        assign_many(conn, "t", carry_columns=["parent_fid"])
+
+
+def test_assign_carry_columns_child_schema_collision_raises():
+    """A carry_columns name already present on the child layer raises ValueError."""
+    conn = _connect_with_parents()
+    conn.execute("""--sql
+        CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
+            (1, ST_GeomFromText('POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'), 'X')
+        ) AS v(fid, geom, pcode)
+    """)
+    with pytest.raises(ValueError, match="child layer's own column"):
+        assign_many(conn, "t", carry_columns=["pcode"])
 
 
 def test_assign_one_code_join_precedence_and_fallback():

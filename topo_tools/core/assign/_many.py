@@ -4,6 +4,7 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.assign._one import _carry_forward_columns
 from topo_tools.core.constants import EQUAL_AREA_CRS
 from topo_tools.core.duckdb_utils import bbox_columns_sql
 
@@ -16,21 +17,9 @@ def assign_many(
     *,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
+    carry_columns: list[str] | None = None,
 ) -> None:
-    """Assign each child to its plurality-overlap parent; drop and log the rest.
-
-    Each child decides independently, so one file's children MAY scatter
-    across many different parents, correct for raw/unextended geometry,
-    where overshoot can't misassign anything.
-
-    parent_match_column/child_match_column, when both given, make an exact
-    code match (e.g. a shared pcode) win over the spatial plurality pick for
-    any child where the two disagree; a child whose code has no match, or
-    whose code-matched parent it doesn't overlap at all, falls back to the
-    spatial pick. Either way, the winning `assignment_method`
-    ('code'/'spatial_fallback') and a `spatial_agrees` flag land on the
-    output so callers can report disagreements/fallbacks for review.
-    """
+    """Assign each child to its plurality-overlap parent; drop and log the rest."""
     # Bbox columns precomputed here, not called inline in the join below:
     # DuckDB re-evaluates an inline envelope call per comparison, not once per row.
     conn.execute(f"""--sql
@@ -127,6 +116,8 @@ def assign_many(
             SELECT * FROM "{name}_02_tmp3"
         """)
     conn.execute(f'DROP TABLE IF EXISTS "{name}_02_tmp3"')
+
+    _carry_forward_columns(conn, name, carry_columns)
 
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_unassigned" AS

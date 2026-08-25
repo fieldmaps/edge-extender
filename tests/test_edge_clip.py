@@ -554,3 +554,32 @@ def test_cli_match_help():
     assert "--match-column" in result.output
     assert "--parent-match-column" in result.output
     assert "--child-match-column" in result.output
+
+
+def test_clip_carry_columns_populates_output(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_children(
+        children_path, [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))")]
+    )
+
+    output_path = tmp_path / "out.parquet"
+    clip(
+        children_path,
+        parents_path,
+        output_path,
+        carry_columns=["pcode"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        pcode = conn.execute(f"SELECT pcode FROM '{output_path}'").fetchone()[0]
+    assert pcode == "P1"
+
+
+def test_cli_carry_column_help():
+    result = CliRunner().invoke(cli, ["edge-clip", "--help"])
+    assert result.exit_code == 0
+    assert "--carry-column" in result.output

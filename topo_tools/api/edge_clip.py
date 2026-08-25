@@ -57,33 +57,9 @@ def clip(  # noqa: C901, PLR0912, PLR0913, PLR0915
     match_column: str | None = None,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
+    carry_columns: list[str] | None = None,
 ) -> None:
-    """Assign each child to its parent via assign-one, then clip it to that geometry.
-
-    children_paths MAY be a list, sharing a single load of parent_path;
-    each children file is still its own independent assign-one group (own
-    majority-vote parent), processed one file at a time so only one file's
-    geometry is ever resident alongside the shared parent. output_paths MUST
-    then be an equal-length list, one destination per children file, and
-    name MUST be given explicitly (there's no single path to derive one
-    from); step MUST be None in this case (no per-step resumability for the
-    multi-file loop). With a single scalar children_paths, output_paths
-    defaults to children_paths with a "_clipped" suffix, name defaults
-    similarly, and step works as usual.
-
-    match_column names one column shared by both layers to use as an exact
-    code join (e.g. a pcode), winning over the spatial file-vote pick where
-    the two disagree; parent_match_column/child_match_column do the same
-    with two differently-named columns. match_column is mutually exclusive
-    with the pair. A file with no code matches at all falls back to the
-    spatial pick. Both outcomes are recorded as issue rows
-    ('code-mismatch'/'code-fallback') in a per-children-file issues report,
-    clip's only issue kind since it has no topology hard gate of its own.
-    issues_paths (same shape as output_paths) is only used when a match
-    column is given; it MUST then be the same length as output_paths in the
-    multi-file case, and defaults to each output path with an "_issues"
-    suffix when omitted.
-    """
+    """Assign each child to its parent via assign-one, then clip it to that geometry."""
     if match_column is not None and (parent_match_column or child_match_column):
         msg = "match_column is mutually exclusive with parent/child_match_column"
         raise ValueError(msg)
@@ -175,6 +151,7 @@ def clip(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 debug=debug,
                 parent_match_column=parent_match_column,
                 child_match_column=child_match_column,
+                carry_columns=carry_columns,
             )
         else:
             _clip_single_file(
@@ -190,6 +167,7 @@ def clip(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 step=step,
                 parent_match_column=parent_match_column,
                 child_match_column=child_match_column,
+                carry_columns=carry_columns,
             )
         logger.info("done: %s", name)
 
@@ -208,6 +186,7 @@ def _clip_single_file(  # noqa: PLR0913, PLR0917
     step: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
+    carry_columns: list[str] | None,
 ) -> None:
     """Run clip's four named stages once, in order, over one children file."""
     dest_by_source = {str(children[0]): output_path}
@@ -227,9 +206,17 @@ def _clip_single_file(  # noqa: PLR0913, PLR0917
                 name,
                 parent_match_column=parent_match_column,
                 child_match_column=child_match_column,
+                carry_columns=carry_columns,
             )
         elif s == "clip":
-            clip_stage.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
+            clip_stage.main(
+                conn,
+                name,
+                tmp_dir_path,
+                threads=threads,
+                debug=debug,
+                carry_columns=carry_columns,
+            )
         elif s == "outputs":
             outputs.main(
                 conn,
@@ -255,12 +242,9 @@ def _clip_each_file(  # noqa: C901, PLR0912, PLR0913, PLR0917
     debug: bool,
     parent_match_column: str | None,
     child_match_column: str | None,
+    carry_columns: list[str] | None,
 ) -> None:
-    """Clip one children file at a time, sharing one already-loaded parent.
-
-    Keeps only one file's geometry resident alongside the shared parent at a
-    time, instead of unioning every children file into one table first.
-    """
+    """Clip one children file at a time, sharing one already-loaded parent."""
     load_parent(conn, name, parent_path)
     conn.execute(f"""--sql
         CREATE TABLE "{name}_parent_full" AS SELECT * FROM "{name}_parent_01"
@@ -285,8 +269,16 @@ def _clip_each_file(  # noqa: C901, PLR0912, PLR0913, PLR0917
             use_cached_tiles=True,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
+            carry_columns=carry_columns,
         )
-        clip_stage.main(conn, name, tmp_dir_path, threads=threads, debug=debug)
+        clip_stage.main(
+            conn,
+            name,
+            tmp_dir_path,
+            threads=threads,
+            debug=debug,
+            carry_columns=carry_columns,
+        )
 
         count = conn.execute(f'SELECT COUNT(*) FROM "{name}_03"').fetchone()[0]
         if count == 0:

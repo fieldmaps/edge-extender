@@ -614,6 +614,16 @@ def change(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
+@click.option(
+    "--carry-column",
+    "carry_columns",
+    envvar="CARRY_COLUMNS",
+    multiple=True,
+    help=(
+        "Parent column to copy onto each matched child [may be repeated, "
+        "and each value MAY be comma-separated]."
+    ),
+)
 def edge_match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -627,6 +637,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
     match_column: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
+    carry_columns: tuple[str, ...],
 ) -> None:
     r"""Match children to parents by largest overlap, then extend to fill gaps.
 
@@ -644,6 +655,10 @@ def edge_match(  # noqa: PLR0913, PLR0917
       \b
       # Prefer an existing pcode join over spatial overlap where they disagree
       topo-tools edge-match adm3.gpkg adm2.gpkg --match-column pcode
+
+      \b
+      # Copy parent columns onto every matched child
+      topo-tools edge-match adm3.gpkg adm2.gpkg --carry-column iso_3,adm0_name
     """
     logger.info("--debug=%s", debug)
     try:
@@ -660,6 +675,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
             match_column=match_column,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
+            carry_columns=_split_commas(carry_columns) or None,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -737,6 +753,27 @@ def edge_match(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
+@click.option(
+    "--carry-column",
+    "carry_columns",
+    envvar="CARRY_COLUMNS",
+    multiple=True,
+    help=(
+        "Parent column to copy onto each matched child [may be repeated, "
+        "and each value MAY be comma-separated]."
+    ),
+)
+@click.option(
+    "--on-unmatched",
+    envvar="ON_UNMATCHED",
+    type=click.Choice(["drop", "passthrough"]),
+    default="drop",
+    show_default=True,
+    help=(
+        "'passthrough' keeps a whole children file's own geometry, unclipped, "
+        "when it has no overlapping parent at all."
+    ),
+)
 def edge_mosaic(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -751,6 +788,8 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
     match_column: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
+    carry_columns: tuple[str, ...],
+    on_unmatched: str,
 ) -> None:
     r"""Fit an already-extended children layer into a new parent/clip layer.
 
@@ -777,6 +816,11 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
       \b
       # Prefer an existing pcode join over spatial overlap where they disagree
       topo-tools edge-mosaic adm3_extended.parquet adm0_new.geojson --match-column pcode
+
+      \b
+      # Keep countries missing from the parent layer, enriched where matched
+      topo-tools edge-mosaic "*/latest/adm4/extended.parquet" world_adm0.geojson \
+        out.parquet --carry-column iso_3,adm0_name --on-unmatched passthrough
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -805,6 +849,8 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
             match_column=match_column,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
+            carry_columns=_split_commas(carry_columns) or None,
+            on_unmatched=on_unmatched,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -1361,6 +1407,16 @@ def schema_crosswalk(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
+@click.option(
+    "--carry-column",
+    "carry_columns",
+    envvar="CARRY_COLUMNS",
+    multiple=True,
+    help=(
+        "Parent column to copy onto each matched child [may be repeated, "
+        "and each value MAY be comma-separated]."
+    ),
+)
 def edge_clip(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -1378,6 +1434,7 @@ def edge_clip(  # noqa: PLR0913, PLR0917
     match_column: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
+    carry_columns: tuple[str, ...],
 ) -> None:
     r"""Assign each child to its parent, then clip it to that parent's geometry.
 
@@ -1405,6 +1462,10 @@ def edge_clip(  # noqa: PLR0913, PLR0917
       \b
       # Prefer an existing pcode join over spatial overlap where they disagree
       topo-tools edge-clip children.parquet adm1.geojson --match-column pcode
+
+      \b
+      # Copy parent columns onto every matched child
+      topo-tools edge-clip children.parquet adm1.geojson --carry-column iso_3,adm0_name
     """
     logger.info("--debug=%s", debug)
     if extra_inputs and output_file is None:
@@ -1446,6 +1507,7 @@ def edge_clip(  # noqa: PLR0913, PLR0917
             match_column=match_column,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
+            carry_columns=_split_commas(carry_columns) or None,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e

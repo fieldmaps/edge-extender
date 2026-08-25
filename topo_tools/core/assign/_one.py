@@ -129,30 +129,56 @@ def _build_pairs(
         conn.execute(f'DROP TABLE IF EXISTS "{name}{tbl}"')
 
 
-def assign_one(
+_RESERVED_ASSIGN_COLUMNS = {
+    "child_fid",
+    "parent_fid",
+    "assignment_method",
+    "spatial_agrees",
+}
+
+
+def _carry_forward_columns(
+    conn: DuckDBPyConnection, name: str, carry_columns: list[str] | None
+) -> None:
+    """Append caller-named parent columns onto `_02_assign`; does nothing if unset."""
+    if not carry_columns:
+        return
+    reserved_collisions = set(carry_columns) & _RESERVED_ASSIGN_COLUMNS
+    if reserved_collisions:
+        msg = (
+            f"carry_columns collides with reserved assign column(s): "
+            f"{sorted(reserved_collisions)}"
+        )
+        raise ValueError(msg)
+    child_columns = {
+        row[0] for row in conn.execute(f'DESCRIBE "{name}_child_01"').fetchall()
+    }
+    child_collisions = set(carry_columns) & child_columns
+    if child_collisions:
+        msg = (
+            f"carry_columns collides with the child layer's own column(s): "
+            f"{sorted(child_collisions)}"
+        )
+        raise ValueError(msg)
+    carry_sql = "".join(f', p."{c}" AS "{c}"' for c in carry_columns)
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE "{name}_02_assign" AS
+        SELECT a.*{carry_sql}
+        FROM "{name}_02_assign" a
+        JOIN "{name}_parent_01" p ON p.fid = a.parent_fid
+    """)
+
+
+def assign_one(  # noqa: PLR0913
     conn: DuckDBPyConnection,
     name: str,
     *,
     use_cached_tiles: bool = False,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
+    carry_columns: list[str] | None = None,
 ) -> None:
-    """Force every child in a source_file onto that file's single majority-vote parent.
-
-    A file's children are one group (e.g. one country's admin2 units), not
-    independently routed to whichever parent each one individually overlaps
-    most, guards against already-extended/overshoot geometry crossing
-    borders. Every child in one file lands on one shared parent.
-
-    parent_match_column/child_match_column, when both given, make a
-    per-file code majority (the parent most of the file's children's codes
-    point to, each restricted to a parent it overlaps at all) win over the
-    spatial file-vote winner when the two disagree; a file with no code
-    matches at all falls back to the spatial winner. Same
-    `assignment_method`/`spatial_agrees` reporting as `assign_many`, applied
-    per source_file rather than per child, preserving the
-    one-parent-per-file invariant above.
-    """
+    """Force every child in a source_file onto that file's majority-vote parent."""
     _build_pairs(conn, name, use_cached_tiles=use_cached_tiles)
 
     conn.execute(f"""--sql
@@ -231,6 +257,8 @@ def assign_one(
     """)
     if parent_match_column and child_match_column:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_file_final"')
+
+    _carry_forward_columns(conn, name, carry_columns)
 
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_unassigned" AS

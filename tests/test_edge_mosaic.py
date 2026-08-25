@@ -550,3 +550,169 @@ def test_cli_match_help():
     assert "--match-column" in result.output
     assert "--parent-match-column" in result.output
     assert "--child-match-column" in result.output
+
+
+def test_mosaic_carry_columns_populates_output(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    output_path = tmp_path / "out.parquet"
+    mosaic(
+        children_path,
+        parents_path,
+        output_path,
+        carry_columns=["pcode"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        pcode = conn.execute(f"SELECT pcode FROM '{output_path}'").fetchone()[0]
+    assert pcode == "P1"
+
+
+@pytest.fixture
+def synthetic_children_one_unmatched_file(tmp_path):
+    """One file that matches Parent A, one file (fid 4) with no overlap at all."""
+    matched_path = tmp_path / "matched.parquet"
+    unmatched_path = tmp_path / "unmatched.parquet"
+    _write_synthetic(matched_path, [_CHILD_WKT[0]])
+    _write_synthetic(unmatched_path, [_CHILD_WKT[3]])
+    return [matched_path, unmatched_path]
+
+
+def test_mosaic_passthrough_keeps_fully_unmatched_file(
+    synthetic_children_one_unmatched_file, synthetic_parents, tmp_path
+):
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    mosaic(
+        synthetic_children_one_unmatched_file,
+        synthetic_parents,
+        output_path,
+        issues_path,
+        on_unmatched="passthrough",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+    assert ids == [1, 4]
+    assert kinds == ["passthrough"]
+
+
+def test_mosaic_passthrough_does_not_rescue_individual_child(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    """Children 3/4 share a file with 1/2, which does get matched, stays dropped."""
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    mosaic(
+        synthetic_children,
+        synthetic_parents,
+        output_path,
+        issues_path,
+        on_unmatched="passthrough",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+        kinds = [
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        ]
+    assert ids == [1, 2]
+    assert kinds == ["unassigned", "unassigned"]
+
+
+def test_mosaic_passthrough_carried_columns_are_null(
+    synthetic_children_one_unmatched_file, tmp_path
+):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+
+    output_path = tmp_path / "out.parquet"
+    mosaic(
+        synthetic_children_one_unmatched_file,
+        parents_path,
+        output_path,
+        carry_columns=["pcode"],
+        on_unmatched="passthrough",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(
+            f"SELECT id, pcode FROM '{output_path}' ORDER BY id"
+        ).fetchall()
+    assert rows == [(1, "P1"), (4, None)]
+
+
+def test_mosaic_invalid_on_unmatched_raises(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="on_unmatched"):
+        mosaic(
+            synthetic_children,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            on_unmatched="bogus",
+            overwrite=True,
+        )
+
+
+def test_cli_on_unmatched_passthrough(
+    synthetic_children_one_unmatched_file, synthetic_parents, tmp_path
+):
+    matched_path, unmatched_path = synthetic_children_one_unmatched_file
+    output_path = tmp_path / "out.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "edge-mosaic",
+            str(matched_path),
+            str(synthetic_parents),
+            str(output_path),
+            "--input",
+            str(unmatched_path),
+            "--on-unmatched",
+            "passthrough",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+    assert ids == [1, 4]
+
+
+def test_cli_carry_column_and_on_unmatched_help():
+    result = CliRunner().invoke(cli, ["edge-mosaic", "--help"])
+    assert result.exit_code == 0
+    assert "--carry-column" in result.output
+    assert "--on-unmatched" in result.output
