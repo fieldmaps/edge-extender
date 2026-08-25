@@ -18,7 +18,7 @@ _ISSUE_COLUMNS = """
     NULL::DOUBLE AS area_m2, NULL::DOUBLE AS max_width_m,
     NULL::DOUBLE AS thinness_ratio, NULL::BIGINT AS unit_b,
     NULL::DOUBLE AS unit_a_area_change_m2, NULL::DOUBLE AS unit_b_area_change_m2,
-    NULL::DOUBLE AS filled_area_m2, FALSE AS fixed, NULL::VARCHAR AS source_file
+    NULL::DOUBLE AS filled_area_m2, FALSE AS fixed
 """
 
 
@@ -39,20 +39,21 @@ def _build_issues(
         parts.append(f"""
         SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
                child_fid AS unit_a, NULL::BIGINT AS parent_fid,
-               NULL::VARCHAR AS reason, {_ISSUE_COLUMNS}, geom
+               NULL::VARCHAR AS reason, {_ISSUE_COLUMNS}, source_file, geom
         FROM "{name}_02_unassigned"
         """)
     parts += [
         f"""
         SELECT 'dropped_group-' || child_fid AS key, 'dropped_group' AS kind,
-               child_fid AS unit_a, parent_fid, reason, {_ISSUE_COLUMNS}, geom
+               child_fid AS unit_a, parent_fid, reason, {_ISSUE_COLUMNS},
+               source_file, geom
         FROM "{name}_03b"
         """,
         f"""
         SELECT 'clip-empty-' || fid AS key, 'clip-empty' AS kind,
                fid AS unit_a, parent_fid,
                'clip intersection with its assigned parent was empty' AS reason,
-               {_ISSUE_COLUMNS}, geom
+               {_ISSUE_COLUMNS}, source_file, geom
         FROM "{name}_04_dropped"
         """,
         gap_issues_sql(conn, table),
@@ -62,12 +63,12 @@ def _build_issues(
         SELECT 'passthrough-' || child_fid AS key, 'passthrough' AS kind,
                child_fid AS unit_a, NULL::BIGINT AS parent_fid,
                'no overlapping parent; extended alone and kept unclipped in '
-               'the output' AS reason, {_ISSUE_COLUMNS}, geom
+               'the output' AS reason, {_ISSUE_COLUMNS}, source_file, geom
         FROM "{name}_02_unassigned"
         WHERE child_fid NOT IN (SELECT child_fid FROM "{name}_03b")
         """)
     if code_join:
-        parts.append(assign_issue_rows_sql(name))
+        parts.append(assign_issue_rows_sql(name, source_file_expr="c.source_file"))
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_06" AS
         {" UNION ALL BY NAME ".join(parts)}

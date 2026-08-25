@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.1] - 2026-08-25
+## [0.5.0] - 2026-08-25
 
 ### Fixed
 
@@ -24,10 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `edge-match` now accepts multiple children files per call, the same
+  glob/`--input` combining `edge-mosaic` already supports. Children are
+  loaded and assigned one file at a time (a memory-bounded per-file loop
+  mirroring `edge-mosaic`'s own, `docs/adr/0079`), so peak memory stays
+  bounded regardless of how many files are combined; the shared per-group
+  Voronoi extension, clip, stitch, and output steps then run once over the
+  full combined result, so children from different files landing on the
+  same parent extend together instead of independently (see
+  `docs/adr/0084`).
 - `edge-match`: new opt-in `--multi-parent`/`multi_parent` flag, reverting
   to the old per-child `assign-many` behavior for files whose children
   genuinely scatter across multiple parents (e.g. a poorly-digitized
-  admin4 layer fitting into many admin3 units) (see `docs/adr/0082`).
+  admin4 layer fitting into many admin3 units) (see `docs/adr/0082`);
+  rejected outright when more than one children file is given, since its
+  per-child plurality logic is not designed for cross-file semantics.
 - A child whose clip intersection with its assigned parent comes back
   empty is now tracked and reported as a `kind='clip-empty'` issue row
   instead of silently dropped, across `edge-mosaic`, `edge-match`, and
@@ -36,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously it only existed when a code-join was configured; it now
   always resolves an issues path and always writes it whenever there's
   at least one `clip-empty` or `code-mismatch` row.
+- Issue rows now populate a real `source_file` value for `edge-match`
+  (previously always NULL), including for `assign-many`'s unassigned rows.
 
 ## [0.4.0] - 2026-08-25
 

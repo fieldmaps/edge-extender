@@ -53,7 +53,8 @@ def main(  # noqa: PLR0913
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_03b" AS
         SELECT NULL::BIGINT AS child_fid, NULL::BIGINT AS parent_fid,
-               NULL::VARCHAR AS reason, NULL::GEOMETRY AS geom
+               NULL::VARCHAR AS reason, NULL::VARCHAR AS source_file,
+               NULL::GEOMETRY AS geom
         WHERE FALSE
     """)
 
@@ -183,7 +184,7 @@ def _record_dropped_group(
     conn.execute(
         f"""--sql
             INSERT INTO "{name}_03b"
-            SELECT fid AS child_fid, ? AS parent_fid, ? AS reason, geom
+            SELECT fid AS child_fid, ? AS parent_fid, ? AS reason, source_file, geom
             FROM "{name}_child_01"
             WHERE fid IN ({fids_sql})
         """,

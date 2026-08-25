@@ -121,7 +121,7 @@ def assign_many(
 
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_unassigned" AS
-        SELECT fid AS child_fid, geom FROM "{name}_child_01"
+        SELECT fid AS child_fid, source_file, geom FROM "{name}_child_01"
         WHERE fid NOT IN (SELECT child_fid FROM "{name}_02_assign")
     """)
 

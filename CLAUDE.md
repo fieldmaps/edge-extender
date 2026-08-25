@@ -19,7 +19,7 @@ below them:
 - **edge-stitch**: closes seams in an already-tiled layer with one whole-table `ST_CoverageClean` pass. See `docs/explanation/edge_stitch.md`.
 - **topo-detect**: scans a single polygon layer for gap/overlap coverage defects and reports them, without fixing anything. See `docs/explanation/topo_detect.md`.
 - **dissolve**: aggregates a polygon layer into a coarser one by grouping on attribute columns and unioning geometry per group, auto-keeping every other column that's constant per group and dropping the rest. See `docs/explanation/dissolve.md`.
-- **edge-match**: `assign-one` (default, forcing the whole input file onto one majority-vote parent; opt into per-child `assign-many` via `--multi-parent` for files whose children genuinely scatter across multiple parents, see `docs/adr/0082`) → per-group `edge-extend` (own subprocess) → batched `edge-clip` → `edge-stitch`, fitting a child layer into a coarser parent/clip layer (e.g. admin4 into admin0). Also accepts an opt-in `merge_columns` (CLI: `--merge`, the same boolean-or-value flag `edge-mosaic` uses), grouping every child with no parent overlap at all into one orphan group of its own (sentinel `PASSTHROUGH_PARENT_FID`), extending it like any other group, then keeping it unclipped in the output instead of dropping it, coupled with copying named parent columns onto every matched child; materially weaker safety profile than `edge-mosaic`'s own gap-fill (see `docs/adr/0081`). See `docs/explanation/edge_match.md`.
+- **edge-match**: `assign-one` (default, forcing the whole input file onto one majority-vote parent; opt into per-child `assign-many` via `--multi-parent` for files whose children genuinely scatter across multiple parents, see `docs/adr/0082`) → per-group `edge-extend` (own subprocess) → batched `edge-clip` → `edge-stitch`, fitting a child layer into a coarser parent/clip layer (e.g. admin4 into admin0). The children role MAY span multiple raw files per call, combined via a memory-bounded per-file `inputs`+`assign` loop, groups/clip/stitch/outputs running once over the combined result so cross-file children sharing a parent extend together (`--multi-parent`/`step` rejected outright for a multi-file call, see `docs/adr/0084`). Also accepts an opt-in `merge_columns` (CLI: `--merge`, the same boolean-or-value flag `edge-mosaic` uses), grouping every child with no parent overlap at all into one orphan group of its own (sentinel `PASSTHROUGH_PARENT_FID`), extending it like any other group, then keeping it unclipped in the output instead of dropping it, coupled with copying named parent columns onto every matched child; materially weaker safety profile than `edge-mosaic`'s own gap-fill (see `docs/adr/0081`). See `docs/explanation/edge_match.md`.
 - **edge-mosaic**: `assign-one` → `edge-clip` → `edge-stitch`, fitting an already-extended child layer (a prior `edge_extend()` output) into a new/different parent/clip layer, skipping Voronoi extension entirely. See `docs/explanation/edge_mosaic.md`.
 - **topo-clean**: `topo-detect` → fixes the reported coverage defects (gaps, overlaps) with `ST_CoverageClean`, reporting the fix outcome in the issues file for manual review. See `docs/explanation/topo_clean.md`.
 - **change**: compares an old/new polygon layer pair and classifies every unit (unchanged/renamed/modified/relocated/split/merge/complex/created/removed) via spatial overlap and optional code/name identity linking; writes a tabular changelog plus a colored spatial overlay layer. See `docs/explanation/change.md`.
@@ -68,14 +68,16 @@ split):
   `docs/explanation/schema_fill.md`).
 - `topo_tools/api/{edge_extend,edge_clip,edge_stitch,topo_detect,dissolve,schema_fill,edge_match,edge_mosaic,topo_clean,change}.py`:
   public API functions; each chains its own tool's stages for exactly one
-  file (or file pair) per call, except `edge-mosaic`'s children role, which
-  MAY span multiple files (see `docs/reference/edge_mosaic.md`). `edge-clip`
-  is a strict one-children-file/one-parent-file/one-output primitive (see
-  `docs/adr/0080`).
+  file (or file pair) per call, except `edge-mosaic`'s and `edge-match`'s
+  children roles, which MAY span multiple files (see
+  `docs/reference/edge_mosaic.md`, `docs/reference/edge_match.md`).
+  `edge-clip` is a strict one-children-file/one-parent-file/one-output
+  primitive (see `docs/adr/0080`).
 - `topo_tools/cli/main.py`: the click CLI, mapping flags/env vars onto one
   `api.*()` call per invocation, one file (or pair) at a time, except
-  `edge-mosaic`'s child argument (MAY be a glob pattern) and `edge-mosaic`'s
-  `--input` option (repeatable, comma-splittable), no directory batching.
+  `edge-mosaic`'s and `edge-match`'s child arguments (MAY be a glob pattern)
+  and their `--input` options (repeatable, comma-splittable), no directory
+  batching.
 
 Import boundaries between these layers, and between tools, are mechanically
 enforced by `pyproject.toml`'s import-linter contracts, see
@@ -187,7 +189,7 @@ Pre-commit hooks run `uv-sync`, `ruff-format`, and `ruff-check` automatically.
 
 | Dataset | Use |
 | --- | --- |
-| **West Africa cluster** (`sen`/`gmb`/`gnb`/`gin`/`civ`/`gha`/`tgo`/`ben`, portolan `adm2`) | Mutually neighboring countries, used for single-file tool tests (edge-extend/edge-match/topo-clean/change) and edge-mosaic's multi-file combine test |
+| **West Africa cluster** (`sen`/`gmb`/`gnb`/`gin`/`civ`/`gha`/`tgo`/`ben`, portolan `adm2`) | Mutually neighboring countries, used for single-file tool tests (edge-extend/edge-match/topo-clean/change) and edge-mosaic's and edge-match's multi-file combine tests |
 
 A full portolan catalog (real, large-scale admin boundary data, multiple
 countries and admin levels, some with multiple historical versions) is

@@ -569,6 +569,16 @@ def change(  # noqa: PLR0913, PLR0917
 @click.argument("clip_file", envvar="CLIP_FILE")
 @click.argument("output_file", envvar="OUTPUT_FILE", required=False, default=None)
 @click.option(
+    "--input",
+    "extra_inputs",
+    envvar="EXTRA_INPUTS",
+    multiple=True,
+    help=(
+        "Additional children file beyond INPUT_FILE, combined with it "
+        "[may be repeated, and each value MAY be comma-separated]."
+    ),
+)
+@click.option(
     "--issues-file",
     envvar="ISSUES_FILE",
     default=None,
@@ -650,13 +660,15 @@ def change(  # noqa: PLR0913, PLR0917
         "most (assign-many), instead of forcing the whole input file onto "
         "one majority-vote parent (assign-one, the default). Use this when "
         "children genuinely belong to different parents, e.g. a "
-        "poorly-digitized admin4 layer fitting into many admin3 units."
+        "poorly-digitized admin4 layer fitting into many admin3 units. "
+        "Rejected when more than one children file resolves."
     ),
 )
 def edge_match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
     output_file: str | None,
+    extra_inputs: tuple[str, ...],
     issues_file: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
@@ -669,9 +681,11 @@ def edge_match(  # noqa: PLR0913, PLR0917
     merge_value: str | None,
     multi_parent: bool,  # noqa: FBT001
 ) -> None:
-    r"""Match children to parents by largest overlap, then extend to fill gaps.
+    r"""Match one or more children layers to parents by largest overlap.
 
-    OUTPUT_FILE defaults to INPUT_FILE with a "_matched" suffix if omitted.
+    OUTPUT_FILE defaults to INPUT_FILE with a "_matched" suffix if omitted;
+    it is required when INPUT_FILE is a glob matching more than one file, or
+    when --input is given.
 
     \b
     Examples:
@@ -681,6 +695,12 @@ def edge_match(  # noqa: PLR0913, PLR0917
       \b
       # Fit admin3 into admin2 groups, each cleaned against its own parent
       topo-tools edge-match adm3.gpkg adm2.gpkg adm3_matched.gpkg
+
+      \b
+      # Combine several raw countries' admin1 layers, matched and extended
+      # together against one shared parent
+      topo-tools edge-match sen_adm1.parquet world_adm0.geojson out.parquet \
+        --input gmb_adm1.parquet,gnb_adm1.parquet
 
       \b
       # Prefer an existing pcode join over spatial overlap where they disagree
@@ -696,9 +716,21 @@ def edge_match(  # noqa: PLR0913, PLR0917
       topo-tools edge-match adm4.gpkg adm3.gpkg --multi-parent
     """
     logger.info("--debug=%s", debug)
+    if any(ch in input_file for ch in "*?["):
+        matches = sorted(glob.glob(input_file, recursive=True))  # noqa: PTH207 (arbitrary pattern, not anchored to one Path)
+        if not matches:
+            msg = f"no files matched: {input_file}"
+            raise click.ClickException(msg)
+        base_inputs = [Path(p) for p in matches]
+    else:
+        base_inputs = [input_file]
+    all_inputs = base_inputs + list(_split_commas(extra_inputs))
+    resolved_input: str | Path | list[str | Path] = (
+        all_inputs[0] if len(all_inputs) == 1 else all_inputs
+    )
     try:
         _edge_match(
-            input_file,
+            resolved_input,
             clip_file,
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
@@ -797,11 +829,11 @@ def edge_match(  # noqa: PLR0913, PLR0917
     flag_value=_MERGE_ALL_SENTINEL,
     default=None,
     help=(
-        "Carry parent columns onto every matched child and keep a fully "
-        "unmatched children file's own geometry, unclipped, in the output "
-        "instead of dropping it. Bare --merge carries every parent column; "
-        "--merge iso_3,adm0_name narrows it to just those columns "
-        "(comma-separated)."
+        "Carry parent columns onto every matched child and keep a parent "
+        "matched by zero children in the output, using the parent's own "
+        "geometry, instead of dropping it. Bare --merge carries every "
+        "parent column; --merge iso_3,adm0_name narrows it to just those "
+        "columns (comma-separated)."
     ),
 )
 def edge_mosaic(  # noqa: PLR0913, PLR0917
@@ -847,7 +879,7 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
       topo-tools edge-mosaic adm3_extended.parquet adm0_new.geojson --match-column pcode
 
       \b
-      # Keep countries missing from the parent layer, enriched where matched
+      # Keep a parent's own boundary when no children file covers it
       topo-tools edge-mosaic "*/latest/adm4/extended.parquet" world_adm0.geojson \
         out.parquet --merge
     """

@@ -61,7 +61,7 @@ def synthetic_parents(tmp_path):
 def test_cli_help():
     result = CliRunner().invoke(cli, ["edge-match", "--help"])
     assert result.exit_code == 0
-    assert "Match children to parents" in result.output
+    assert "Match one or more children layers to parents" in result.output
     assert "Examples:" in result.output
     assert "--match-column" in result.output
     assert "--parent-match-column" in result.output
@@ -327,9 +327,11 @@ def test_record_dropped_group():
         conn.execute("""--sql
             CREATE TABLE t_child_01 AS
             SELECT * FROM (VALUES
-                (1, ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
-                (2, ST_GeomFromText('POLYGON((1 0, 2 0, 2 1, 1 1, 1 0))'))
-            ) AS v(fid, geom)
+                (1, 'children.parquet',
+                    ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))')),
+                (2, 'children.parquet',
+                    ST_GeomFromText('POLYGON((1 0, 2 0, 2 1, 1 1, 1 0))'))
+            ) AS v(fid, source_file, geom)
         """)
         conn.execute("""--sql
             CREATE TABLE t_02_assign AS
@@ -338,7 +340,8 @@ def test_record_dropped_group():
         conn.execute("""--sql
             CREATE TABLE t_03b AS
             SELECT NULL::BIGINT AS child_fid, NULL::BIGINT AS parent_fid,
-                   NULL::VARCHAR AS reason, NULL::GEOMETRY AS geom
+                   NULL::VARCHAR AS reason, NULL::VARCHAR AS source_file,
+                   NULL::GEOMETRY AS geom
             WHERE FALSE
         """)
 
@@ -649,3 +652,159 @@ def test_match_no_merge_still_drops_orphan(tmp_path):
 
     assert ids == [1, 2, 3]
     assert kinds == ["unassigned"]
+
+
+@pytest.fixture
+def synthetic_children_split(tmp_path):
+    """Write children 1 & 2 (the Parent A pair) to separate files."""
+    path_a = tmp_path / "child_a.parquet"
+    path_b = tmp_path / "child_b.parquet"
+    _write_synthetic(path_a, [_CHILD_WKT[0]])
+    _write_synthetic(path_b, [_CHILD_WKT[1]])
+    return [path_a, path_b]
+
+
+@pytest.fixture
+def synthetic_children_split_with_orphan(tmp_path):
+    """Children 1 & 2 (Parent A pair) plus an unmatched child, each its own file."""
+    path_a = tmp_path / "child_a.parquet"
+    path_b = tmp_path / "child_b.parquet"
+    path_c = tmp_path / "child_c.parquet"
+    _write_synthetic(path_a, [_CHILD_WKT[0]])
+    _write_synthetic(path_b, [_CHILD_WKT[1]])
+    _write_synthetic(path_c, [_CHILD_WKT[3]])
+    return [path_a, path_b, path_c]
+
+
+def test_match_multi_file_api(synthetic_children_split, synthetic_parents, tmp_path):
+    """Children from different files landing on the same parent extend together."""
+    output_path = tmp_path / "out.parquet"
+    match(synthetic_children_split, synthetic_parents, output_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(
+            f"SELECT id, source_file FROM '{output_path}' ORDER BY id"
+        ).fetchall()
+    assert [r[0] for r in rows] == [1, 2]
+    assert rows[0][1] == str(synthetic_children_split[0])
+    assert rows[1][1] == str(synthetic_children_split[1])
+
+
+def test_match_multi_file_rejects_multi_parent(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="multi_parent is not supported"):
+        match(
+            synthetic_children_split,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            multi_parent=True,
+            overwrite=True,
+        )
+
+
+def test_match_multi_file_rejects_step(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="step is not supported"):
+        match(
+            synthetic_children_split,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            step="assign",
+            overwrite=True,
+        )
+
+
+def test_match_multi_file_requires_output_path(
+    synthetic_children_split, synthetic_parents
+):
+    with pytest.raises(ValueError, match="output_path is required"):
+        match(synthetic_children_split, synthetic_parents)
+
+
+def test_match_multi_file_source_file_populated_in_issues(
+    synthetic_children_split_with_orphan, synthetic_parents, tmp_path
+):
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(
+        synthetic_children_split_with_orphan,
+        synthetic_parents,
+        output_path,
+        issues_path,
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(
+            f"SELECT source_file FROM '{issues_path}' WHERE kind = 'unassigned'"
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == str(synthetic_children_split_with_orphan[2])
+
+
+def test_cli_edge_match_glob_expansion(
+    synthetic_children_split,  # noqa: ARG001 (write side effect is the point)
+    synthetic_parents,
+    tmp_path,
+):
+    output_path = tmp_path / "out.parquet"
+    pattern = str(tmp_path / "child_*.parquet")
+    result = CliRunner().invoke(
+        cli,
+        ["edge-match", pattern, str(synthetic_parents), str(output_path)],
+    )
+    assert result.exit_code == 0, result.output
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+    assert ids == [1, 2]
+
+
+def test_cli_edge_match_extra_input_flag_combines_with_glob(
+    synthetic_children_split, synthetic_parents, tmp_path
+):
+    """A glob-matched file plus a --input-flagged file both feed one combined run."""
+    file_a, file_b = synthetic_children_split
+    output_path = tmp_path / "out.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "edge-match",
+            str(file_a),
+            str(synthetic_parents),
+            str(output_path),
+            "--input",
+            str(file_b),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        ids = [
+            row[0]
+            for row in conn.execute(
+                f"SELECT id FROM '{output_path}' ORDER BY id"
+            ).fetchall()
+        ]
+    assert ids == [1, 2]
+
+
+def test_cli_edge_match_glob_no_matches(synthetic_parents, tmp_path):
+    pattern = str(tmp_path / "nomatch_*.parquet")
+    result = CliRunner().invoke(
+        cli,
+        ["edge-match", pattern, str(synthetic_parents), str(tmp_path / "out.parquet")],
+    )
+    assert result.exit_code != 0
+    assert "no files matched" in result.output

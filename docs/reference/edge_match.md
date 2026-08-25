@@ -9,6 +9,11 @@ tools.
 - `edge-match` MUST load and coverage-clean both the child layer and the
   parent/clip layer, the same way `edge-extend`'s own inputs stage does (see
   `docs/reference/edge_extend.md`).
+- The child role MAY span multiple files (e.g. one raw admin boundary file
+  per country), combined internally. The parent/clip layer MUST remain a
+  single file.
+- Every output row MUST carry a `source_file` column recording the exact
+  path of the child file it came from.
 
 ## Assigning children to parents
 
@@ -87,6 +92,10 @@ tools.
   only), and every leftover gap wider than `SNAP_TOLERANCE`, so a human
   can audit what didn't make it into the output or what may need review.
 - For an `unassigned`/`dropped_group`/`clip-empty`/`passthrough` row,
+  `source_file` MUST record the child's own origin file. For a `gap` row,
+  `source_file` MUST be null, since a coverage gap has no single
+  originating file.
+- For an `unassigned`/`dropped_group`/`clip-empty`/`passthrough` row,
   `unit_a` MUST hold the child's own fid; for a `dropped_group` row,
   `parent_fid` and `reason` MUST record the group's assigned parent and
   drop reason. For a `clip-empty` row, `parent_fid` MUST hold the child's
@@ -103,15 +112,20 @@ tools.
 
 ## Configuration (`api.edge_match.match()` / CLI)
 
-- `edge-match` MUST process exactly one child file and one parent/clip file per
-  call.
-- The output path MUST default to the child input path with a `_matched`
-  suffix. The issues-report path MUST default to the output path with an
-  `_issues` suffix.
+- `edge-match` MUST accept one or more child files and exactly one parent/clip
+  file per call. The CLI additionally accepts `--input` (repeatable and
+  comma-separable) alongside the glob-capable `INPUT_FILE` positional, both
+  usable together, matching `edge-mosaic`'s own `--input` idiom.
+- With a single child file, the output path MUST default to that input
+  path with a `_matched` suffix. With multiple child files, `output_path`
+  MUST be given explicitly. The issues-report path MUST default to the
+  output path with an `_issues` suffix.
 - `edge-match` MUST raise `FileExistsError` if either output path already
   exists and overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `assign`, `groups`, `edge-clip`,
-  `edge-stitch`, `outputs`; any other value MUST raise `ValueError`.
+  `edge-stitch`, `outputs`; any other value MUST raise `ValueError`. `step`
+  MUST be `None` whenever more than one child file is given; any other
+  value MUST raise `ValueError` (see `docs/adr/0084`).
 - `edge-match` MAY accept `match_column`/`parent_match_column`/`child_match_column`
   to override spatial assignment with an exact code join (see
   `docs/reference/shared.md`, `docs/explanation/assign.md`).
@@ -120,7 +134,9 @@ tools.
   majority-vote parent (`assign-one`); `True` assigns each child
   independently to whichever parent it overlaps most (`assign-many`), for
   files whose children genuinely scatter across multiple parents (see
-  `docs/explanation/assign.md`, `docs/adr/0082`).
+  `docs/explanation/assign.md`, `docs/adr/0082`). `multi_parent` MUST be
+  `False` whenever more than one child file is given; any other value MUST
+  raise `ValueError` (see `docs/adr/0084`).
 - `edge-match` MAY accept `merge_columns: list[str] | bool = False` (CLI:
   `--merge`, a boolean-or-value flag): `False` (default) copies no parent
   columns and drops an unmatched child; `True` (bare `--merge`) copies every

@@ -109,7 +109,10 @@ A tool MUST leave any column inapplicable to a given row's `kind` as null.
 `unit_a` MUST record whichever single fid is primarily associated with the
 row, for any kind that has one (a dropped child, one side of an overlap,
 etc.); `unit_b` MUST be used only where a second fid is meaningfully
-involved (e.g. the other side of an overlap).
+involved (e.g. the other side of an overlap). `edge-match` MUST populate
+`source_file` with the row's originating child file for every kind that has
+one (`unassigned`, `dropped_group`, `clip-empty`, `passthrough`), null only
+for `gap` (see `docs/adr/0084`).
 
 `edge-match`, `edge-mosaic`, and `edge-clip` all share a `kind='clip-empty'`
 row for any child whose clip intersection with its assigned parent came

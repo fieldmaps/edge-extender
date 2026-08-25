@@ -21,15 +21,17 @@ edge_match("admin4.geojson", "admin0.geojson", "admin4_matched.geojson")
 ```
 
 `OUTPUT_FILE` (positional, optional) defaults to `INPUT_FILE` with a
-`_matched` suffix.
+`_matched` suffix; it is required when `INPUT_FILE` is a glob matching more
+than one file, or when `--input` is given.
 
 | Option | Description |
 | --- | --- |
+| `--input` | Extra children file(s), repeatable and comma-separable, combined with `INPUT_FILE`. |
 | `--overwrite` | Overwrite an existing output file. |
 | `--threads` | DuckDB thread count. |
 | `--debug` | Keep intermediate tables, export to Parquet, log timing/memory per query. |
 | `--tmp-dir` | Intermediate DuckDB + Parquet location. |
-| `--step` | Run only one named stage: `inputs`, `assign`, `groups`, `edge-clip`, `edge-stitch`, `outputs`. |
+| `--step` | Run only one named stage: `inputs`, `assign`, `groups`, `edge-clip`, `edge-stitch`, `outputs`. Unavailable when multiple children files are given. |
 
 ```sh
 # Fit an admin4 layer into a single country boundary
@@ -37,6 +39,11 @@ topo-tools edge-match adm4.geojson adm0.geojson
 
 # Fit admin3 into admin2 groups, each cleaned against its own parent
 topo-tools edge-match adm3.gpkg adm2.gpkg adm3_matched.gpkg
+
+# Combine several raw countries' admin1 layers, matched and extended
+# together against one shared parent
+topo-tools edge-match sen_adm1.parquet world_adm0.geojson out.parquet \
+  --input gmb_adm1.parquet,gnb_adm1.parquet
 ```
 
 Each parent's group of children runs in its own isolated subprocess, so a run
@@ -78,6 +85,40 @@ Run `topo-tools edge-match --help` for the full, always-current option list.
    `merge_columns` is truthy) plus any leftover gap wider than
    `SNAP_TOLERANCE`, logs a warning if any such gap remains, and exports
    both the final layer and the issues report (only when it has rows).
+
+## Multi-file children
+
+The child role MAY span multiple files in one call (e.g. one raw admin
+boundary file per country); the parent/clip layer stays single-file.
+`output_path` MUST be given explicitly whenever multiple paths are passed,
+and `step`/`multi_parent` MUST both be `None`/`False` (see `docs/adr/0084`).
+
+With more than one input path, `_match_multi_file()` (`api/edge_match.py`)
+runs only `inputs`+`assign` in a per-file loop, mirroring `edge-mosaic`'s own
+`_mosaic_multi_file()` memory-bounded pattern (`docs/explanation/edge_mosaic.md`)
+but stopping one stage earlier: the parent is loaded once into a pristine
+snapshot with its heavy-part tile decomposition cached
+(`core.assign.prepare_parent_tiles()`), then each children file is loaded and
+assigned alone against a fresh copy of that snapshot, one at a time, folding
+`{name}_child_01`, `{name}_02_assign`, and `{name}_02_unassigned` into running
+accumulators (`UNION ALL BY NAME`) rather than holding every file until a
+final combine. `fid` is kept globally unique via a running offset applied
+right after each file's assign step. `groups`, `clip`, `stitch`, and
+`outputs` all run exactly once afterward, over the fully accumulated result,
+not per file: grouping is keyed purely by `parent_fid`
+(`_02_groups.py::list_groups`), so children from different files sharing a
+`parent_fid` extend together as one Voronoi group only if groups runs after
+every file's children have landed in `{name}_02_assign`, which is the whole
+point of combining files here (unlike `edge-mosaic`, whose clip step is
+embarrassingly per-file and folds directly into its loop instead).
+
+`assign_one` narrows `{name}_parent_01` to only that iteration's matched
+fids at the end of every call, so the loop resets it from the full snapshot
+at the start of every iteration, and restores it once more from the
+snapshot after the loop ends, before `groups` runs; otherwise `groups`/`clip`
+would only see the last file's matched parents, not the union across all
+files. Every output row still carries a `source_file` column tagging its
+origin file.
 
 ## Two subprocess generations: edge-extend, then batched edge-clip
 

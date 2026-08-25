@@ -31,8 +31,10 @@ def test_assign_many_default_schema_unchanged():
     conn = _connect_with_parents()
     conn.execute("""--sql
         CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
-            (1, ST_GeomFromText('POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'))
-        ) AS v(fid, geom)
+            (1, ST_GeomFromText(
+                'POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'
+            ), 'fileA')
+        ) AS v(fid, geom, source_file)
     """)
     assign_many(conn, "t")
     cols = [d[0] for d in conn.execute('SELECT * FROM "t_02_assign"').description]
@@ -63,6 +65,9 @@ def test_assign_many_code_join_precedence_and_fallback():
             ), 'P2')
         ) AS v(fid, geom, pcode)
     """)
+    conn.execute("""--sql
+        ALTER TABLE t_child_01 ADD COLUMN source_file VARCHAR DEFAULT 'fileA'
+    """)
 
     assign_many(conn, "t", parent_match_column="pcode", child_match_column="pcode")
 
@@ -87,8 +92,10 @@ def test_assign_many_carry_columns_populates_parent_attributes():
     conn = _connect_with_parents()
     conn.execute("""--sql
         CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
-            (1, ST_GeomFromText('POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'))
-        ) AS v(fid, geom)
+            (1, ST_GeomFromText(
+                'POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'
+            ), 'fileA')
+        ) AS v(fid, geom, source_file)
     """)
     assign_many(conn, "t", carry_columns=["pcode"])
     row = conn.execute("""--sql
