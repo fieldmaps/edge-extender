@@ -79,3 +79,12 @@ own code column, raising `ValueError` naming exactly which level(s) are
 missing otherwise. This is what lets the pattern auto-extend to a single
 detected level (e.g. an admin1-only input) with no special-casing: `levels`
 is simply `[1]`, and the fill/depth-stamp logic runs unchanged.
+
+Level 0 is opportunistic rather than required: `detect_levels()` prepends
+it to the returned range whenever the table already has its own level-0
+code column (e.g. `adm0_id`), and simply leaves it out otherwise, so a
+table with no level-0 column behaves exactly as before. This closes the
+gap for datasets like `fieldmaps/admin-boundaries`, where a territory has
+ADM0 geometry but zero sub-national source rows: `adm1_id`..`adm4_id` fall
+back to `adm0_id` and `adm_lvl` reads `0`, through the same COALESCE-family
+machinery used for every other level (see `docs/adr/0091`).

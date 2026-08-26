@@ -15,6 +15,9 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   schema's `code_field` prefix (e.g. `adm`), N being the deepest level
   column found, and MUST raise `ValueError` if any level in that 1..N
   range is missing its own code column, or if none is found at all.
+- `schema-fill` MUST additionally include level 0 in the detected/filled
+  range whenever its own code column (e.g. `adm0_pcode`) is present,
+  without requiring it.
 
 ## Filling
 

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-26
+
+### Added
+
+- `schema-fill` now folds level 0 into its detected/filled level range
+  whenever the table has its own level-0 code column (e.g. `adm0_id`),
+  falling back finer levels to it and stamping `adm_lvl` `0` for a
+  country-only row; a table with no level-0 code column is unaffected
+  (see `docs/adr/0091`).
+
 ## [0.5.0] - 2026-08-26
 
 ### Fixed

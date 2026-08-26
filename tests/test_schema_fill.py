@@ -338,6 +338,41 @@ def test_dissolve_after_fill_keeps_lvl_column(leaf_input, tmp_path):
     assert rows == [("AA01", 3), ("AA02", 2), ("BB", 1)]
 
 
+def test_falls_back_to_level_zero_when_present(tmp_path):
+    rows = [
+        {
+            "adm0_code": "AA",
+            "adm0_name": "Country A",
+            "adm1_code": "AA01",
+            "adm1_name": "Prov1",
+            "wkt": "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
+        },
+        {
+            "adm0_code": "BB",
+            "adm0_name": "Country B",
+            "adm1_code": None,
+            "adm1_name": None,
+            "wkt": "POLYGON((5 5, 6 5, 6 6, 5 6, 5 5))",
+        },
+    ]
+    input_path = tmp_path / "with_adm0.parquet"
+    _write_synthetic(input_path, rows)
+
+    output_path = tmp_path / "with_adm0_out.parquet"
+    fill(input_path, output_path=output_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        result = conn.execute(
+            f"SELECT adm0_code, adm1_code, adm1_name, adm_lvl "
+            f"FROM '{output_path}' ORDER BY adm0_code"
+        ).fetchall()
+    assert result == [
+        ("AA", "AA01", "Prov1", _LEVEL_1),
+        ("BB", "BB", "Country B", 0),
+    ]
+
+
 def test_cli_positional_args(leaf_input, tmp_path):
     output_path = tmp_path / "cli_out.parquet"
     result = CliRunner().invoke(
