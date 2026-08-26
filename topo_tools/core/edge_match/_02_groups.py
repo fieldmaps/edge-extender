@@ -12,6 +12,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.coverage import check_no_erosion, check_valid_topology
 from topo_tools.core.duckdb_utils import (
     get_connection,
     log_file,
@@ -224,6 +225,10 @@ def _group_worker(
         lines.main(conn, "group")
         attempt.main(conn, "group", debug=debug)
         merge.main(conn, "group", debug=debug)  # -> "group_05"
+
+        # Same self-check a standalone edge-extend call runs in _06_outputs.py.
+        check_no_erosion(conn, "group_01", "group_05")
+        check_valid_topology(conn, "group_05", gap_maximum_width=0)
 
         conn.execute(f"""--sql
             COPY (SELECT * FROM "group_05")

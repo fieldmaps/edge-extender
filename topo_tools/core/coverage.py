@@ -14,6 +14,28 @@ from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 logger = getLogger(__name__)
 
 
+def check_no_erosion(
+    conn: DuckDBPyConnection,
+    table_before: str,
+    table_after: str,
+    *,
+    buffer: float = SNAP_TOLERANCE,
+) -> None:
+    """Raise RuntimeError if any fid's table_after geometry eroded its table_before.
+
+    SNAP_TOLERANCE-buffered, not exact ST_Covers: GEOS leaves float noise
+    far below this scale on every polygon it touches, real erosion doesn't.
+    """
+    eroded = conn.execute(f"""--sql
+        SELECT count(*) FROM "{table_before}" o
+        JOIN "{table_after}" e USING (fid)
+        WHERE NOT ST_Covers(ST_Buffer(e.geom, {buffer}), o.geom)
+    """).fetchall()[0][0]
+    if eroded > 0:
+        msg = f"extension eroded the original footprint of {eroded} fid(s)"
+        raise RuntimeError(msg)
+
+
 def has_invalid_edges(conn: DuckDBPyConnection, table: str) -> bool:
     """Return True if `table.geom` has any overlaps or unmatched shared edges."""
     return conn.execute(f"""--sql
