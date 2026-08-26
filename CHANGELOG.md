@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-26
+
 ### Fixed
 
 - `edge-stitch` now escalates `snapping_distance` past `SNAP_TOLERANCE`
@@ -14,11 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a spurious `INVALID_EDGES` failure where two adjacent tiles sharing a
   border coincident with the clip boundary drifted apart under
   independent clipping (see `docs/adr/0089`).
-
-## [0.5.0] - 2026-08-25
-
-### Fixed
-
 - `edge-mosaic`'s `--merge` gap-fill now keeps an unmatched **parent**
   (zero matched children) in the output using the parent's own geometry
   and attributes, instead of keeping an unmatched whole **children file**
@@ -290,7 +287,8 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.1.0...v0.2.0
