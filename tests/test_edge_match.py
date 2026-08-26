@@ -587,7 +587,8 @@ def test_match_carry_columns_survives_group_subprocess(tmp_path):
         children_path,
         parents_path,
         output_path,
-        merge_columns=["pcode"],
+        merge=True,
+        parent_include=["pcode"],
         multi_parent=True,
         overwrite=True,
     )
@@ -627,7 +628,7 @@ def test_match_merge_bare_passthrough_keeps_orphan_and_carries_columns(tmp_path)
         parents_path,
         output_path,
         issues_path,
-        merge_columns=True,
+        merge=True,
         multi_parent=True,
         overwrite=True,
     )
@@ -688,6 +689,196 @@ def test_match_no_merge_still_drops_orphan(tmp_path):
     assert kinds == ["unassigned"]
 
 
+def test_match_gap_fill_keeps_unmatched_parent(tmp_path):
+    """Parent B gets zero matched children, so it carries through unclipped."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0], _CHILD_WKT[1]])
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(
+        children_path,
+        parents_path,
+        output_path,
+        issues_path,
+        merge=True,
+        parent_include=["pcode"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        rows = conn.execute(
+            f"SELECT parent_fid, pcode FROM '{output_path}' WHERE parent_fid = 2"
+        ).fetchall()
+        issue_rows = conn.execute(
+            f"SELECT kind, parent_fid FROM '{issues_path}' WHERE kind = 'gap-fill'"
+        ).fetchall()
+    assert rows == [(2, "P2")]
+    assert issue_rows == [("gap-fill", 2)]
+
+
+def test_match_gap_fill_and_passthrough_together(tmp_path):
+    """An unmatched parent and an unmatched child file can both appear in one run."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    file_a = tmp_path / "file_a.parquet"
+    file_far = tmp_path / "file_far.parquet"
+    _write_synthetic(file_a, [_CHILD_WKT[0]])  # matches Parent A only
+    _write_synthetic(file_far, [_CHILD_WKT[3]])  # zero overlap with any parent
+
+    output_path = tmp_path / "out.parquet"
+    issues_path = tmp_path / "issues.parquet"
+    match(
+        [file_a, file_far],
+        parents_path,
+        output_path,
+        issues_path,
+        merge=True,
+        parent_include=["pcode"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        kinds = {
+            row[0]
+            for row in conn.execute(f"SELECT kind FROM '{issues_path}'").fetchall()
+        }
+    assert "gap-fill" in kinds
+    assert "passthrough" in kinds
+
+
+def test_match_child_exclude_drops_named_child_column(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_parent_pcode_only(
+        parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")]
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    output_path = tmp_path / "out.parquet"
+    match(
+        children_path,
+        parents_path,
+        output_path,
+        merge=True,
+        child_exclude=["id"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        columns = {
+            row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+        }
+    assert "id" not in columns
+    assert "pcode" in columns
+
+
+def test_match_narrowing_flag_without_merge_raises(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_parent_pcode_only(
+        parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")]
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    with pytest.raises(ValueError, match="require merge"):
+        match(
+            children_path,
+            parents_path,
+            tmp_path / "out.parquet",
+            parent_include=["pcode"],
+            overwrite=True,
+        )
+
+
+def test_match_prefer_mutually_exclusive_with_narrowing_flags(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_parent_pcode_only(
+        parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")]
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        match(
+            children_path,
+            parents_path,
+            tmp_path / "out.parquet",
+            merge=True,
+            prefer="parent",
+            parent_include=["pcode"],
+            overwrite=True,
+        )
+
+
+def test_match_prefer_parent_resolves_real_collision(tmp_path):
+    """id/geom/pcode all overlap between the two layers; pcode is the real collision."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))", "CHILDVAL")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    match(
+        children_path,
+        parents_path,
+        output_path,
+        merge=True,
+        prefer="parent",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        pcode = conn.execute(f"SELECT pcode FROM '{output_path}'").fetchone()[0]
+    assert pcode == "P1"
+
+
+def test_match_prefer_child_resolves_real_collision(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))", "CHILDVAL")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    match(
+        children_path,
+        parents_path,
+        output_path,
+        merge=True,
+        prefer="child",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        pcode = conn.execute(f"SELECT pcode FROM '{output_path}'").fetchone()[0]
+    assert pcode == "CHILDVAL"
+
+
 @pytest.fixture
 def synthetic_children_split(tmp_path):
     """Write children 1 & 2 (the Parent A pair) to separate files."""
@@ -717,12 +908,12 @@ def test_match_multi_file_api(synthetic_children_split, synthetic_parents, tmp_p
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        rows = conn.execute(
-            f"SELECT id, source_file FROM '{output_path}' ORDER BY id"
-        ).fetchall()
+        columns = {
+            row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+        }
+        rows = conn.execute(f"SELECT id FROM '{output_path}' ORDER BY id").fetchall()
+    assert "source_file" not in columns
     assert [r[0] for r in rows] == [1, 2]
-    assert rows[0][1] == str(synthetic_children_split[0])
-    assert rows[1][1] == str(synthetic_children_split[1])
 
 
 def test_match_multi_file_rejects_multi_parent(
@@ -761,6 +952,7 @@ def test_match_multi_file_requires_output_path(
 def test_match_multi_file_source_file_populated_in_issues(
     synthetic_children_split_with_orphan, synthetic_parents, tmp_path
 ):
+    """Issues rows carry a parent-dir/filename source_file, not the full path."""
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
     match(
@@ -776,8 +968,9 @@ def test_match_multi_file_source_file_populated_in_issues(
         rows = conn.execute(
             f"SELECT source_file FROM '{issues_path}' WHERE kind = 'unassigned'"
         ).fetchall()
+    orphan_path = synthetic_children_split_with_orphan[2]
     assert len(rows) == 1
-    assert rows[0][0] == str(synthetic_children_split_with_orphan[2])
+    assert rows[0][0] == "/".join(orphan_path.parts[-2:])
 
 
 def test_cli_edge_match_glob_expansion(

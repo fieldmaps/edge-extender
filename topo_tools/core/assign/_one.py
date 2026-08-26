@@ -162,7 +162,10 @@ _RESERVED_ASSIGN_COLUMNS = {
 
 
 def _carry_forward_columns(
-    conn: DuckDBPyConnection, name: str, carry_columns: list[str] | None
+    conn: DuckDBPyConnection,
+    name: str,
+    carry_columns: list[str] | None,
+    child_columns: list[str] | None = None,
 ) -> None:
     """Append caller-named parent columns onto `_02_assign`; does nothing if unset."""
     if not carry_columns:
@@ -174,10 +177,12 @@ def _carry_forward_columns(
             f"{sorted(reserved_collisions)}"
         )
         raise ValueError(msg)
-    child_columns = {
-        row[0] for row in conn.execute(f'DESCRIBE "{name}_child_01"').fetchall()
-    }
-    child_collisions = set(carry_columns) & child_columns
+    child_column_set = (
+        set(child_columns)
+        if child_columns is not None
+        else {row[0] for row in conn.execute(f'DESCRIBE "{name}_child_01"').fetchall()}
+    )
+    child_collisions = set(carry_columns) & child_column_set
     if child_collisions:
         msg = (
             f"carry_columns collides with the child layer's own column(s): "
@@ -201,6 +206,7 @@ def assign_one(  # noqa: PLR0913
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
     carry_columns: list[str] | None = None,
+    child_columns: list[str] | None = None,
 ) -> None:
     """Force every child in a source_file onto that file's majority-vote parent."""
     _build_pairs(conn, name, use_cached_tiles=use_cached_tiles)
@@ -280,7 +286,7 @@ def assign_one(  # noqa: PLR0913
     if parent_match_column and child_match_column:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_file_final"')
 
-    _carry_forward_columns(conn, name, carry_columns)
+    _carry_forward_columns(conn, name, carry_columns, child_columns)
 
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_unassigned" AS

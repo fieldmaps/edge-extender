@@ -9,8 +9,11 @@ from topo_tools.core.assign import (
     assign_many,
     assign_one,
     child_bbox_extent,
+    fill_unmatched_parents,
     load_parent,
     prepare_parent_tiles,
+    resolve_merge_columns,
+    validate_merge_flags,
 )
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
@@ -36,29 +39,12 @@ _STEP_ORDER = ["inputs", "assign", "groups", "clip", "stitch", "outputs"]
 _STEP_TABLES = {
     "inputs": ["{n}_child_01", "{n}_parent_01", "{n}_parent_full"],
     "assign": ["{n}_02_pairs", "{n}_02_assign", "{n}_02_unassigned"],
-    # "groups" is deliberately absent: group ids aren't known ahead of time
-    # (dynamic "{n}_g{parent_fid}" names), so it falls through to the
-    # "export everything currently in the connection" default below, same as
-    # a full (no --step) run.
-    "clip": ["{n}_04", "{n}_04_dropped"],
+    # "groups" is absent: group ids aren't known ahead of time (dynamic
+    # "{n}_g{parent_fid}" names), so it falls through to the default below.
+    "clip": ["{n}_04", "{n}_04_dropped", "{n}_02_gap_fill"],
     "stitch": ["{n}_05"],
     "outputs": [],
 }
-
-
-def _resolve_merge_columns(
-    conn: DuckDBPyConnection, name: str, *, merge_columns: list[str] | bool
-) -> list[str] | None:
-    """Resolve True to every `{name}_parent_01` column except fid/geom."""
-    if merge_columns is False:
-        return None
-    if merge_columns is True:
-        return [
-            row[0]
-            for row in conn.execute(f'DESCRIBE "{name}_parent_01"').fetchall()
-            if row[0] not in ("fid", "geom")
-        ]
-    return merge_columns
 
 
 def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
@@ -75,7 +61,12 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
     match_column: str | None = None,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
-    merge_columns: list[str] | bool = False,
+    merge: bool = False,
+    parent_include: list[str] | None = None,
+    parent_exclude: list[str] | None = None,
+    child_include: list[str] | None = None,
+    child_exclude: list[str] | None = None,
+    prefer: str | None = None,
     multi_parent: bool = False,
 ) -> None:
     """Match one or more children layers to their best-overlapping parent."""
@@ -91,7 +82,15 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
-    passthrough = bool(merge_columns)
+    validate_merge_flags(
+        merge=merge,
+        parent_include=parent_include,
+        parent_exclude=parent_exclude,
+        child_include=child_include,
+        child_exclude=child_exclude,
+        prefer=prefer,
+    )
+    passthrough = merge
 
     if isinstance(input_paths, (str, Path)):
         paths = [resolve_input_path(input_paths)]
@@ -123,11 +122,8 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
     check_overwrite(output_path, overwrite=overwrite)
     check_overwrite(issues_path, overwrite=overwrite)
 
-    # "_edge_match" keeps every table/file this call creates distinct from an
-    # edge_extend() run against the same input_path/tmp_dir, e.g. edge_extend's bare
-    # "{name}_04" (Voronoi cells) would otherwise collide with edge_match's own
-    # bare "{name}_04" (final coverage-cleaned output) if both tools shared a
-    # tmp_dir and were run with --debug for side-by-side inspection.
+    # "_edge_match" keeps this call's tables/files distinct from an
+    # edge_extend() run sharing the same input_path/tmp_dir.
     name = (
         input_basename(single_path).replace(".", "_") + "_edge_match"
         if single_path is not None
@@ -154,10 +150,16 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 debug=debug,
                 parent_match_column=parent_match_column,
                 child_match_column=child_match_column,
-                merge_columns=merge_columns,
+                merge=merge,
+                parent_include=parent_include,
+                parent_exclude=parent_exclude,
+                child_include=child_include,
+                child_exclude=child_exclude,
+                prefer=prefer,
             )
         else:
-            resolved_merge: list[str] | None = None
+            resolved_parent_columns: list[str] | None = None
+            resolved_child_columns: list[str] | None = None
             merge_resolved = False
             for s in _STEP_ORDER:
                 if step and step != s:
@@ -166,10 +168,24 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     logger.info("=== %s ===", s)
                 if s == "inputs":
                     inputs.main(conn, name, single_path, clip_path)
+                    if passthrough:
+                        conn.execute(f"""--sql
+                            CREATE OR REPLACE TABLE "{name}_parent_full" AS
+                            SELECT * FROM "{name}_parent_01"
+                        """)
                 elif s == "assign":
                     if not merge_resolved:
-                        resolved_merge = _resolve_merge_columns(
-                            conn, name, merge_columns=merge_columns
+                        resolved_parent_columns, resolved_child_columns = (
+                            resolve_merge_columns(
+                                conn,
+                                name,
+                                merge=merge,
+                                parent_include=parent_include,
+                                parent_exclude=parent_exclude,
+                                child_include=child_include,
+                                child_exclude=child_exclude,
+                                prefer=prefer,
+                            )
                         )
                         merge_resolved = True
                     assign_fn = assign_many if multi_parent else assign_one
@@ -178,12 +194,22 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         name,
                         parent_match_column=parent_match_column,
                         child_match_column=child_match_column,
-                        carry_columns=resolved_merge,
+                        carry_columns=resolved_parent_columns,
+                        child_columns=resolved_child_columns,
                     )
                 elif s == "groups":
                     if not merge_resolved:
-                        resolved_merge = _resolve_merge_columns(
-                            conn, name, merge_columns=merge_columns
+                        resolved_parent_columns, resolved_child_columns = (
+                            resolve_merge_columns(
+                                conn,
+                                name,
+                                merge=merge,
+                                parent_include=parent_include,
+                                parent_exclude=parent_exclude,
+                                child_include=child_include,
+                                child_exclude=child_exclude,
+                                prefer=prefer,
+                            )
                         )
                         merge_resolved = True
                     groups.main(
@@ -192,10 +218,25 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         tmp_dir_path,
                         threads=threads,
                         debug=debug,
-                        carry_columns=resolved_merge,
+                        carry_columns=resolved_parent_columns,
+                        child_columns=resolved_child_columns,
                         passthrough=passthrough,
                     )
                 elif s == "clip":
+                    if not merge_resolved:
+                        resolved_parent_columns, resolved_child_columns = (
+                            resolve_merge_columns(
+                                conn,
+                                name,
+                                merge=merge,
+                                parent_include=parent_include,
+                                parent_exclude=parent_exclude,
+                                child_include=child_include,
+                                child_exclude=child_exclude,
+                                prefer=prefer,
+                            )
+                        )
+                        merge_resolved = True
                     clip.main(
                         conn,
                         name,
@@ -204,6 +245,14 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         debug=debug,
                         passthrough=passthrough,
                     )
+                    if passthrough:
+                        fill_unmatched_parents(
+                            conn,
+                            name,
+                            carry_columns=resolved_parent_columns,
+                            result_table=f"{name}_04",
+                            parent_snapshot_table=f"{name}_parent_full",
+                        )
                 elif s == "stitch":
                     stitch.main(conn, name, debug=debug)
                 elif s == "outputs":
@@ -214,6 +263,7 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         issues_path,
                         code_join=bool(parent_match_column and child_match_column),
                         passthrough=passthrough,
+                        fill_gaps=passthrough,
                         debug=debug,
                     )
         maybe_export_debug_tables(
@@ -257,7 +307,12 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
     debug: bool,
     parent_match_column: str | None,
     child_match_column: str | None,
-    merge_columns: list[str] | bool,
+    merge: bool,
+    parent_include: list[str] | None,
+    parent_exclude: list[str] | None,
+    child_include: list[str] | None,
+    child_exclude: list[str] | None,
+    prefer: str | None,
 ) -> None:
     """Load/assign one children file at a time, sharing one already-loaded parent.
 
@@ -270,8 +325,21 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
     """)
 
     combined_bbox: tuple[float, float, float, float] | None = None
-    for child_path in paths:
+    resolved_parent_columns: list[str] | None = None
+    resolved_child_columns: list[str] | None = None
+    for i, child_path in enumerate(paths):
         inputs.load_and_clean_child(conn, name, child_path)
+        if i == 0:
+            resolved_parent_columns, resolved_child_columns = resolve_merge_columns(
+                conn,
+                name,
+                merge=merge,
+                parent_include=parent_include,
+                parent_exclude=parent_exclude,
+                child_include=child_include,
+                child_exclude=child_exclude,
+                prefer=prefer,
+            )
         bbox = child_bbox_extent(conn, name)
         if bbox is not None:
             combined_bbox = (
@@ -280,8 +348,7 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
         conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
     prepare_parent_tiles(conn, name, child_bbox=combined_bbox)
 
-    resolved_merge = _resolve_merge_columns(conn, name, merge_columns=merge_columns)
-    passthrough = bool(merge_columns)
+    passthrough = merge
 
     acc_child = f"{name}_child_01_acc"
     acc_assign = f"{name}_02_assign_acc"
@@ -303,7 +370,8 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
             use_cached_tiles=True,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
-            carry_columns=resolved_merge,
+            carry_columns=resolved_parent_columns,
+            child_columns=resolved_child_columns,
         )
 
         seeded = i > 0
@@ -339,12 +407,21 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
         tmp_dir_path,
         threads=threads,
         debug=debug,
-        carry_columns=resolved_merge,
+        carry_columns=resolved_parent_columns,
+        child_columns=resolved_child_columns,
         passthrough=passthrough,
     )
     clip.main(
         conn, name, tmp_dir_path, threads=threads, debug=debug, passthrough=passthrough
     )
+    if passthrough:
+        fill_unmatched_parents(
+            conn,
+            name,
+            carry_columns=resolved_parent_columns,
+            result_table=f"{name}_04",
+            parent_snapshot_table=f"{name}_parent_full",
+        )
     stitch.main(conn, name, debug=debug)
     outputs.main(
         conn,
@@ -353,6 +430,7 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
         issues_path,
         code_join=bool(parent_match_column and child_match_column),
         passthrough=passthrough,
+        fill_gaps=passthrough,
         debug=debug,
     )
 

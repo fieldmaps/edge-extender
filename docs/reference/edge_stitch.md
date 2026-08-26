@@ -21,7 +21,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 - `edge-stitch`'s final output MUST pass the hard gate in
   `docs/reference/shared.md` (no overlap; unlike other tools, an unfilled
   gap does not block export, see `docs/adr/0027`).
-- `edge-stitch` MUST export the final cleaned layer.
+- `edge-stitch` MUST export the final cleaned layer, and MUST NOT carry a
+  `source_file` column on it even if the input already had one (e.g. a
+  re-stitched `edge-mosaic`/`edge-match` output), silently dropping it
+  (see `docs/adr/0087`).
 - `edge-stitch` MUST also export an issues report alongside it, using the
   shared schema in `docs/reference/shared.md`, listing every leftover gap
   wider than `SNAP_TOLERANCE`, so a human can audit what may need review.

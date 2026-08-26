@@ -43,10 +43,19 @@ def main(
             remaining,
         )
 
-    export_geometry_table(conn, f"{name}_02", dest)
+    columns = {row[0] for row in conn.execute(f'DESCRIBE "{name}_02"').fetchall()}
+    if "source_file" in columns:
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TEMP VIEW "{name}_02_export" AS
+            SELECT * EXCLUDE (source_file) FROM "{name}_02"
+        """)
+        export_geometry_table(conn, f"{name}_02_export", dest)
+    else:
+        export_geometry_table(conn, f"{name}_02", dest)
     export_issues_table(conn, f"{name}_03", issues_dest)
 
     if not debug:
+        conn.execute(f'DROP VIEW IF EXISTS "{name}_02_export"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_01"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03"')

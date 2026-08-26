@@ -110,19 +110,32 @@ A tool MUST leave any column inapplicable to a given row's `kind` as null.
 row, for any kind that has one (a dropped child, one side of an overlap,
 etc.); `unit_b` MUST be used only where a second fid is meaningfully
 involved (e.g. the other side of an overlap). `edge-match` MUST populate
-`source_file` with the row's originating child file for every kind that has
-one (`unassigned`, `dropped_group`, `clip-empty`, `passthrough`), null only
-for `gap` (see `docs/adr/0084`).
+`source_file` with the row's originating child file, shortened to its
+parent directory plus filename (never the full input path), for every
+kind that has one (`unassigned`, `dropped_group`, `clip-empty`,
+`passthrough`), null only for `gap` (see `docs/adr/0084`,
+`docs/adr/0087`).
+
+None of `edge-match`/`edge-mosaic`/`edge-clip`/`edge-stitch`'s *main*
+output carries a `source_file` column at all, even though every one of
+them tags it internally on the child table: it exists only to let
+`assign-one` group a file's children for its per-file majority vote (see
+`docs/explanation/assign.md`), not as a user-facing column, and each
+tool's outputs stage strips it before export (see `docs/adr/0087`).
+`topo-clean`'s issues report keeps a `source_file` column for schema
+compatibility, always null (it's a single-layer tool with no per-child
+origin file).
 
 `edge-match`, `edge-mosaic`, and `edge-clip` all share a `kind='clip-empty'`
 row for any child whose clip intersection with its assigned parent came
 back empty (see `docs/adr/0082`): `unit_a` MUST hold the child's fid,
 `parent_fid` its assigned parent's fid, `reason` MUST explain the
-intersection was empty. `edge-mosaic` additionally has a
-`kind='gap-fill'` row (see `docs/reference/edge_mosaic.md`) for a parent
-matched by zero children, kept unclipped in the output when
-`merge_columns` is truthy: `parent_fid` MUST hold the gap-filled parent's
-fid, `unit_a` and `source_file` MUST be null (see `docs/adr/0083`).
+intersection was empty. `edge-mosaic` and `edge-match` both additionally
+have a `kind='gap-fill'` row (see `docs/reference/edge_mosaic.md`,
+`docs/reference/edge_match.md`) for a parent matched by zero children,
+kept unclipped in the output when `merge` is set: `parent_fid` MUST hold
+the gap-filled parent's fid, `unit_a` and `source_file` MUST be null (see
+`docs/adr/0083`, `docs/adr/0088`).
 
 A tool MUST NOT write an issues file at all when the run produced zero
 issues rows; if a file already exists at the destination path from a
@@ -168,33 +181,34 @@ repeatable, comma-splittable `--carry-column`), attribute-carrying only,
 with no gap-fill concept of its own (`edge-clip` is a strict 1:1
 primitive, see `docs/reference/edge_clip.md`).
 
-`edge-mosaic` exposes this as `merge_columns: list[str] | bool = False`
-(CLI: `--merge`, a boolean-or-value flag), coupled with parent-orphan
-gap-fill rather than independent of it: `False` (omitted) turns both off;
-`True` (bare `--merge`) carries every parent column (resolved once from
-the parent layer's own schema, excluding `fid`/`geom`) and keeps a parent
-matched by zero children in the output, unclipped, using the parent's own
-geometry, instead of dropping it; a list (`--merge iso_3,adm0_name`)
-narrows the carried columns to just those, gap-fill still on. There is no
-way to get one behavior without the other, by design, since a gap-filled
-parent is far more useful with its own attributes populated too (see
-`docs/adr/0079`, `docs/adr/0083`). A child that never matched any parent
-(dropped as `unassigned`) never gains these columns through a join; a
-gap-filled parent's own row carries them directly, since the row is the
-parent itself, not a joined child (see `docs/reference/edge_mosaic.md`).
+`edge-mosaic` and `edge-match` both expose this as a plain boolean
+`merge: bool = False` (CLI: `--merge`), coupled with two passthrough
+mechanisms rather than independent of them: `False` (omitted) turns both
+off; `True` carries every parent column (excluding `fid`/`geom`) onto
+every matched child, keeps a parent matched by zero children unclipped in
+the output using its own geometry (`kind='gap-fill'`), and keeps a whole
+unmatched child file unclipped in the output using its own geometry
+(`kind='passthrough'`). `parent_include`/`parent_exclude`/
+`child_include`/`child_exclude` (CLI: `--parent-include`/
+`--parent-exclude`/`--child-include`/`--child-exclude`) narrow which
+parent/child columns survive; `prefer` (CLI: `--prefer [parent|child]`)
+auto-resolves a real parent/child column-name collision instead of
+raising. All five require `merge`; the four narrowing flags are each
+mutually exclusive with their own pair, and mutually exclusive with
+`prefer` (see `docs/adr/0079`, `docs/adr/0083`, `docs/adr/0088`). A child
+that never matched any parent (dropped as `unassigned`) never gains
+carried columns through a join; a gap-filled parent's own row carries
+them directly, since the row is the parent itself, not a joined child
+(see `docs/reference/edge_mosaic.md`).
 
-`edge-match` exposes this the same shape as `edge-mosaic`:
-`merge_columns: list[str] | bool = False` (CLI: `--merge`), coupled with
-gap-fill passthrough for a whole run's worth of zero-overlap children
-rather than independent of it, using the same three-state semantics.
-Unlike `edge-mosaic`'s parent-orphan gap-fill, `edge-match`'s is
-child-orphan: every child with no overlapping parent (under the default
-`assign-one`, this only happens when the whole input file has no overlap
-at all; under `--multi-parent`'s `assign-many`, it can happen per child,
-see `docs/explanation/assign.md`) is grouped into one orphan group of its
-own and extended alone, then kept unclipped in the output instead of
-dropped. `edge-match`'s passthrough has a materially weaker safety
-profile than `edge-mosaic`'s: `edge-mosaic`'s gap-filled geometry is the
-parent layer's own already-valid input, while `edge-match`'s orphan group
-is extended fresh, alone, with zero neighboring-parent context and no
-majority/plurality vote to catch a bad extension (see `docs/adr/0081`).
+The two tools' child-passthrough implementations differ, since their
+pipelines do: `edge-mosaic`'s passthrough geometry is already a finished,
+validated `edge_extend()` output, unioned in directly. `edge-match`'s
+passthrough groups every zero-overlap child (whole file under
+`assign-one`, individual child under `--multi-parent`'s `assign-many`,
+see `docs/explanation/assign.md`) into one orphan group of its own and
+extends it fresh, alone, with zero neighboring-parent context and no
+majority/plurality vote to catch a bad extension, a materially weaker
+safety profile than `edge-mosaic`'s (see `docs/adr/0081`). Parent
+gap-fill has no such asymmetry: both tools call the same shared
+`core.assign.fill_unmatched_parents()` helper (see `docs/adr/0088`).

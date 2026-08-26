@@ -28,32 +28,37 @@ def _build_issues(
     *,
     code_join: bool = False,
     passthrough: bool = False,
+    fill_gaps: bool = False,
 ) -> None:
     """Build `{name}_06`: unassigned/dropped-group children, plus non-noise gaps.
 
     passthrough=True omits 'unassigned' (superseded by 'passthrough'/'dropped_group').
     """
     table = f"{name}_05"
+    short_source_file = (
+        "array_to_string(list_slice(str_split(source_file, '/'), -2, -1), '/')"
+    )
     parts = []
     if not passthrough:
         parts.append(f"""
         SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
                child_fid AS unit_a, NULL::BIGINT AS parent_fid,
-               NULL::VARCHAR AS reason, {_ISSUE_COLUMNS}, source_file, geom
+               NULL::VARCHAR AS reason, {_ISSUE_COLUMNS},
+               {short_source_file} AS source_file, geom
         FROM "{name}_02_unassigned"
         """)
     parts += [
         f"""
         SELECT 'dropped_group-' || child_fid AS key, 'dropped_group' AS kind,
                child_fid AS unit_a, parent_fid, reason, {_ISSUE_COLUMNS},
-               source_file, geom
+               {short_source_file} AS source_file, geom
         FROM "{name}_03b"
         """,
         f"""
         SELECT 'clip-empty-' || fid AS key, 'clip-empty' AS kind,
                fid AS unit_a, parent_fid,
                'clip intersection with its assigned parent was empty' AS reason,
-               {_ISSUE_COLUMNS}, source_file, geom
+               {_ISSUE_COLUMNS}, {short_source_file} AS source_file, geom
         FROM "{name}_04_dropped"
         """,
         gap_issues_sql(conn, table),
@@ -63,12 +68,29 @@ def _build_issues(
         SELECT 'passthrough-' || child_fid AS key, 'passthrough' AS kind,
                child_fid AS unit_a, NULL::BIGINT AS parent_fid,
                'no overlapping parent; extended alone and kept unclipped in '
-               'the output' AS reason, {_ISSUE_COLUMNS}, source_file, geom
+               'the output' AS reason, {_ISSUE_COLUMNS},
+               {short_source_file} AS source_file, geom
         FROM "{name}_02_unassigned"
         WHERE child_fid NOT IN (SELECT child_fid FROM "{name}_03b")
         """)
+    if fill_gaps:
+        parts.append(f"""
+        SELECT 'gap-fill-' || parent_fid AS key, 'gap-fill' AS kind,
+               NULL::BIGINT AS unit_a, parent_fid,
+               'parent had no matched children; kept unclipped in the output' AS reason,
+               {_ISSUE_COLUMNS}, NULL::VARCHAR AS source_file, geom
+        FROM "{name}_02_gap_fill"
+        """)
     if code_join:
-        parts.append(assign_issue_rows_sql(name, source_file_expr="c.source_file"))
+        parts.append(
+            assign_issue_rows_sql(
+                name,
+                source_file_expr=(
+                    "array_to_string("
+                    "list_slice(str_split(c.source_file, '/'), -2, -1), '/')"
+                ),
+            )
+        )
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_06" AS
         {" UNION ALL BY NAME ".join(parts)}
@@ -83,12 +105,15 @@ def main(  # noqa: PLR0913
     *,
     code_join: bool = False,
     passthrough: bool = False,
+    fill_gaps: bool = False,
     debug: bool = False,
 ) -> None:
     """Output the matched layer + issues report to dest/issues_dest."""
     check_valid_topology(conn, f"{name}_05")
 
-    _build_issues(conn, name, code_join=code_join, passthrough=passthrough)
+    _build_issues(
+        conn, name, code_join=code_join, passthrough=passthrough, fill_gaps=fill_gaps
+    )
 
     remaining = conn.execute(f"""--sql
         SELECT COUNT(*) FROM "{name}_06" WHERE kind = 'gap'
@@ -101,10 +126,15 @@ def main(  # noqa: PLR0913
             remaining,
         )
 
-    export_geometry_table(conn, f"{name}_05", dest)
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TEMP VIEW "{name}_05_export" AS
+        SELECT * EXCLUDE (source_file) FROM "{name}_05"
+    """)
+    export_geometry_table(conn, f"{name}_05_export", dest)
     export_issues_table(conn, f"{name}_06", issues_dest)
 
     if not debug:
+        conn.execute(f'DROP VIEW IF EXISTS "{name}_05_export"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_parent_01"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_pairs"')
@@ -112,5 +142,6 @@ def main(  # noqa: PLR0913
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_unassigned"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03b"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_04_dropped"')
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_gap_fill"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_05"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_06"')

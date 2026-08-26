@@ -7,7 +7,9 @@ from topo_tools.core.assign import (
     assign_many,
     assign_one,
     child_bbox_extent,
+    fill_unmatched_parents,
     prepare_parent_tiles,
+    resolve_column_selection,
 )
 
 # Two disjoint parents, far enough apart that a child spans the empty gap
@@ -235,3 +237,86 @@ def test_assign_one_code_join_precedence_and_fallback():
 
     unassigned = conn.execute('SELECT COUNT(*) FROM "t_02_unassigned"').fetchone()[0]
     assert unassigned == 0
+
+
+def test_resolve_column_selection_default_returns_all_but_always_exclude():
+    conn = _connect_with_parents()
+    selected = resolve_column_selection(
+        conn, "t_parent_01", include=None, exclude=None, always_exclude=("fid", "geom")
+    )
+    assert selected == ["pcode"]
+
+
+def test_resolve_column_selection_include_gains_always_include():
+    conn = _connect_with_parents()
+    selected = resolve_column_selection(
+        conn,
+        "t_parent_01",
+        include=["pcode"],
+        exclude=None,
+        always_include=("fid", "geom"),
+    )
+    assert set(selected) == {"pcode", "fid", "geom"}
+
+
+def test_resolve_column_selection_exclude_drops_columns():
+    conn = _connect_with_parents()
+    selected = resolve_column_selection(
+        conn, "t_parent_01", include=None, exclude=["pcode"]
+    )
+    assert set(selected) == {"fid", "geom"}
+
+
+def test_resolve_column_selection_exclude_collides_with_always_include_raises():
+    conn = _connect_with_parents()
+    with pytest.raises(ValueError, match="always-included column"):
+        resolve_column_selection(
+            conn,
+            "t_parent_01",
+            include=None,
+            exclude=["fid"],
+            always_include=("fid",),
+        )
+
+
+def test_fill_unmatched_parents_appends_zero_child_parent():
+    """A parent with no matched children carries through via its own geometry."""
+    conn = _connect_with_parents()
+    conn.execute("""--sql
+        CREATE TABLE t_02_assign AS SELECT 10 AS child_fid, 1 AS parent_fid
+    """)
+    conn.execute("""--sql
+        CREATE TABLE t_result AS
+        SELECT 1 AS parent_fid,
+               ST_GeomFromText('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))') AS geom
+    """)
+    fill_unmatched_parents(
+        conn,
+        "t",
+        carry_columns=["pcode"],
+        result_table="t_result",
+        parent_snapshot_table="t_parent_01",
+    )
+    parent_fids = {
+        row[0] for row in conn.execute('SELECT parent_fid FROM "t_result"').fetchall()
+    }
+    assert parent_fids == {1, 2}
+    pcode = conn.execute(
+        'SELECT pcode FROM "t_result" WHERE parent_fid = 2'
+    ).fetchone()[0]
+    assert pcode == "P2"
+
+
+def test_carry_forward_columns_no_false_positive_when_child_columns_narrowed():
+    """A carried column already excluded from child_columns doesn't collide."""
+    conn = _connect_with_parents()
+    conn.execute("""--sql
+        CREATE TABLE t_child_01 AS SELECT * FROM (VALUES
+            (10, ST_GeomFromText(
+                'POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))'
+            ), 'fileA', 'stale')
+        ) AS v(fid, geom, source_file, pcode)
+    """)
+    assign_one(conn, "t", carry_columns=["pcode"], child_columns=["fid", "geom"])
+    row = conn.execute('SELECT child_fid, pcode FROM "t_02_assign"').fetchone()
+    assert row == (10, "P1")

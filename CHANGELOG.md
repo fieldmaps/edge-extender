@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `edge-stitch` now escalates `snapping_distance` past `SNAP_TOLERANCE`
+  when invalid edges remain after the first coverage-clean pass, fixing
+  a spurious `INVALID_EDGES` failure where two adjacent tiles sharing a
+  border coincident with the clip boundary drifted apart under
+  independent clipping (see `docs/adr/0089`).
+
 ## [0.5.0] - 2026-08-25
 
 ### Fixed
@@ -25,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assignment; it loads it raw, the same way `edge-mosaic` already does,
   fixing a pathological stall on large real-world parent files (see
   `docs/adr/0086`).
+- `edge-mosaic`, `edge-match`, and standalone `edge-stitch` no longer
+  export a `source_file` column on their main output; it was an internal
+  `assign-one` working column that leaked into exported files by
+  accident. `edge-mosaic`/`edge-match`'s issues report still carries
+  `source_file`, but shortened to its parent directory plus filename
+  (e.g. `sen/adm2.parquet`), never the full input path (see
+  `docs/adr/0087`).
 
 ### Added
 
@@ -57,6 +72,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   children's combined bbox, so matching a handful of children against one
   much larger shared parent (e.g. a global admin0 file) no longer tiles
   parts nothing will ever be assigned to (see `docs/adr/0085`).
+
+### Changed
+
+- **Breaking:** `edge-mosaic`/`edge-match`'s `--merge` is now a plain
+  boolean flag; the old `--merge iso_3,adm0_name` value form becomes
+  `--merge --parent-include iso_3,adm0_name`. New `--parent-include`/
+  `--parent-exclude`/`--child-include`/`--child-exclude` narrow which
+  parent/child columns survive in the merged output, and new `--prefer
+  [parent|child]` auto-resolves a real parent/child column-name collision
+  instead of raising. Both tools now perform identical parent gap-fill
+  (`kind='gap-fill'`) and child-file passthrough (`kind='passthrough'`)
+  under `--merge`, where previously each tool only had one of the two
+  mechanisms (see `docs/adr/0088`).
 
 ## [0.4.0] - 2026-08-25
 

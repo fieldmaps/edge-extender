@@ -14,8 +14,12 @@ tools.
 - Unlike every other tool here, the child role MAY span multiple files
   (e.g. one `edge_extend()` output per country), combined internally. The
   parent/clip layer MUST remain a single file.
-- Every output row MUST carry a `source_file` column recording the exact
-  path of the child file it came from.
+- The main output MUST NOT carry a `source_file` column; it is an
+  internal working column only, used by `assign-one`'s per-file grouping
+  (see `docs/explanation/assign.md`), not exported. The issues report MAY
+  carry `source_file`, shortened to its parent directory plus filename
+  (e.g. `sen/adm2.parquet`), never the full input path (see
+  `docs/adr/0087`).
 
 ## Assigning children to parents
 
@@ -34,10 +38,11 @@ tools.
   overlap with the winner; such a child is not dropped at assign time (see
   `docs/explanation/assign.md`). A whole file with no child overlapping
   any parent at all MUST be dropped, not treated as fatal, and
-  `edge-mosaic` MUST log a warning naming its children; this case MUST also
-  be recorded in the issues report described under Outputs.
-- A parent matched by zero children MUST be dropped, unless `merge_columns`
-  is truthy (see Configuration), in which case that parent's own geometry
+  `edge-mosaic` MUST log a warning naming its children, unless `merge`
+  is set (see Configuration), in which case that file's own
+  already-extended geometry is instead kept unclipped in the output.
+- A parent matched by zero children MUST be dropped, unless `merge`
+  is set (see Configuration), in which case that parent's own geometry
   and attributes are kept unclipped in the output instead. Either case
   MUST also be recorded in the issues report described under Outputs.
 
@@ -58,7 +63,8 @@ tools.
   not treated as fatal, and MUST be recorded in the issues report as a
   `kind='clip-empty'` row (see Outputs).
 - `edge-mosaic` MUST raise if zero children were ever assigned to any parent,
-  unless `merge_columns` gap-filled at least one parent (see Configuration).
+  unless `merge` gap-filled at least one parent or kept at least one
+  unmatched child file as passthrough (see Configuration).
 
 ## Stitching
 
@@ -75,24 +81,28 @@ tools.
   export (see `docs/adr/0035`).
 - `edge-mosaic` MUST export the final merged layer.
 - `edge-mosaic` MUST also export an issues report alongside it, using the
-  shared schema in `docs/reference/shared.md`, listing every unassigned
-  child (a whole unmatched file), every child dropped for an empty clip
-  intersection, every gap-filled parent (when `merge_columns` is truthy),
-  and every leftover gap wider than `SNAP_TOLERANCE`, so a human can audit
-  what didn't make it into the output or what may need review.
-- For an `unassigned` row, `unit_a` MUST hold the child's own fid and
-  `source_file` MUST record its origin file; parent id and reason fields
-  MUST be null, since this only happens for a whole file with no parent
-  overlap at all. For a `clip-empty` row, `unit_a` MUST hold the child's
-  fid, `parent_fid` MUST hold its assigned parent's fid, and `reason` MUST
-  explain that the clip intersection came back empty. For a `gap-fill`
-  row (`merge_columns` truthy only), `parent_fid` MUST hold the gap-filled
-  parent's fid and `reason` MUST explain that the parent had no matched
-  children and was kept unclipped in the output; `unit_a` and
-  `source_file` MUST be null, since the row is the parent itself, not a
-  child. For a `gap` row, `area_m2`, `max_width_m`, and `thinness_ratio`
-  MUST be populated instead. A field that doesn't apply to a row's kind
-  MUST be null.
+  shared schema in `docs/reference/shared.md`, listing every child dropped
+  for an empty clip intersection, every unassigned/passthrough child file,
+  every gap-filled/passthrough parent (when `merge` is set), and every
+  leftover gap wider than `SNAP_TOLERANCE`, so a human can audit what
+  didn't make it into the output or what may need review.
+- Without `merge`, a whole unmatched child file MUST appear as an
+  `unassigned` row: `unit_a` MUST hold the child's own fid and
+  `source_file` MUST record its origin file as a parent-directory-plus-
+  filename (not the full path); parent id and reason fields MUST be null.
+  With `merge` set, that file's children MUST instead appear as
+  `passthrough` rows (same `unit_a`/`source_file` shape, `reason` null),
+  and MUST NOT also appear as `unassigned`. For a `clip-empty` row,
+  `unit_a` MUST hold the child's fid, `parent_fid` MUST hold its assigned
+  parent's fid, `source_file` MUST record its origin file the same
+  shortened way, and `reason` MUST explain that the clip intersection
+  came back empty. For a `gap-fill` row (`merge` set only), `parent_fid`
+  MUST hold the gap-filled parent's fid and `reason` MUST explain that the
+  parent had no matched children and was kept unclipped in the output;
+  `unit_a` and `source_file` MUST be null, since the row is the parent
+  itself, not a child. For a `gap` row, `area_m2`, `max_width_m`, and
+  `thinness_ratio` MUST be populated instead. A field that doesn't apply
+  to a row's kind MUST be null.
 - `edge-mosaic` MUST produce the issues report only when it has at least one
   row; when it would be empty, no file MUST be written (and a stale file
   from a previous run at that path MUST be removed).
@@ -116,14 +126,32 @@ tools.
 - `edge-mosaic` MAY accept `match_column`/`parent_match_column`/`child_match_column`
   to override spatial assignment with an exact code join (see
   `docs/reference/shared.md`, `docs/explanation/assign.md`).
-- `edge-mosaic` MAY accept `merge_columns: list[str] | bool = False` (CLI:
-  `--merge`, a boolean-or-value flag): `False` (default) copies no parent
-  columns and drops a parent matched by zero children; `True` (bare
-  `--merge`) copies every parent column (excluding `fid`/`geom`) onto
-  every matched child and keeps a zero-children parent's own geometry
-  unclipped in the output instead; a list (`--merge iso_3,adm0_name`)
-  narrows the copied columns to just those, with gap-fill still on. There
-  is no way to enable one behavior without the other (see
-  `docs/reference/shared.md`, `docs/adr/0077`, `docs/adr/0079`,
-  `docs/adr/0083`; supersedes the child-orphan passthrough of
-  `docs/adr/0078`).
+- `edge-mosaic` MAY accept `merge: bool = False` (CLI: `--merge`, a plain
+  boolean flag): `False` (default) copies no parent columns and drops
+  both a zero-children parent and a whole unmatched child file; `True`
+  copies every parent column (excluding `fid`/`geom`) onto every matched
+  child, keeps a zero-children parent's own geometry unclipped in the
+  output (`kind='gap-fill'`), and keeps a whole unmatched child file's own
+  geometry unclipped in the output (`kind='passthrough'`). There is no
+  way to enable one behavior without the other.
+- With `merge` set, `edge-mosaic` MAY additionally accept
+  `parent_include`/`parent_exclude` (CLI: `--parent-include`/
+  `--parent-exclude`, each a comma-separated column list) to narrow which
+  parent columns get copied onto matched children (default: every parent
+  column except `fid`/`geom`), and `child_include`/`child_exclude` (CLI:
+  `--child-include`/`--child-exclude`) to narrow which of the child's own
+  columns survive in the output (default: every child column;
+  `fid`/`geom`/`source_file` are always force-kept regardless). Each pair
+  is mutually exclusive with itself; a parent-side flag MAY be combined
+  with a child-side flag. All four MUST raise `ValueError` if given
+  without `merge`.
+- With `merge` set, `edge-mosaic` MAY additionally accept `prefer:
+  "parent" | "child" | None = None` (CLI: `--prefer`) to auto-resolve a
+  real parent/child column-name collision: `"parent"` keeps the parent's
+  column and drops the child's, `"child"` does the reverse. Omitting
+  `prefer` (the default) preserves raising `ValueError` on a real
+  collision. `prefer` MUST raise `ValueError` if given without `merge`,
+  or combined with any of `parent_include`/`parent_exclude`/
+  `child_include`/`child_exclude` (see `docs/reference/shared.md`,
+  `docs/adr/0077`, `docs/adr/0079`, `docs/adr/0083`, `docs/adr/0088`;
+  supersedes the child-orphan passthrough of `docs/adr/0078`).

@@ -30,16 +30,68 @@ def _split_commas(values: tuple[str, ...]) -> list[str]:
     return [v for raw in values for v in raw.split(",")]
 
 
-_MERGE_ALL_SENTINEL = "__ALL__"
+def _split_columns(value: str | None) -> list[str] | None:
+    """Comma-split a column-list flag's raw value, or None if unset."""
+    return value.split(",") if value is not None else None
 
 
-def _resolve_merge_flag(value: str | None) -> list[str] | bool:
-    """Turn --merge's raw CLI value into mosaic()/match()'s boolean-or-list."""
-    if value is None:
-        return False
-    if value == _MERGE_ALL_SENTINEL:
-        return True
-    return value.split(",")
+_MERGE_OPTIONS = (
+    click.option(
+        "--merge",
+        envvar="MERGE",
+        is_flag=True,
+        help=(
+            "Carry parent columns onto every matched child and keep an "
+            "unmatched parent/child unclipped in the output instead of "
+            "dropping it. Narrow the carried columns with "
+            "--parent-include/--parent-exclude/--child-include/"
+            "--child-exclude; resolve a real name collision automatically "
+            "with --prefer."
+        ),
+    ),
+    click.option(
+        "--parent-include",
+        envvar="PARENT_INCLUDE",
+        default=None,
+        help="Comma-separated parent columns to carry (requires --merge).",
+    ),
+    click.option(
+        "--parent-exclude",
+        envvar="PARENT_EXCLUDE",
+        default=None,
+        help="Comma-separated parent columns to omit (requires --merge).",
+    ),
+    click.option(
+        "--child-include",
+        envvar="CHILD_INCLUDE",
+        default=None,
+        help="Comma-separated child columns to keep (requires --merge).",
+    ),
+    click.option(
+        "--child-exclude",
+        envvar="CHILD_EXCLUDE",
+        default=None,
+        help="Comma-separated child columns to drop (requires --merge).",
+    ),
+    click.option(
+        "--prefer",
+        envvar="PREFER",
+        type=click.Choice(["parent", "child"]),
+        default=None,
+        help=(
+            "Resolve a real parent/child column-name collision by keeping "
+            "this side's column (requires --merge; mutually exclusive with "
+            "the --parent-*/--child-* narrowing flags)."
+        ),
+    ),
+)
+
+
+def _add_merge_options(f):  # noqa: ANN001, ANN202
+    """Apply the shared --merge option set to a command function."""
+    for option in reversed(_MERGE_OPTIONS):
+        f = option(f)
+    return f
 
 
 @click.group()
@@ -636,21 +688,7 @@ def change(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
-@click.option(
-    "--merge",
-    "merge_value",
-    envvar="MERGE",
-    is_flag=False,
-    flag_value=_MERGE_ALL_SENTINEL,
-    default=None,
-    help=(
-        "Carry parent columns onto every matched child and keep a "
-        "zero-overlap child's own extended geometry, unclipped, in the "
-        "output instead of dropping it. Bare --merge carries every parent "
-        "column; --merge iso_3,adm0_name narrows it to just those columns "
-        "(comma-separated)."
-    ),
-)
+@_add_merge_options
 @click.option(
     "--multi-parent",
     envvar="MULTI_PARENT",
@@ -678,7 +716,12 @@ def edge_match(  # noqa: PLR0913, PLR0917
     match_column: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
-    merge_value: str | None,
+    merge: bool,  # noqa: FBT001
+    parent_include: str | None,
+    parent_exclude: str | None,
+    child_include: str | None,
+    child_exclude: str | None,
+    prefer: str | None,
     multi_parent: bool,  # noqa: FBT001
 ) -> None:
     r"""Match one or more children layers to parents by largest overlap.
@@ -707,8 +750,12 @@ def edge_match(  # noqa: PLR0913, PLR0917
       topo-tools edge-match adm3.gpkg adm2.gpkg --match-column pcode
 
       \b
-      # Copy parent columns onto every matched child
-      topo-tools edge-match adm3.gpkg adm2.gpkg --merge iso_3,adm0_name
+      # Copy just iso_3/adm0_name onto every matched child
+      topo-tools edge-match adm3.gpkg adm2.gpkg --merge --parent-include iso_3,adm0_name
+
+      \b
+      # Keep the parent's version automatically on a name collision
+      topo-tools edge-match adm3.gpkg adm2.gpkg --merge --prefer parent
 
       \b
       # A poorly-digitized admin4 layer whose children legitimately
@@ -742,7 +789,12 @@ def edge_match(  # noqa: PLR0913, PLR0917
             match_column=match_column,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
-            merge_columns=_resolve_merge_flag(merge_value),
+            merge=merge,
+            parent_include=_split_columns(parent_include),
+            parent_exclude=_split_columns(parent_exclude),
+            child_include=_split_columns(child_include),
+            child_exclude=_split_columns(child_exclude),
+            prefer=prefer,
             multi_parent=multi_parent,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
@@ -821,21 +873,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
     default=None,
     help="Child-side code column, when it's named differently than the parent's.",
 )
-@click.option(
-    "--merge",
-    "merge_value",
-    envvar="MERGE",
-    is_flag=False,
-    flag_value=_MERGE_ALL_SENTINEL,
-    default=None,
-    help=(
-        "Carry parent columns onto every matched child and keep a parent "
-        "matched by zero children in the output, using the parent's own "
-        "geometry, instead of dropping it. Bare --merge carries every "
-        "parent column; --merge iso_3,adm0_name narrows it to just those "
-        "columns (comma-separated)."
-    ),
-)
+@_add_merge_options
 def edge_mosaic(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -850,7 +888,12 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
     match_column: str | None,
     parent_match_column: str | None,
     child_match_column: str | None,
-    merge_value: str | None,
+    merge: bool,  # noqa: FBT001
+    parent_include: str | None,
+    parent_exclude: str | None,
+    child_include: str | None,
+    child_exclude: str | None,
+    prefer: str | None,
 ) -> None:
     r"""Fit an already-extended children layer into a new parent/clip layer.
 
@@ -882,6 +925,11 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
       # Keep a parent's own boundary when no children file covers it
       topo-tools edge-mosaic "*/latest/adm4/extended.parquet" world_adm0.geojson \
         out.parquet --merge
+
+      \b
+      # Keep the parent's version automatically on a name collision
+      topo-tools edge-mosaic adm3_extended.parquet adm0_new.geojson \
+        --merge --prefer parent
     """
     logger.info("--debug=%s", debug)
     if any(ch in input_file for ch in "*?["):
@@ -910,7 +958,12 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
             match_column=match_column,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
-            merge_columns=_resolve_merge_flag(merge_value),
+            merge=merge,
+            parent_include=_split_columns(parent_include),
+            parent_exclude=_split_columns(parent_exclude),
+            child_include=_split_columns(child_include),
+            child_exclude=_split_columns(child_exclude),
+            prefer=prefer,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e

@@ -27,26 +27,41 @@ def _build_issues(
     name: str,
     *,
     code_join: bool = False,
+    passthrough: bool = False,
     fill_gaps: bool = False,
 ) -> None:
     """Build `{name}_05`: every unassigned child, plus gap-fill rows and gaps."""
     table = f"{name}_04"
+    short_source_file = (
+        "array_to_string(list_slice(str_split(source_file, '/'), -2, -1), '/')"
+    )
     parts = [
-        f"""
-        SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
-               child_fid AS unit_a, NULL::BIGINT AS parent_fid,
-               NULL::VARCHAR AS reason, {_ISSUE_COLUMNS}, source_file, geom
-        FROM "{name}_02_unassigned"
-        """,
         f"""
         SELECT 'clip-empty-' || fid AS key, 'clip-empty' AS kind,
                fid AS unit_a, parent_fid,
                'clip intersection with its assigned parent was empty' AS reason,
-               {_ISSUE_COLUMNS}, source_file, geom
+               {_ISSUE_COLUMNS}, {short_source_file} AS source_file, geom
         FROM "{name}_03_dropped"
         """,
         gap_issues_sql(conn, table),
     ]
+    if passthrough:
+        parts.append(f"""
+        SELECT 'passthrough-' || fid AS key, 'passthrough' AS kind,
+               fid AS unit_a, NULL::BIGINT AS parent_fid,
+               NULL::VARCHAR AS reason, {_ISSUE_COLUMNS},
+               {short_source_file} AS source_file, geom
+        FROM "{name}_child_01"
+        WHERE fid IN (SELECT child_fid FROM "{name}_02_unassigned")
+        """)
+    else:
+        parts.append(f"""
+        SELECT 'unassigned-' || child_fid AS key, 'unassigned' AS kind,
+               child_fid AS unit_a, NULL::BIGINT AS parent_fid,
+               NULL::VARCHAR AS reason, {_ISSUE_COLUMNS},
+               {short_source_file} AS source_file, geom
+        FROM "{name}_02_unassigned"
+        """)
     if fill_gaps:
         parts.append(f"""
         SELECT 'gap-fill-' || parent_fid AS key, 'gap-fill' AS kind,
@@ -56,7 +71,15 @@ def _build_issues(
         FROM "{name}_02_gap_fill"
         """)
     if code_join:
-        parts.append(assign_issue_rows_sql(name, source_file_expr="c.source_file"))
+        parts.append(
+            assign_issue_rows_sql(
+                name,
+                source_file_expr=(
+                    "array_to_string("
+                    "list_slice(str_split(c.source_file, '/'), -2, -1), '/')"
+                ),
+            )
+        )
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_05" AS
         {" UNION ALL BY NAME ".join(parts)}
@@ -70,13 +93,16 @@ def main(  # noqa: PLR0913
     issues_dest: Path,
     *,
     code_join: bool = False,
+    passthrough: bool = False,
     fill_gaps: bool = False,
     debug: bool = False,
 ) -> None:
     """Output the mosaicked layer + issues report to dest/issues_dest."""
     check_valid_topology(conn, f"{name}_04")
 
-    _build_issues(conn, name, code_join=code_join, fill_gaps=fill_gaps)
+    _build_issues(
+        conn, name, code_join=code_join, passthrough=passthrough, fill_gaps=fill_gaps
+    )
 
     remaining = conn.execute(f"""--sql
         SELECT COUNT(*) FROM "{name}_05" WHERE kind = 'gap'
@@ -89,10 +115,15 @@ def main(  # noqa: PLR0913
             remaining,
         )
 
-    export_geometry_table(conn, f"{name}_04", dest)
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TEMP VIEW "{name}_04_export" AS
+        SELECT * EXCLUDE (source_file) FROM "{name}_04"
+    """)
+    export_geometry_table(conn, f"{name}_04_export", dest)
     export_issues_table(conn, f"{name}_05", issues_dest)
 
     if not debug:
+        conn.execute(f'DROP VIEW IF EXISTS "{name}_04_export"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_parent_01"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_pairs"')

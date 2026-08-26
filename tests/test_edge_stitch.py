@@ -5,14 +5,18 @@ on coverage violations, so a run that completes without raising has already
 been vetted for correctness by the pipeline itself.
 """
 
+from pathlib import Path
+
 import duckdb
 import pytest
 from click.testing import CliRunner
 
 from topo_tools.api.edge_stitch import stitch
 from topo_tools.cli.main import cli
+from topo_tools.core.coverage import has_invalid_edges
 
 _STEPS = ["inputs", "clean", "outputs"]
+_FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 def _frame_wkt(gap: float) -> list[tuple[int, str]]:
@@ -85,6 +89,32 @@ def test_stitch_closes_small_seam_gap(tiny_gap_input, tmp_path):
         conn.execute("LOAD spatial")
         row_count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
     assert row_count == expected_row_count
+
+
+def test_stitch_drops_preexisting_source_file_column(tmp_path):
+    """A source_file column already on the input must not survive into the output."""
+    path = tmp_path / "tagged.parquet"
+    values = ", ".join(
+        f"({fid}, 'orig.parquet', ST_GeomFromText('{wkt}'))"
+        for fid, wkt in _frame_wkt(1e-9)
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) "
+            "AS t(id, source_file, geom)"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+
+    output_path = tmp_path / "out.parquet"
+    stitch(path, output_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        columns = {
+            row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+        }
+    assert "source_file" not in columns
 
 
 def test_stitch_tolerates_unclosed_gap(large_gap_input, tmp_path):
@@ -170,6 +200,30 @@ def test_stitch_multi_file_api(tiny_gap_split, tmp_path):
         conn.execute("LOAD spatial")
         row_count = conn.execute(f"SELECT COUNT(*) FROM '{output_path}'").fetchone()[0]
     assert row_count == expected_row_count
+
+
+def test_coincident_boundary_fixture_is_invalid_at_default_tolerance():
+    """Guards the fixture itself: it must still repro INVALID_EDGES pre-fix."""
+    path = _FIXTURES_DIR / "edge_stitch_coincident_boundary.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"CREATE TABLE fixture AS SELECT * FROM '{path}'")
+        assert has_invalid_edges(conn, "fixture")
+
+
+def test_stitch_resolves_coincident_boundary_drift(tmp_path):
+    """Two real adjacent units whose shared border coincides with the clip boundary."""
+    path = _FIXTURES_DIR / "edge_stitch_coincident_boundary.parquet"
+    output_path = tmp_path / "out.parquet"
+    stitch(path, output_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE out AS SELECT * EXCLUDE (geometry), geometry AS geom "
+            f"FROM '{output_path}'"
+        )
+        assert not has_invalid_edges(conn, "out")
 
 
 def test_stitch_multi_file_requires_output_path(tiny_gap_split):

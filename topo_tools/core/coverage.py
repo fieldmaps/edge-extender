@@ -4,7 +4,11 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.constants import SNAP_TOLERANCE
+from topo_tools.core.constants import (
+    SNAP_ESCALATION_MAX_STEPS,
+    SNAP_ESCALATION_STEP,
+    SNAP_TOLERANCE,
+)
 from topo_tools.core.units import METERS_PER_DEGREE, m2_per_deg2_factor
 
 logger = getLogger(__name__)
@@ -229,3 +233,35 @@ def coverage_clean(  # noqa: PLR0913 (each param is a distinct required input, n
         FROM "{table_in}" t
         LEFT JOIN mapping m USING (fid)
     """)
+
+
+def coverage_clean_escalating(
+    conn: DuckDBPyConnection,
+    table_in: str,
+    table_out: str,
+    *,
+    fids: list[int] | None,
+    gap_maximum_width: float | None = SNAP_TOLERANCE,
+) -> None:
+    """Coverage-clean, widening snapping_distance only as far as needed."""
+    snap = SNAP_TOLERANCE
+    for step in range(SNAP_ESCALATION_MAX_STEPS + 1):
+        coverage_clean(
+            conn,
+            table_in,
+            table_out,
+            fids=fids,
+            gap_maximum_width=gap_maximum_width,
+            snapping_distance=snap,
+        )
+        if not has_invalid_edges(conn, table_out):
+            if step:
+                logger.info(
+                    "coverage-clean: resolved invalid edges by escalating "
+                    "snapping_distance to %s (step %d) on %s",
+                    snap,
+                    step,
+                    table_out,
+                )
+            return
+        snap += SNAP_ESCALATION_STEP

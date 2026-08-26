@@ -152,26 +152,42 @@ instead of dropping the child/file.
 ## Carry-forward columns (optional)
 
 Both `assign_many` and `assign_one` accept an optional `carry_columns` list
-of parent column names. `None` (the default) leaves `_02_assign`'s schema
-unchanged. When given, each name is projected from `{name}_parent_01` onto
-every matched child row, joined on the already-resolved `parent_fid` (after
-any code-column join above has picked a winner), so it costs one extra join
-regardless of which path assigned the parent. Column names are always
-caller-specified, never inferred from either layer's schema, matching this
-project's structural (not name/value-based) matching philosophy elsewhere
-(see `docs/explanation/schema_map.md`). A name colliding with `_02_assign`'s
-own reserved columns (`child_fid`, `parent_fid`, `assignment_method`,
-`spatial_agrees`) raises `ValueError`; a name already present on the child
-layer's own schema also raises `ValueError`, via an explicit `DESCRIBE`
-pre-check, not left to the SQL layer to reject on its own (DuckDB silently
-renames/dedups a duplicate `SELECT` column instead of erroring, see
-`docs/adr/0077`).
+of parent column names and an optional `child_columns` list of child column
+names. `None` (the default, for both) leaves `_02_assign`'s schema
+unchanged. When `carry_columns` is given, each name is projected from
+`{name}_parent_01` onto every matched child row, joined on the
+already-resolved `parent_fid` (after any code-column join above has picked
+a winner), so it costs one extra join regardless of which path assigned
+the parent. Column names are always caller-specified, never inferred from
+either layer's schema, matching this project's structural (not
+name/value-based) matching philosophy elsewhere (see
+`docs/explanation/schema_map.md`). A name colliding with `_02_assign`'s own
+reserved columns (`child_fid`, `parent_fid`, `assignment_method`,
+`spatial_agrees`) raises `ValueError`; a name already present on the
+child's own resolved column list (`child_columns` when given, else the raw
+`{name}_child_01` schema via `DESCRIBE`) also raises `ValueError`, not left
+to the SQL layer to reject on its own (DuckDB silently renames/dedups a
+duplicate `SELECT` column instead of erroring, see `docs/adr/0077`).
+Checking against the resolved `child_columns` rather than the raw schema
+means a column narrowed away by `--child-exclude` no longer false-positives
+this collision check.
 
-Children with no parent match (`_02_unassigned`) never gain these columns.
-A caller that keeps such rows in its own output regardless (e.g.
-`edge-mosaic`'s `--merge`, see `docs/explanation/edge_mosaic.md`) gets
-`NULL` for all of them automatically via that caller's own `UNION ALL BY
-NAME`.
+Both lists are resolved once per call by `core.assign.resolve_merge_columns()`
+(itself built on `resolve_column_selection()`, and gated by
+`validate_merge_flags()`'s mutual-exclusion/require-`merge` checks), shared
+by `edge-mosaic`'s and `edge-match`'s api layers: `parent_include`/
+`parent_exclude` narrow `carry_columns` (always dropping `fid`/`geom`),
+`child_include`/`child_exclude` narrow `child_columns` (always keeping
+`fid`/`geom`/`source_file`), and `prefer` (`"parent"`/`"child"`) drops the
+losing side's column wherever both lists name the same column, resolving a
+collision automatically instead of raising.
+
+Children with no parent match (`_02_unassigned`) never gain the carried
+columns. A caller that keeps such rows in its own output regardless (child
+passthrough, or a zero-children parent kept via `core.assign.fill_unmatched_parents()`;
+see `docs/explanation/edge_mosaic.md`/`docs/explanation/edge_match.md`)
+gets `NULL` for all of them automatically via that caller's own `UNION ALL
+BY NAME`.
 
 ## Comparison
 

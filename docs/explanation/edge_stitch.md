@@ -36,9 +36,11 @@ Run `topo-tools edge-stitch --help` for the full, always-current option list.
    `core.assign.load_children` uses for its own multi-file combine, since
    the whole-table clean pass in `_02_clean` needs a single tiled layer to
    work over.
-2. **`_02_clean`**: one whole-table `ST_CoverageClean` pass (`fids=None`),
-   relying on `coverage_clean()`'s default
-   `gap_maximum_width=snapping_distance=SNAP_TOLERANCE` (`docs/adr/0040`).
+2. **`_02_clean`**: `coverage_clean_escalating()`, one whole-table
+   `ST_CoverageClean` pass (`fids=None`) at `SNAP_TOLERANCE`, retrying at
+   `SNAP_TOLERANCE + SNAP_ESCALATION_STEP * step` (up to
+   `SNAP_ESCALATION_MAX_STEPS`) only if invalid edges remain after the
+   first pass.
 3. **`_03_outputs`**: `check_valid_topology()`, relying on its default
    `gap_maximum_width=SNAP_TOLERANCE`, the same call `edge-match`/`edge-mosaic` make
    (see `docs/adr/0038`, `docs/adr/0039`), then export: raises on any
@@ -72,6 +74,24 @@ reverted twice, see `docs/explanation/edge_match.md`) made no measurable
 difference, confirming the gap is a real geometric disagreement between
 tiles, not float noise from a shared vertex computed twice by two
 independent calls.
+
+## Coincident-boundary edge drift: why `_02_clean` escalates
+
+Two adjacent tiles whose shared border runs coincident with a clip
+boundary (not just crossing it at a point, but tracing along it for a
+stretch) can come out of independent clipping with mismatched edges,
+even when their input vertices along that stretch were byte-identical
+beforehand: each `ST_Intersection(child, parent)` call re-nodes the
+*entire* input polygon in one pass, and GEOS's internal floating-point
+processing of the rest of each polygon's distinct geometry can perturb
+how it resolves that shared, degenerate stretch differently per call.
+Neither pre-snapping a child onto the parent boundary nor an explicit
+shared vertex at the crossing point prevents this: the divergence is
+introduced by the independent overlay computation itself, not by
+underdetermined input. `coverage_clean_escalating()` (`core/coverage.py`)
+reconciles it after the fact instead, widening `snapping_distance` only
+as far as needed, one `SNAP_TOLERANCE` step at a time, up to
+`SNAP_ESCALATION_MAX_STEPS` (see `docs/adr/0089`).
 
 ## No coverage pre-check; issues report is gap-only
 

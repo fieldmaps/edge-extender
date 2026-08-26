@@ -43,6 +43,7 @@ def main(  # noqa: PLR0913
     threads: int | None,
     debug: bool = False,
     carry_columns: list[str] | None = None,
+    child_columns: list[str] | None = None,
     passthrough: bool = False,
 ) -> None:
     """Loop over all groups sequentially, each isolated in its own subprocess.
@@ -59,9 +60,14 @@ def main(  # noqa: PLR0913
     """)
 
     carry_sql = "".join(f', a."{c}" AS "{c}"' for c in (carry_columns or []))
+    child_select_cols = (
+        ", ".join(f'c."{c}"' for c in child_columns)
+        if child_columns is not None
+        else "c.*"
+    )
     for parent_fid in list_groups(conn, name):
         child_select_sql = f"""--sql
-            SELECT c.*{carry_sql}
+            SELECT {child_select_cols}{carry_sql}
             FROM "{name}_child_01" c
             JOIN "{name}_02_assign" a ON a.child_fid = c.fid
             WHERE a.parent_fid = {parent_fid}
@@ -86,7 +92,7 @@ def main(  # noqa: PLR0913
         ).fetchone()[0]
         if orphan_count:
             child_select_sql = f"""--sql
-                SELECT c.* FROM "{name}_child_01" c
+                SELECT {child_select_cols} FROM "{name}_child_01" c
                 WHERE c.fid IN (SELECT child_fid FROM "{name}_02_unassigned")
             """
             fids_sql = f'SELECT child_fid FROM "{name}_02_unassigned"'

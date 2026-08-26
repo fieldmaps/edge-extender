@@ -8,9 +8,12 @@ from duckdb import DuckDBPyConnection
 from topo_tools.core.assign import (
     assign_one,
     child_bbox_extent,
+    fill_unmatched_parents,
     load_children,
     load_parent,
     prepare_parent_tiles,
+    resolve_merge_columns,
+    validate_merge_flags,
 )
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
@@ -40,21 +43,6 @@ _STEP_TABLES = {
 }
 
 
-def _resolve_merge_columns(
-    conn: DuckDBPyConnection, name: str, *, merge_columns: list[str] | bool
-) -> list[str] | None:
-    """Resolve True to every `{name}_parent_01` column except fid/geom."""
-    if merge_columns is False:
-        return None
-    if merge_columns is True:
-        return [
-            row[0]
-            for row in conn.execute(f'DESCRIBE "{name}_parent_01"').fetchall()
-            if row[0] not in ("fid", "geom")
-        ]
-    return merge_columns
-
-
 def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
     input_paths: str | Path | list[str | Path],
     clip_path: str | Path,
@@ -69,7 +57,12 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
     match_column: str | None = None,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
-    merge_columns: list[str] | bool = False,
+    merge: bool = False,
+    parent_include: list[str] | None = None,
+    parent_exclude: list[str] | None = None,
+    child_include: list[str] | None = None,
+    child_exclude: list[str] | None = None,
+    prefer: str | None = None,
 ) -> None:
     """Fit one or more already-extended children layers into a new parent/clip layer."""
     if match_column is not None and (parent_match_column or child_match_column):
@@ -84,7 +77,15 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
-    passthrough = bool(merge_columns)
+    validate_merge_flags(
+        merge=merge,
+        parent_include=parent_include,
+        parent_exclude=parent_exclude,
+        child_include=child_include,
+        child_exclude=child_exclude,
+        prefer=prefer,
+    )
+    passthrough = merge
 
     if isinstance(input_paths, (str, Path)):
         paths = [resolve_input_path(input_paths)]
@@ -142,10 +143,16 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 debug=debug,
                 parent_match_column=parent_match_column,
                 child_match_column=child_match_column,
-                merge_columns=merge_columns,
+                merge=merge,
+                parent_include=parent_include,
+                parent_exclude=parent_exclude,
+                child_include=child_include,
+                child_exclude=child_exclude,
+                prefer=prefer,
             )
         else:
-            resolved_merge: list[str] | None = None
+            resolved_parent_columns: list[str] | None = None
+            resolved_child_columns: list[str] | None = None
             merge_resolved = False
             for s in _STEP_ORDER:
                 if step and step != s:
@@ -162,8 +169,17 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         """)
                 elif s == "assign":
                     if not merge_resolved:
-                        resolved_merge = _resolve_merge_columns(
-                            conn, name, merge_columns=merge_columns
+                        resolved_parent_columns, resolved_child_columns = (
+                            resolve_merge_columns(
+                                conn,
+                                name,
+                                merge=merge,
+                                parent_include=parent_include,
+                                parent_exclude=parent_exclude,
+                                child_include=child_include,
+                                child_exclude=child_exclude,
+                                prefer=prefer,
+                            )
                         )
                         merge_resolved = True
                     assign_one(
@@ -171,12 +187,22 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         name,
                         parent_match_column=parent_match_column,
                         child_match_column=child_match_column,
-                        carry_columns=resolved_merge,
+                        carry_columns=resolved_parent_columns,
+                        child_columns=resolved_child_columns,
                     )
                 elif s == "clip":
                     if not merge_resolved:
-                        resolved_merge = _resolve_merge_columns(
-                            conn, name, merge_columns=merge_columns
+                        resolved_parent_columns, resolved_child_columns = (
+                            resolve_merge_columns(
+                                conn,
+                                name,
+                                merge=merge,
+                                parent_include=parent_include,
+                                parent_exclude=parent_exclude,
+                                child_include=child_include,
+                                child_exclude=child_exclude,
+                                prefer=prefer,
+                            )
                         )
                         merge_resolved = True
                     clip.main(
@@ -185,15 +211,17 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         tmp_dir_path,
                         threads=threads,
                         debug=debug,
-                        carry_columns=resolved_merge,
+                        carry_columns=resolved_parent_columns,
+                        child_columns=resolved_child_columns,
+                        passthrough=passthrough,
                         result_table=f"{name}_03",
                         raise_if_empty=False,
                     )
                     if passthrough:
-                        clip.fill_gaps(
+                        fill_unmatched_parents(
                             conn,
                             name,
-                            carry_columns=resolved_merge,
+                            carry_columns=resolved_parent_columns,
                             result_table=f"{name}_03",
                             parent_snapshot_table=f"{name}_parent_full",
                         )
@@ -212,6 +240,7 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         output_path,
                         issues_path,
                         code_join=bool(parent_match_column and child_match_column),
+                        passthrough=passthrough,
                         fill_gaps=passthrough,
                         debug=debug,
                     )
@@ -256,7 +285,12 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
     debug: bool,
     parent_match_column: str | None,
     child_match_column: str | None,
-    merge_columns: list[str] | bool,
+    merge: bool,
+    parent_include: list[str] | None,
+    parent_exclude: list[str] | None,
+    child_include: list[str] | None,
+    child_exclude: list[str] | None,
+    prefer: str | None,
 ) -> None:
     """Assign/clip one children file at a time, sharing one already-loaded parent."""
     load_parent(conn, name, clip_path)
@@ -265,8 +299,21 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
     """)
 
     combined_bbox: tuple[float, float, float, float] | None = None
-    for child_path in paths:
+    resolved_parent_columns: list[str] | None = None
+    resolved_child_columns: list[str] | None = None
+    for i, child_path in enumerate(paths):
         load_children(conn, name, [child_path])
+        if i == 0:
+            resolved_parent_columns, resolved_child_columns = resolve_merge_columns(
+                conn,
+                name,
+                merge=merge,
+                parent_include=parent_include,
+                parent_exclude=parent_exclude,
+                child_include=child_include,
+                child_exclude=child_exclude,
+                prefer=prefer,
+            )
         bbox = child_bbox_extent(conn, name)
         if bbox is not None:
             combined_bbox = (
@@ -275,8 +322,7 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
         conn.execute(f'DROP TABLE IF EXISTS "{name}_child_01"')
     prepare_parent_tiles(conn, name, child_bbox=combined_bbox)
 
-    resolved_merge = _resolve_merge_columns(conn, name, merge_columns=merge_columns)
-    passthrough = bool(merge_columns)
+    passthrough = merge
 
     acc_child = f"{name}_child_01_acc"
     acc_assign = f"{name}_02_assign_acc"
@@ -299,7 +345,8 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
             use_cached_tiles=True,
             parent_match_column=parent_match_column,
             child_match_column=child_match_column,
-            carry_columns=resolved_merge,
+            carry_columns=resolved_parent_columns,
+            child_columns=resolved_child_columns,
         )
         clip.main(
             conn,
@@ -307,7 +354,9 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
             tmp_dir_path,
             threads=threads,
             debug=debug,
-            carry_columns=resolved_merge,
+            carry_columns=resolved_parent_columns,
+            child_columns=resolved_child_columns,
+            passthrough=passthrough,
             result_table=f"{name}_03_iter",
             raise_if_empty=False,
         )
@@ -334,10 +383,10 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
     conn.execute(f'ALTER TABLE "{acc_dropped}" RENAME TO "{name}_03_dropped"')
 
     if passthrough:
-        clip.fill_gaps(
+        fill_unmatched_parents(
             conn,
             name,
-            carry_columns=resolved_merge,
+            carry_columns=resolved_parent_columns,
             result_table=f"{name}_03",
             parent_snapshot_table=f"{name}_parent_full",
         )
@@ -363,6 +412,7 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
         output_path,
         issues_path,
         code_join=bool(parent_match_column and child_match_column),
+        passthrough=passthrough,
         fill_gaps=passthrough,
         debug=debug,
     )

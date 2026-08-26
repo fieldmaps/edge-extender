@@ -12,6 +12,8 @@ import pytest
 from click.testing import CliRunner
 
 import topo_tools.core.edge_extend.attempt as attempt_module
+from topo_tools.api.edge_extend import extend
+from topo_tools.api.edge_match import match
 from topo_tools.api.edge_mosaic import mosaic
 from topo_tools.cli.main import cli
 
@@ -349,12 +351,12 @@ def test_mosaic_multi_file_api(synthetic_children_split, synthetic_parents, tmp_
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        rows = conn.execute(
-            f"SELECT id, source_file FROM '{output_path}' ORDER BY id"
-        ).fetchall()
+        columns = {
+            row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+        }
+        rows = conn.execute(f"SELECT id FROM '{output_path}' ORDER BY id").fetchall()
+    assert "source_file" not in columns
     assert [r[0] for r in rows] == [1, 2]
-    assert rows[0][1] == str(synthetic_children_split[0])
-    assert rows[1][1] == str(synthetic_children_split[1])
 
 
 def test_mosaic_multi_file_requires_output_path(
@@ -581,7 +583,8 @@ def test_mosaic_merge_columns_populates_output(tmp_path):
         children_path,
         parents_path,
         output_path,
-        merge_columns=["pcode"],
+        merge=True,
+        parent_include=["pcode"],
         overwrite=True,
     )
 
@@ -600,7 +603,7 @@ def test_mosaic_merge_bare_carries_every_parent_column(tmp_path):
     _write_synthetic(children_path, [_CHILD_WKT[0]])
 
     output_path = tmp_path / "out.parquet"
-    mosaic(children_path, parents_path, output_path, merge_columns=True, overwrite=True)
+    mosaic(children_path, parents_path, output_path, merge=True, overwrite=True)
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
@@ -628,7 +631,8 @@ def test_mosaic_gap_fill_keeps_unmatched_parent(tmp_path):
         parents_path,
         output_path,
         issues_path,
-        merge_columns=["pcode"],
+        merge=True,
+        parent_include=["pcode"],
         overwrite=True,
     )
 
@@ -664,7 +668,8 @@ def test_mosaic_gap_fill_still_reports_clip_empty_children(tmp_path):
         parents_path,
         output_path,
         issues_path,
-        merge_columns=["pcode"],
+        merge=True,
+        parent_include=["pcode"],
         overwrite=True,
     )
 
@@ -697,7 +702,8 @@ def test_mosaic_gap_fill_merged_columns_populated(tmp_path):
         children_path,
         parents_path,
         output_path,
-        merge_columns=["pcode"],
+        merge=True,
+        parent_include=["pcode"],
         overwrite=True,
     )
 
@@ -748,6 +754,118 @@ def test_cli_merge_help():
     result = CliRunner().invoke(cli, ["edge-mosaic", "--help"])
     assert result.exit_code == 0
     assert "--merge" in result.output
+
+
+def test_mosaic_child_exclude_drops_named_child_column(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_parent_pcode_only(
+        parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")]
+    )
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    output_path = tmp_path / "out.parquet"
+    mosaic(
+        children_path,
+        parents_path,
+        output_path,
+        merge=True,
+        child_exclude=["id"],
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        columns = {
+            row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+        }
+    assert "id" not in columns
+    assert "pcode" in columns
+
+
+def test_mosaic_narrowing_flag_without_merge_raises(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    with pytest.raises(ValueError, match="require merge"):
+        mosaic(
+            children_path,
+            parents_path,
+            tmp_path / "out.parquet",
+            parent_include=["pcode"],
+            overwrite=True,
+        )
+
+
+def test_mosaic_prefer_mutually_exclusive_with_narrowing_flags(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_synthetic(children_path, [_CHILD_WKT[0]])
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        mosaic(
+            children_path,
+            parents_path,
+            tmp_path / "out.parquet",
+            merge=True,
+            prefer="parent",
+            parent_include=["pcode"],
+            overwrite=True,
+        )
+
+
+def test_mosaic_prefer_parent_resolves_real_collision(tmp_path):
+    """id/geom/pcode all overlap between the two layers; pcode is the real collision."""
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))", "CHILDVAL")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    mosaic(
+        children_path,
+        parents_path,
+        output_path,
+        merge=True,
+        prefer="parent",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        pcode = conn.execute(f"SELECT pcode FROM '{output_path}'").fetchone()[0]
+    assert pcode == "P1"
+
+
+def test_mosaic_prefer_child_resolves_real_collision(tmp_path):
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(parents_path, [(1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1")])
+    children_path = tmp_path / "children.parquet"
+    _write_with_code(
+        children_path,
+        [(1, "POLYGON((0.5 0.5, 1 0.5, 1 1, 0.5 1, 0.5 0.5))", "CHILDVAL")],
+    )
+
+    output_path = tmp_path / "out.parquet"
+    mosaic(
+        children_path,
+        parents_path,
+        output_path,
+        merge=True,
+        prefer="child",
+        overwrite=True,
+    )
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        pcode = conn.execute(f"SELECT pcode FROM '{output_path}'").fetchone()[0]
+    assert pcode == "CHILDVAL"
 
 
 def test_mosaic_multi_file_zero_overlap_file_does_not_abort_batch(tmp_path):
@@ -822,13 +940,12 @@ def test_mosaic_multi_file_code_join_fid_stays_unique(tmp_path):
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
-        rows = conn.execute(
-            f"SELECT id, source_file FROM '{output_path}' ORDER BY id"
-        ).fetchall()
+        columns = {
+            row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+        }
+        rows = conn.execute(f"SELECT id FROM '{output_path}' ORDER BY id").fetchall()
+    assert "source_file" not in columns
     assert [r[0] for r in rows] == [1, 2, 3]
-    assert rows[0][1] == str(file_a)
-    assert rows[1][1] == str(file_b)
-    assert rows[2][1] == str(file_c)
 
 
 def test_mosaic_multi_file_step_rejected(
@@ -842,3 +959,57 @@ def test_mosaic_multi_file_step_rejected(
             step="assign",
             overwrite=True,
         )
+
+
+def test_match_and_mosaic_merge_give_identical_results(tmp_path):
+    """edge-match on raw children == edge-mosaic on their edge-extend()ed version.
+
+    Same --merge parent-column carry and parent gap-fill outcome either way,
+    proving the two tools' --merge behavior is a true superset relationship.
+    """
+    parents_path = tmp_path / "parents.parquet"
+    _write_with_code(
+        parents_path,
+        [
+            (1, "POLYGON((0 0, 3 0, 3 3, 0 3, 0 0))", "P1"),
+            (2, "POLYGON((10 0, 13 0, 13 3, 10 3, 10 0))", "P2"),
+        ],
+    )
+    raw_children_path = tmp_path / "children.parquet"
+    _write_synthetic(raw_children_path, [_CHILD_WKT[0]])  # only overlaps Parent A
+
+    extended_children_path = tmp_path / "children_extended.parquet"
+    extend(raw_children_path, extended_children_path, overwrite=True)
+
+    match_out = tmp_path / "match_out.parquet"
+    match(
+        raw_children_path,
+        parents_path,
+        match_out,
+        merge=True,
+        parent_include=["pcode"],
+        overwrite=True,
+    )
+    mosaic_out = tmp_path / "mosaic_out.parquet"
+    mosaic(
+        extended_children_path,
+        parents_path,
+        mosaic_out,
+        merge=True,
+        parent_include=["pcode"],
+        overwrite=True,
+    )
+
+    # A normally-clipped row's parent_fid is dropped by the shared clip
+    # engine (only a gap-fill row sets it explicitly), so compare on pcode.
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        match_pcodes = {
+            row[0]
+            for row in conn.execute(f"SELECT pcode FROM '{match_out}'").fetchall()
+        }
+        mosaic_pcodes = {
+            row[0]
+            for row in conn.execute(f"SELECT pcode FROM '{mosaic_out}'").fetchall()
+        }
+    assert match_pcodes == mosaic_pcodes == {"P1", "P2"}

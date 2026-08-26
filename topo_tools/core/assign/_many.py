@@ -11,13 +11,14 @@ from topo_tools.core.duckdb_utils import bbox_columns_sql
 logger = getLogger(__name__)
 
 
-def assign_many(
+def assign_many(  # noqa: PLR0913
     conn: DuckDBPyConnection,
     name: str,
     *,
     parent_match_column: str | None = None,
     child_match_column: str | None = None,
     carry_columns: list[str] | None = None,
+    child_columns: list[str] | None = None,
 ) -> None:
     """Assign each child to its plurality-overlap parent; drop and log the rest."""
     # Bbox columns precomputed here, not called inline in the join below:
@@ -117,7 +118,7 @@ def assign_many(
         """)
     conn.execute(f'DROP TABLE IF EXISTS "{name}_02_tmp3"')
 
-    _carry_forward_columns(conn, name, carry_columns)
+    _carry_forward_columns(conn, name, carry_columns, child_columns)
 
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_unassigned" AS
