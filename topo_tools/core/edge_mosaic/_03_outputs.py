@@ -67,7 +67,8 @@ def _build_issues(
                NULL::BIGINT AS unit_a, parent_fid,
                'parent had no matched children; kept unclipped in the output' AS reason,
                {_ISSUE_COLUMNS}, NULL::VARCHAR AS source_file, geom
-        FROM "{name}_02_gap_fill"
+        FROM "{table}"
+        WHERE parent_fid IS NOT NULL
         """)
     if code_join:
         parts.append(
@@ -125,6 +126,5 @@ def main(  # noqa: PLR0913
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_assign"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_unassigned"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_03_dropped"')
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_02_gap_fill"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_04"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_05"')

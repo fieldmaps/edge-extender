@@ -272,7 +272,7 @@ def _fold(
         """)
 
 
-def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
+def _mosaic_multi_file(  # noqa: C901, PLR0913, PLR0915, PLR0917
     conn: DuckDBPyConnection,
     name: str,
     paths: list[Path],
@@ -383,12 +383,21 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
     conn.execute(f'ALTER TABLE "{acc_dropped}" RENAME TO "{name}_03_dropped"')
 
     if passthrough:
+        # The last loop iteration left _parent_01 narrowed to its own
+        # file's matched fids; restore it before gap-fill needs every fid.
+        conn.execute(f"""--sql
+            CREATE OR REPLACE TABLE "{name}_parent_01" AS
+            SELECT * FROM "{name}_parent_full"
+        """)
+    if not debug:
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_parent_full"')
+    if passthrough:
         fill_unmatched_parents(
             conn,
             name,
             carry_columns=resolved_parent_columns,
             result_table=f"{name}_03",
-            parent_snapshot_table=f"{name}_parent_full",
+            parent_snapshot_table=f"{name}_parent_01",
         )
 
     count = conn.execute(f'SELECT COUNT(*) FROM "{name}_03"').fetchone()[0]
@@ -401,7 +410,6 @@ def _mosaic_multi_file(  # noqa: PLR0913, PLR0915, PLR0917
     """)
 
     if not debug:
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_parent_full"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_parent_parts"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_parent_tiles"')
 

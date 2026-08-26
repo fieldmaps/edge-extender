@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-26
+
+### Fixed
+
+- `fill_unmatched_parents()` (the `--merge` gap-fill step) now inserts
+  one unmatched parent's geometry at a time instead of building a
+  scratch table of every unmatched parent and rebuilding the whole
+  result table in one `UNION ALL BY NAME`, fixing a memory blowup
+  gap-filling against a true global-scale parent (verified against the
+  real ~730MB fieldmaps global adm0 parent).
+- `edge-match`'s and `edge-mosaic`'s multi-file paths no longer keep a
+  redundant full copy of the parent table alive alongside an
+  already-identical one, just to feed gap-fill.
+
 ## [0.5.1] - 2026-08-26
 
 ### Added
@@ -317,7 +331,9 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.2.0...v0.3.0

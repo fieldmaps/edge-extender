@@ -1,17 +1,12 @@
 [project]
 name = "topo-tools"
-version = "0.5.1"
+version = "0.5.2"
 description = "DuckDB-powered geospatial topology utilities (edge-matching, topology cleaning, more)"
 readme = "README.md"
 license = "MIT"
-authors = [{ name = "fieldmaps.io" }]
+authors = [{ name = "Maxym Malynowsky", email = "maxym.malynowsky@un.org" }]
 requires-python = ">=3.10"
-dependencies = [
-    "click",
-    "duckdb>=1.5.5",
-    "psutil",
-    "pyyaml>=6.0.3",
-]
+dependencies = ["click", "duckdb>=1.5.5", "psutil", "pyyaml>=6.0.3"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

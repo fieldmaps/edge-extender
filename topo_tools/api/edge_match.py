@@ -396,6 +396,8 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
         CREATE OR REPLACE TABLE "{name}_parent_01" AS
         SELECT * FROM "{name}_parent_full"
     """)
+    if not debug:
+        conn.execute(f'DROP TABLE IF EXISTS "{name}_parent_full"')
 
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_parent_parts"')
@@ -415,12 +417,14 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
         conn, name, tmp_dir_path, threads=threads, debug=debug, passthrough=passthrough
     )
     if passthrough:
+        # _parent_01 was restored to full above, identical to _parent_full,
+        # and clip only reads it, so it's still safe to reuse here.
         fill_unmatched_parents(
             conn,
             name,
             carry_columns=resolved_parent_columns,
             result_table=f"{name}_04",
-            parent_snapshot_table=f"{name}_parent_full",
+            parent_snapshot_table=f"{name}_parent_01",
         )
     stitch.main(conn, name, debug=debug)
     outputs.main(
@@ -433,6 +437,3 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
         fill_gaps=passthrough,
         debug=debug,
     )
-
-    if not debug:
-        conn.execute(f'DROP TABLE IF EXISTS "{name}_parent_full"')
