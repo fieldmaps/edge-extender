@@ -216,21 +216,25 @@ def coverage_clean(  # noqa: PLR0913 (each param is a distinct required input, n
 ) -> None:
     """Write table_out from table_in with ST_CoverageClean applied to a subset (or all).
 
-    ST_CoverageClean returns a GeometryCollection whose i-th element
-    corresponds to input i, so rows are mapped back via ST_Dump's path[1].
+    Maps ST_Dump's path[1] back to rows via a synthetic rnid, not fid:
+    fid isn't guaranteed unique across a multi-source table_in.
     """
     where = "" if fids is None else f"WHERE fid IN ({','.join(str(f) for f in fids)})"
     snap_arg = -1 if snapping_distance is None else snapping_distance
     gap_arg = -1 if gap_maximum_width is None else gap_maximum_width
-    cc = f"ST_CoverageClean(list(geom ORDER BY fid), {snap_arg}, {gap_arg})"
+    cc = f"ST_CoverageClean(list(geom ORDER BY rn), {snap_arg}, {gap_arg})"
+    conn.execute(f"""--sql
+        CREATE OR REPLACE TABLE _clean_all AS
+        SELECT row_number() OVER () AS rnid, * FROM "{table_in}"
+    """)
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{table_out}" AS
-        WITH ord AS (
-            SELECT fid, row_number() OVER (ORDER BY fid) AS rn
-            FROM "{table_in}" {where}
+        WITH sel AS (
+            SELECT rnid, geom, row_number() OVER (ORDER BY rnid) AS rn
+            FROM _clean_all {where}
         ),
         coll AS (
-            SELECT {cc} AS g FROM "{table_in}" {where}
+            SELECT {cc} AS g FROM sel
         ),
         dumped AS (
             SELECT (d).path[1] AS rn, (d).geom AS sub
@@ -246,14 +250,15 @@ def coverage_clean(  # noqa: PLR0913 (each param is a distinct required input, n
             FROM grouped
         ),
         mapping AS (
-            SELECT ord.fid, parts.cleaned_geom
-            FROM ord JOIN parts USING (rn)
+            SELECT sel.rnid, parts.cleaned_geom
+            FROM sel JOIN parts USING (rn)
         )
-        SELECT t.* EXCLUDE (geom),
+        SELECT t.* EXCLUDE (geom, rnid),
                COALESCE(m.cleaned_geom, t.geom) AS geom
-        FROM "{table_in}" t
-        LEFT JOIN mapping m USING (fid)
+        FROM _clean_all t
+        LEFT JOIN mapping m USING (rnid)
     """)
+    conn.execute("DROP TABLE IF EXISTS _clean_all")
 
 
 def coverage_clean_escalating(
