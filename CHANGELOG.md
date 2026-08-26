@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   country-only row; a table with no level-0 code column is unaffected
   (see `docs/adr/0091`).
 
+### Fixed
+
+- `coverage_clean()` now maps `ST_CoverageClean`'s output back onto rows
+  via a synthetic per-row id instead of `fid`. Real multi-source portolan
+  tables have colliding `fid` values across files, so the previous
+  `fid`-keyed join fanned out on collisions and paired rows with the
+  wrong cleaned geometry, causing `edge-match`'s `--merge` to raise
+  `INVALID_EDGES` on real multi-file data even after the escalating
+  `snapping_distance` retry exhausted.
+- `edge-match`'s per-group `edge-extend` subprocess now runs the same
+  no-erosion self-check standalone `edge-extend` already runs on its own
+  output.
+- `edge-extend`'s shared-boundary-zone difference (`_03_points.py`) is now
+  bbox-prefiltered against nearby originals instead of a whole-file global
+  union, fixing an OOM/stall on `idn_admin4`/`phl_admin4`-scale inputs
+  (see `docs/adr/0090`).
+- Issue rows in `edge-match`/`edge-mosaic` now shorten a Windows-written
+  `source_file` path (backslash separators) the same way a POSIX path is
+  shortened, instead of leaking the full absolute path.
+
 ## [0.5.0] - 2026-08-26
 
 ### Fixed
