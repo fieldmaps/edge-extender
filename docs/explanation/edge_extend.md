@@ -81,6 +81,15 @@ The overall processing can be broken down into 4 distinct types of geometry tran
 | :--------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
 | ![](https://raw.githubusercontent.com/OCHA-DAP/topo-tools-py/main/img/tza_07.png) | ![](https://raw.githubusercontent.com/OCHA-DAP/topo-tools-py/main/img/tza_08.png) |
 
+## Correctness Guards
+
+The pipeline raises rather than silently producing a wrong result: the
+point-to-Voronoi stage raises if its shared-boundary-zone difference drops
+any fid entirely, and the final merge stage raises if any fid's extended
+geometry no longer covers its own original footprint. See
+`docs/adr/0090-bbox-prefilter-shared-boundary-zone-difference.md` and
+`docs/explanation/voronoi-memory.md`.
+
 ## Use Case 1: Matching sub-national boundary (ADM3) to national (ADM0)
 
 One original use case for this tool was resolving edge differences between different levels of administrative boundaries, where some layers included water bodies but others did not. The United Republic of Tanzania is used in this example as it contains many elements that have been difficult to resolve in the past: lakes along international boundaries, internal water bodies shared by multiple areas, groups of islands, etc. The diagram on the left shows how the ADM3 layer would appear in a global edge-matched geodatabase. The diagram on the right shows how water areas are allocated compared to the original.

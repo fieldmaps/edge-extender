@@ -46,3 +46,12 @@ A future OOM on either file at a given memory ceiling is an expected,
 already-diagnosed cost, not a regression, see
 `docs/adr/0013-memory-gb-budget-removed.md` for why no runtime budget check
 was kept.
+
+## idn_admin4/phl_admin4: a fixable bug, not a floor
+
+Unlike the admin3 floors above, `idn_admin4`/`phl_admin4` hit a fixable
+per-fid-vs-global-operand bug in `_03_points.py`'s shared-boundary-zone
+difference, the same anti-pattern class already fixed once in
+`_02_lines.py`/`_05_merge.py`. Both files complete cleanly from real
+portolan-catalog input after the fix, see
+`docs/adr/0090-bbox-prefilter-shared-boundary-zone-difference.md`.
