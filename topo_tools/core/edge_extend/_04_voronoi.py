@@ -23,11 +23,8 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         FROM "{name}_04_tmp0"
     """)
 
-    # Assign source fid to each Voronoi cell via point-in-polygon.
-    # ST_Intersects (not ST_Within) handles generators that land exactly on a
-    # Voronoi cell boundary, which ST_Within would reject. A point on a
-    # shared edge can then match more than one cell, so completeness below
-    # is checked by distinct point_id, not row count.
+    # ST_Intersects (not ST_Within) catches generators landing exactly on a
+    # cell boundary; such a point can match multiple cells, so dedupe by point_id.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_04_tmp2" AS
         SELECT a.point_id, a.fid, b.geom
@@ -54,9 +51,8 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_04_tmp0"')
         conn.execute(f'DROP TABLE IF EXISTS "{name}_04_tmp1"')
 
-    # Union Voronoi cells by fid. ST_MakeValid defends against invalid cells
-    # produced by ST_VoronoiDiagram on degenerate point configurations; feeding
-    # an invalid polygon to ST_Union_Agg segfaults GEOS.
+    # ST_MakeValid defends against invalid cells from degenerate point
+    # configurations: feeding one to ST_Union_Agg segfaults GEOS.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_04" AS
         SELECT fid, ST_Union_Agg(ST_MakeValid(geom)) AS geom

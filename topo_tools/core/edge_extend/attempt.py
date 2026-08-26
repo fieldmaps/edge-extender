@@ -51,6 +51,7 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     finally:
         if not debug:
             conn.execute(f'DROP TABLE IF EXISTS "{name}_03_tmp1"')
+            conn.execute(f'DROP TABLE IF EXISTS "{name}_03a"')
 
 
 def _check_point_count(count: int) -> None:

@@ -1,9 +1,10 @@
 """Portability smoke tests: does extend() run to completion on this machine.
 
-Not a topology/correctness suite: outputs.main already raises RuntimeError
-on coverage violations, so a run that completes without raising has already
-been vetted for correctness by the pipeline itself.
+Not a correctness suite: outputs.main already raises RuntimeError on
+coverage violations, so a clean run is already vetted by the pipeline itself.
 """
+
+from decimal import Decimal
 
 import duckdb
 import pytest
@@ -14,11 +15,12 @@ from topo_tools.cli.main import cli
 from topo_tools.core.constants import SNAP_TOLERANCE
 from topo_tools.core.coverage import has_gaps
 from topo_tools.core.edge_extend import _01_inputs as inputs
+from topo_tools.core.edge_extend import _02_lines as lines
+from topo_tools.core.edge_extend import _03_points as points
 from topo_tools.core.edge_extend import _04_voronoi as voronoi
 
-# fid 4 is a MULTIPOLYGON (two disjoint parts) to exercise multipolygon
-# handling; fid 1/2 touch exactly (shared edge, valid coverage); fid 3 sits
-# across a deliberate gap from 1/2 for the Voronoi extension to fill.
+# fid 1/2 touch exactly (valid coverage); fid 3 sits across a deliberate gap
+# for extension to fill; fid 4 is a MULTIPOLYGON (two disjoint parts).
 _SYNTHETIC_WKT = [
     (1, "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"),
     (2, "POLYGON((1 0, 2 0, 2 1, 1 1, 1 0))"),
@@ -114,10 +116,8 @@ def test_extend_steps(synthetic_input, tmp_path):
     assert output_path.exists()
 
 
-# A degenerate near-collinear point cluster found by fuzzing that GEOS's
-# ST_VoronoiDiagram fails to produce a cell for every generator point on:
-# reproduces the silent hole risk that _04_voronoi.py's completeness check
-# guards against.
+# A degenerate near-collinear cluster where GEOS's ST_VoronoiDiagram drops a
+# generator point's cell, reproducing the risk _04_voronoi.py's check guards.
 _DEGENERATE_POINTS = [
     (0, -0.95793148, 0.0),
     (1, -0.95793148, -8.5829e-08),
@@ -184,10 +184,8 @@ def test_voronoi_raises_on_incomplete_assignment():
 def test_extend_renames_reserved_source_columns(tmp_path):
     """A source OGC_FID column collides with GDAL's reserved FID handling.
 
-    Confirmed via a minimal repro against the installed DuckDB/GDAL: COPY to
-    .gpkg fails outright if the Arrow table has a column literally named
-    OGC_FID. inputs.main must rename it on load rather than let it crash the
-    final COPY.
+    COPY to .gpkg fails outright on a column literally named OGC_FID;
+    inputs.main must rename it on load rather than let it crash the final COPY.
     """
     path = tmp_path / "synthetic.parquet"
     values = ", ".join(
@@ -217,3 +215,59 @@ def test_extend_renames_reserved_source_columns(tmp_path):
         ).fetchone()[0]
     assert "OGC_FID_orig" in cols
     assert row_count == len(_SYNTHETIC_WKT)
+
+
+def test_points_bbox_prefilter_matches_global_union(tmp_path):
+    """A fine grid's bbox-prefiltered _03b must equal one global-union _03b."""
+    n = 15
+    path = tmp_path / "grid.parquet"
+    values = ", ".join(
+        f"({x * n + y}, ST_GeomFromText("
+        f"'POLYGON(({x} {y}, {x + 1} {y}, {x + 1} {y + 1}, {x} {y + 1}, {x} {y}))'))"
+        for x in range(n)
+        for y in range(n)
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t(id, geom)"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        inputs.main(conn, "synth", path)
+        lines.main(conn, "synth")
+        points.build_segments(conn, "synth")
+        points.main(conn, "synth", Decimal("0.25"), debug=True)
+
+        conn.execute("""--sql
+            CREATE TABLE ref_global AS
+            SELECT ST_Union_Agg(geom) AS geom FROM synth_03a
+        """)
+        conn.execute("""--sql
+            CREATE TABLE ref_03b AS
+            SELECT fid, geom FROM (
+                SELECT a.fid,
+                       UNNEST(ST_Dump(ST_Difference(a.geom, b.geom))).geom AS geom
+                FROM synth_03_tmp4 AS a CROSS JOIN ref_global AS b
+                UNION ALL
+                SELECT a.fid,
+                       UNNEST(ST_Dump(ST_Boundary(
+                           ST_Difference(a.geom, b.geom)
+                       ))).geom AS geom
+                FROM synth_02 AS a CROSS JOIN ref_global AS b
+            )
+            WHERE geom IS NOT NULL AND NOT ST_IsEmpty(geom)
+        """)
+
+        mismatched = conn.execute("""--sql
+            SELECT COUNT(*) FROM (
+                SELECT fid, ST_Union_Agg(geom) AS geom FROM synth_03b GROUP BY fid
+            ) a
+            JOIN (
+                SELECT fid, ST_Union_Agg(geom) AS geom FROM ref_03b GROUP BY fid
+            ) b USING (fid)
+            WHERE ST_Area(ST_SymDifference(a.geom, b.geom)) > 1e-20
+        """).fetchall()[0][0]
+        assert mismatched == 0

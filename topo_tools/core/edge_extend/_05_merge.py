@@ -9,9 +9,8 @@ from topo_tools.core.duckdb_utils import bbox_columns_sql
 
 def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     """Merge original geometry with Voronoi extensions, then coverage-clean seams."""
-    # Per-part _01 with bbox cols. Parts (not whole multipolygon fids) keep the
-    # bbox tight, a Chile fid can span mainland to a remote island, which would
-    # make a whole-fid bbox match nearly everything.
+    # Per-part _01 with bbox cols: a whole-fid bbox can span disjoint parts
+    # and match nearly everything, so bbox tightness needs per-part granularity.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_05_tmp1" AS
         WITH parts AS (
@@ -21,12 +20,8 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         FROM parts
     """)
 
-    # Original rows, UNION ALL each fid's non-empty extension remainder.
-    # A single ST_Union_Agg(_01) as one global blob OOMs at Chile scale when
-    # used as a per-fid ST_Difference operand (same failure mode as the
-    # global-exterior line algebra ruled out in _02_lines.py). Instead,
-    # bbox-prefiltered self-join per fid against nearby _01 parts only,
-    # same pattern _02_lines.py already uses for the neighbor-union self-join.
+    # Bbox-prefiltered self-join per fid against nearby _01 parts only, never
+    # one global ST_Union_Agg(_01) blob as the per-fid ST_Difference operand.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_05_tmp2" AS
         WITH
@@ -86,11 +81,6 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     if not debug:
         conn.execute(f'DROP TABLE IF EXISTS "{name}_05_tmp2"')
 
-    # Single whole-table coverage clean closes floating-point-scale seams left
-    # by the independent per-fid ST_Difference calls above (GEOS recomputes
-    # crossing points slightly differently each time). gap_maximum_width is
-    # tied to SNAP_TOLERANCE, not a sliver-vs-real-hole heuristic: by
-    # construction every point of the extent belongs to exactly one fid here,
-    # so there's no real feature left to protect from swallowing: anything
-    # CoverageClean finds to close is seam noise, not a real gap.
+    # Closes floating-point seams from the per-fid ST_Difference calls above;
+    # every point here belongs to exactly one fid, so any find is seam noise, not a gap.
     coverage_clean(conn, f"{name}_05_tmp3", f"{name}_05", fids=None)
