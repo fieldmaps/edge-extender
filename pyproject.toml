@@ -4,6 +4,7 @@ version = "0.5.2"
 description = "DuckDB-powered geospatial topology utilities (edge-matching, topology cleaning, more)"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Maxym Malynowsky", email = "maxym.malynowsky@un.org" }]
 requires-python = ">=3.10"
 dependencies = ["click", "duckdb>=1.5.5", "psutil", "pyyaml>=6.0.3"]
@@ -45,6 +46,7 @@ ignore = ["COM812", "CPY001", "D203", "D213", "S603", "S607", "S608"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "D103", "INP001", "S101"]
+"packaging/*" = ["ANN", "D100", "D103", "INP001"]
 
 [tool.importlinter]
 root_package = "topo_tools"

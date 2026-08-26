@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `pyproject.toml` now declares `license-files = ["LICENSE"]`, so `uv
+  build`'s sdist actually includes the `LICENSE` file (it didn't before,
+  breaking any packaging that reads a `license_file` out of the downloaded
+  source, e.g. conda-forge's recipe format).
+
 ## [0.5.2] - 2026-08-26
 
 ### Fixed

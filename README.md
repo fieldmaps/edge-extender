@@ -29,6 +29,12 @@ uv tool install topo-tools   # CLI (recommended)
 uv add topo-tools            # Python library
 ```
 
+Or with pipx:
+
+```sh
+pipx install topo-tools
+```
+
 Or with pip:
 
 ```sh
