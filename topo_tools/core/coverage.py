@@ -79,6 +79,13 @@ def gap_issues_sql(
     """
 
 
+def short_source_file_sql(column: str) -> str:
+    """Build SQL shortening a full source path to its last two path parts."""
+    backslash = chr(92)
+    posix_column = f"replace({column}, '{backslash}', '/')"
+    return f"array_to_string(list_slice(str_split({posix_column}, '/'), -2, -1), '/')"
+
+
 def assign_issue_rows_sql(name: str, *, source_file_expr: str = "NULL::VARCHAR") -> str:
     """Build SQL for `{name}_02_assign`'s code-join issue rows, in the shared schema.
 

@@ -9,6 +9,7 @@ from topo_tools.core.coverage import (
     assign_issue_rows_sql,
     check_valid_topology,
     gap_issues_sql,
+    short_source_file_sql,
 )
 from topo_tools.core.io import export_geometry_table, export_issues_table
 
@@ -35,9 +36,7 @@ def _build_issues(
     passthrough=True omits 'unassigned' (superseded by 'passthrough'/'dropped_group').
     """
     table = f"{name}_05"
-    short_source_file = (
-        "array_to_string(list_slice(str_split(source_file, '/'), -2, -1), '/')"
-    )
+    short_source_file = short_source_file_sql("source_file")
     parts = []
     if not passthrough:
         parts.append(f"""
@@ -84,11 +83,7 @@ def _build_issues(
     if code_join:
         parts.append(
             assign_issue_rows_sql(
-                name,
-                source_file_expr=(
-                    "array_to_string("
-                    "list_slice(str_split(c.source_file, '/'), -2, -1), '/')"
-                ),
+                name, source_file_expr=short_source_file_sql("c.source_file")
             )
         )
     conn.execute(f"""--sql
