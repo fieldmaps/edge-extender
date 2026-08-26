@@ -1,9 +1,7 @@
 """Portability smoke tests: does clean() run to completion on this machine.
 
-Not a topology/correctness suite for the general pipeline, but the gap/
-overlap *classification* logic is new and non-obvious enough (see
-core/clean/_02_issues.py) that a few of these tests do assert on specific
-detected/fixed outcomes, not just "did it run."
+Not a correctness suite for the general pipeline, but gap/overlap
+*classification* is non-obvious enough that a few tests assert specific outcomes.
 """
 
 import duckdb
@@ -15,33 +13,22 @@ from topo_tools.api.topo_clean import clean
 from topo_tools.cli.main import cli
 from topo_tools.core.constants import SNAP_TOLERANCE
 
-# Two independent groups, spatially separated so each exercises exactly one
-# defect kind without interference:
-#   - fid 1-4: a "donut" of four polygons noded at their shared corners,
-#     enclosing a real 1x1 degree gap at (1,1)-(2,2). Enclosure matters:
-#     an open inlet between two non-surrounding polygons is NOT detected as
-#     a gap by the interior-ring method (GEOS: "gaps not fully enclosed are
-#     not removed").
-#   - fid 5-6: fid 6 overlaps fid 5 by 0.05 degrees.
-#   - fid 7-8: fid 8 sits fully inside fid 7 (a duplicated/nested-digitizing
-#     defect). The overlap join's predicate is ST_Overlaps OR ST_Contains,
-#     not ST_Intersects: ST_Overlaps alone is false here by OGC definition
-#     (the intersection equals fid 8 exactly, not "different from both
-#     inputs"), so this pair only gets caught via the ST_Contains half.
-#   - fid 9-12: a second donut, enclosing a 10x0.1 sliver-shaped gap at
-#     (51,1)-(61,1.1), same area (1.0) as the fid 1-4 hole but a thinness
-#     ratio (~0.03) far below DEFAULT_THINNESS_RATIO, unlike fid 1-4's square
-#     hole (~0.785). Distinguishes --maximum-gap-width=thin's shape-based
-#     fill from the compact hole it must leave alone.
+# Four independent groups, spatially separated, each exercising one defect.
 _SYNTHETIC_WKT = [
+    # Donut of 4 polygons noded at their shared corners, enclosing a real
+    # 1x1 gap at (1,1)-(2,2); an unenclosed inlet wouldn't count as a gap.
     (1, "POLYGON((0 0, 3 0, 3 1, 2 1, 1 1, 0 1, 0 0))"),
     (2, "POLYGON((0 2, 1 2, 2 2, 3 2, 3 3, 0 3, 0 2))"),
     (3, "POLYGON((0 1, 1 1, 1 2, 0 2, 0 1))"),
     (4, "POLYGON((2 1, 3 1, 3 2, 2 2, 2 1))"),
     (5, "POLYGON((10 0, 11 0, 11 1, 10 1, 10 0))"),
-    (6, "POLYGON((10.95 0, 12 0, 12 1, 10.95 1, 10.95 0))"),
+    (6, "POLYGON((10.95 0, 12 0, 12 1, 10.95 1, 10.95 0))"),  # overlaps fid 5 by 0.05
+    # fid 8 sits fully inside fid 7; ST_Overlaps alone is false here by OGC
+    # definition, so this pair is only caught via the join's ST_Contains half.
     (7, "POLYGON((30 0, 32 0, 32 2, 30 2, 30 0))"),
     (8, "POLYGON((30.5 0.5, 31.5 0.5, 31.5 1.5, 30.5 1.5, 30.5 0.5))"),
+    # Second donut: same hole area (1.0) as fid 1-4's, but a thinness ratio
+    # (~0.03) far below DEFAULT_THINNESS_RATIO (vs fid 1-4's ~0.785 square).
     (9, "POLYGON((50 0, 62 0, 62 1, 50 1, 50 0))"),
     (10, "POLYGON((50 1.1, 62 1.1, 62 2.1, 50 2.1, 50 1.1))"),
     (11, "POLYGON((50 1, 51 1, 51 1.1, 50 1.1, 50 1))"),
@@ -114,12 +101,8 @@ def test_clean_full_run(synthetic_input, tmp_path):
 def test_clean_issues_report_overlap_outcome(synthetic_input, tmp_path):
     """An overlap row reports each unit's own real area change, not just the defect.
 
-    fid 8 sits fully inside fid 7: the fix must give fid 8's entire area
-    to fid 7, so one unit's change is a large loss and the other is
-    untouched. unit_a/unit_b order isn't guaranteed to match which of the
-    two is the swallowed one, so check the pair unordered. Every overlap
-    row's `fixed` must read True: check_invalid_edges() already gates the
-    output as overlap-free before this column is computed.
+    fid 8 sits inside fid 7, so one side's change is a big loss, the other
+    untouched (unit_a/b order isn't guaranteed, so check the pair unordered).
     """
     output_path = tmp_path / "out.parquet"
     issues_path = tmp_path / "issues.parquet"
@@ -154,16 +137,8 @@ def test_clean_default_output_paths(synthetic_input):
 def scaled_gap_input(tmp_path):
     """Write a single compact 1x1 hole inside a ~10,200-area ring, not ~8.
 
-    `_SYNTHETIC_WKT`'s fid 1-4 group makes its hole a huge (12.5%) fraction
-    of the surrounding ring's own area, fine for the thin-vs-compact shape
-    tests, but unrepresentative of real admin-boundary data (where the
-    widest gap is a tiny fraction of its surroundings) and it triggers a
-    real `ST_CoverageClean` defect when combined with fid 9-12's
-    differently-scaled group in the same call: several unrelated polygons
-    collapse to zero area, confirmed to not happen with either group
-    processed alone. This fixture keeps the hole's shape/width identical
-    (still 1x1, same ~0.785 thinness) so `--maximum-gap-width` assertions
-    stay valid, just embedded in a realistically-scaled, single-group ring.
+    `_SYNTHETIC_WKT`'s fid 1-4 hole is unrepresentative of real admin-boundary
+    scale; same shape/width (1x1, ~0.785 thinness), realistically-scaled ring.
     """
     path = tmp_path / "scaled_gap.parquet"
     wkt = [
@@ -186,16 +161,8 @@ def scaled_gap_input(tmp_path):
 def gap_only_input(tmp_path):
     """Write a ring of 4 polygons enclosing a 1x1 hole, with no overlaps anywhere.
 
-    Fully noded (each neighbor's shared corner is an explicit vertex on the
-    other's ring, same style as `_SYNTHETIC_WKT`'s fid 1-4 group) and scaled
-    so the hole is a small fraction of the ring (same reasoning as
-    `scaled_gap_input`), so `has_invalid_edges()`
-    (`ST_CoverageInvalidEdges_Agg`) is False (confirmed directly) without
-    tripping the area-erosion instability a non-noded or too-small-scale
-    fixture hits. Regression fixture for `_03_clean.py`'s fix stage: it used
-    to gate the whole `ST_CoverageClean` call on `has_invalid_edges()`,
-    which only detects overlaps/mismatched edges, never gaps, silently
-    no-opping on exactly this shape of input.
+    Fully noded and realistically-scaled, so `has_invalid_edges()` is False;
+    regression fixture for the old has_invalid_edges()-only fix-stage gate.
     """
     path = tmp_path / "gap_only.parquet"
     wkt = [
@@ -218,12 +185,8 @@ def gap_only_input(tmp_path):
 def noise_scale_gap_input(tmp_path):
     """Reuse gap_only_input's ring/gap topology, gap narrowed below SNAP_TOLERANCE.
 
-    Exercises the default (omitted-flag) noise-floor fill: the gap here must
-    get filled without any explicit --maximum-gap-width, unlike
-    gap_only_input's/scaled_gap_input's real-scale gap. Ring stays at
-    gap_only_input's realistic 0-101 scale, only the gap's own width shrinks:
-    shrinking the whole ring instead (tried first) collapsed the entire
-    output, GEOS's own precision floor at that point, not the intended gap.
+    Only the gap's width shrinks, ring stays at realistic 0-101 scale;
+    shrinking the whole ring instead collapsed the output at GEOS's own floor.
     """
     path = tmp_path / "noise_scale_gap.parquet"
     w = SNAP_TOLERANCE / 2
@@ -258,9 +221,8 @@ def noise_scale_gap_input(tmp_path):
 def test_clean_fills_gap_with_no_coverage_violations(gap_only_input, tmp_path):
     """`--maximum-gap-width all` must still fill a gap when nothing overlaps.
 
-    Regression for the `_03_clean.py` gate bug: has_invalid_edges()
-    is False for this fixture (no overlaps/mismatched edges), but a real
-    fully-enclosed gap exists and must still get filled.
+    Regression for the old has_invalid_edges()-only fix-stage gate, False
+    here despite a real fully-enclosed gap that must still get filled.
     """
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
@@ -499,10 +461,8 @@ def test_clean_rejects_eroded_output(monkeypatch):
 def test_clean_rejects_collapsed_fid(monkeypatch):
     """A fid collapsing to zero area must not be accepted, even if the total survives.
 
-    Regression: the area-sanity floor only checks the summed total, so a
-    small feature vanishing entirely inside a much larger dataset clears it
-    while still being a real defect. Neither fid here touches a gap or an
-    overlap, so both are held to the strict no-change bound.
+    Regression: a summed-total-only floor misses a small feature vanishing
+    inside a much larger dataset; neither fid here touches a gap or overlap.
     """
 
     def collapses_one_fid(conn, table_in, table_out, **_kwargs):
@@ -539,10 +499,8 @@ def test_clean_rejects_collapsed_fid(monkeypatch):
 def test_clean_rejects_bad_geometry_type(monkeypatch):
     """A fid degenerating into a mixed-type GeometryCollection must be rejected.
 
-    Regression: ST_Area() on a GeometryCollection only sums its polygonal
-    members, so a fix that fuses a stray line into a fid's geometry via
-    ST_Collect can preserve that fid's measured area exactly while still
-    being invalid output: the collapse/drift check alone would miss this.
+    Regression: ST_Area() only sums polygonal members, so a fix fusing a
+    stray line in can preserve the measured area while the output is invalid.
     """
 
     def degenerates_one_fid(conn, table_in, table_out, **_kwargs):
@@ -599,13 +557,8 @@ def test_clean_logs_area_change_on_success(caplog):
 def test_clean_overlap_exemption_is_unconditional(monkeypatch):
     """A fid party to a detected overlap may shrink by more than the overlap's own area.
 
-    Regression: an earlier version of this check only exempted overlap
-    participants up to the overlap's own footprint (here, area 1). Real
-    data showed that bound was wrong: ST_CoverageClean can redraw a fid's
-    boundary far beyond the immediate overlap it's resolving. fid 1 here
-    shrinks and relocates from area 4 to area 2.5, a loss of 1.5 that the
-    old budget would have rejected (moved clear of fid 2 so the reshaped
-    output itself has no remaining overlap to report).
+    Regression: an earlier version bounded the exemption to the overlap's
+    own footprint (area 1); fid 1 here shrinks to area 2.5, past that bound.
     """
 
     def shrinks_beyond_overlap_budget(conn, table_in, table_out, **_kwargs):
@@ -638,11 +591,8 @@ def test_clean_overlap_exemption_is_unconditional(monkeypatch):
 def test_clean_logs_defect_unrelated_drift_without_rejecting(monkeypatch, caplog):
     """A fid untouched by any defect may drift slightly without failing the rung.
 
-    Regression: on real, defect-dense data ST_CoverageClean's whole-table
-    renoding pass measurably shifts even fully unrelated boundaries
-    (confirmed up to ~1% per fid on a real 194-fid, 8k+-gap layer), this
-    must be logged for visibility, not treated as a rejection. Neither fid
-    here touches a gap or overlap (empty issues table).
+    Regression: whole-table renoding measurably shifts unrelated boundaries
+    on real data; this must log, not reject. Neither fid here has an issue row.
     """
 
     def drifts_one_fid(conn, table_in, table_out, **_kwargs):

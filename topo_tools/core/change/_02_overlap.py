@@ -29,9 +29,8 @@ def main(conn: DuckDBPyConnection, name: str) -> None:
         FROM parts
     """)
 
-    # Sliver crumbs are dropped by raw (untransformed) degree^2 area, matching
-    # topo-tools-js's overlap.ts, cheap pre-filter before the equal-area
-    # transform, which is only ever applied to surviving intersection geometry.
+    # Sliver crumbs dropped by raw degree^2 area, a cheap pre-filter before
+    # the equal-area transform, applied only to surviving intersection geometry.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_tmp3" AS
         WITH crumbs AS (

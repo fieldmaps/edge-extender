@@ -42,9 +42,7 @@ def check_overwrite(path: Path, *, overwrite: bool) -> None:
 def default_output_path(input_path: Path | str, suffix: str) -> Path:
     """Default output path: input's own directory (CWD if remote), stem + suffix.
 
-    For a local `Path` input this reproduces `input_path.with_stem(...)`
-    exactly; only a remote `input_path` (no directory of its own) is new
-    behavior, defaulting to the current working directory.
+    A remote `input_path` has no directory of its own, so it defaults to CWD.
     """
     directory = input_path.parent if isinstance(input_path, Path) else Path()
     base = Path(input_basename(input_path))
@@ -108,9 +106,8 @@ def reproject_select_sql(
 ) -> str:
     """Build the read+reproject-to-EPSG:4326 SELECT for one file, as unexecuted SQL.
 
-    Composable as a subquery, so multiple files' worth can be combined with
-    `UNION ALL BY NAME` inside one `CREATE TABLE ... AS SELECT` call instead
-    of materializing a table per file first (see `docs/adr/0044`).
+    Composable as a subquery, so multiple files can combine via
+    `UNION ALL BY NAME` into one `CREATE TABLE ... AS SELECT`, no per-file table.
     """
     is_parquet = Path(input_basename(path)).suffix == ".parquet"
     if layer is None and not is_parquet:
@@ -138,9 +135,7 @@ def reproject_select_sql(
         raise ValueError(msg)
     geom_col, geom_type = geom_match
     # A source column already named "fid"/"OGC_FID" would otherwise collide
-    # with our own row_number() AS fid below (duplicate column) or with
-    # GDAL's reserved FID handling on export (see RESERVED_COLUMN_NAMES);
-    # rename it once here so nothing downstream has to guard against it.
+    # with our own row_number() AS fid below; rename it once here.
     colliding_cols = [col[0] for col in schema if col[0] in RESERVED_COLUMN_NAMES]
     if colliding_cols:
         logger.warning(
@@ -166,10 +161,8 @@ def reproject_select_sql(
         else f'ST_Force2D(ST_MakeValid("{geom_col}"))'
     )
 
-    # ST_MakeValid repairs broken ring orientations or self-intersections
-    # before transform. ST_Force2D drops any Z/M coordinates that downstream
-    # GEOS operations don't handle correctly. Parquet inputs skip
-    # ST_Transform (already WGS84).
+    # ST_MakeValid repairs broken ring orientations/self-intersections before
+    # transform; ST_Force2D drops Z/M coords downstream GEOS ops can't handle.
     return f"""
         SELECT * EXCLUDE ({exclude_sql}){rename_sql},
                row_number() OVER () AS fid,

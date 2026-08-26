@@ -1,8 +1,7 @@
 """Portability smoke tests for the standalone detect() tool.
 
-Same fixtures/synthetic geometry as tests/test_clean.py (which now composes
-core.detect internally), since core/detect/_02_issues.py is a verbatim move
-of what used to be core/clean/_02_issues.py.
+Same fixtures as tests/test_topo_clean.py, since topo_clean composes
+core.topo_detect's issue-detection stage directly.
 """
 
 import duckdb
@@ -96,9 +95,8 @@ def test_detect_full_run(synthetic_input, tmp_path):
 def test_detect_full_containment_overlap(synthetic_input, tmp_path):
     """A fully-nested duplicate polygon (id 8 inside id 7) is an overlap.
 
-    Regression for the overlap join predicate: ST_Overlaps alone is false
-    for full containment (OGC: the intersection must differ from both
-    inputs), so this only gets caught via the ST_Contains half.
+    ST_Overlaps alone is false for full containment (OGC definition), so
+    this is only caught via the join's ST_Contains half.
     """
     issues_path = tmp_path / "issues.parquet"
     detect(synthetic_input, issues_path, overwrite=True)

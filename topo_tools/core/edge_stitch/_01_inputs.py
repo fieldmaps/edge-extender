@@ -12,9 +12,8 @@ def main(
 ) -> None:
     """Import geodata into DuckDB; cleanliness is the stitch stage's own job.
 
-    A list of paths is combined into one table before returning, via one
-    query (see `docs/adr/0044`), since the whole-table coverage-clean pass
-    downstream needs a single tiled layer.
+    A list of paths is combined into one table before returning, since the
+    whole-table coverage-clean pass downstream needs a single tiled layer.
     """
     if isinstance(path, (str, Path)):
         read_and_reproject(conn, name, path)

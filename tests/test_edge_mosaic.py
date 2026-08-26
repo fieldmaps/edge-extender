@@ -1,8 +1,7 @@
 """Portability smoke tests: does mosaic() run to completion on this machine.
 
-Not a topology/correctness suite: outputs.main already raises RuntimeError
-on coverage violations, so a run that completes without raising has already
-been vetted for correctness by the pipeline itself.
+Not a correctness suite: outputs.main already raises RuntimeError on
+coverage violations, so a clean run is already vetted by the pipeline itself.
 """
 
 import logging
@@ -17,11 +16,8 @@ from topo_tools.api.edge_match import match
 from topo_tools.api.edge_mosaic import mosaic
 from topo_tools.cli.main import cli
 
-# All four children share one file, so one-file-one-parent applies: children
-# 1+2 tile Parent A (0,0)-(3,3), giving that file's majority vote to A, so
-# child 3 (Parent B (10,0)-(13,3) territory) and child 4 (unassignable
-# anywhere) both end up dropped as unassigned, not routed to their own best
-# parent individually.
+# One-file-one-parent: children 1+2 tile Parent A, winning the majority
+# vote, so child 3 (Parent B territory) and child 4 (unassignable) both drop.
 _CHILD_WKT = [
     (1, "POLYGON((-5 -5, 1.5 -5, 1.5 5, -5 5, -5 -5))"),
     (2, "POLYGON((1.5 -5, 8 -5, 8 5, 1.5 5, 1.5 -5))"),
@@ -74,10 +70,8 @@ def synthetic_children_split(tmp_path):
     return [path_a, path_b]
 
 
-# file_a tiles Parent A (0,0)-(3,3) at x=1.5, but child 2 also straddles into
-# Parent B (10,0)-(13,3) with a bigger individual overlap there (area 6 vs 4.5),
-# so its own plurality would pick B, but file_a's vote count (2 children touch
-# A, 1 touches B) should still pick A.
+# Child 2 straddles into Parent B with a bigger individual overlap there
+# (area 6 vs 4.5, its own plurality pick), but file_a's vote count still picks A.
 _MAJORITY_CHILD_A = (1, "POLYGON((-5 -5, 1.5 -5, 1.5 5, -5 5, -5 -5))")
 _MAJORITY_CHILD_STRADDLE = (2, "POLYGON((1.5 -5, 12 -5, 12 5, 1.5 5, 1.5 -5))")
 _MAJORITY_CHILD_B_ONLY = (3, "POLYGON((8 -5, 20 -5, 20 20, 8 20, 8 -5))")
@@ -187,10 +181,8 @@ def test_mosaic_issues_file_absent_when_nothing_dropped(tmp_path):
     assert not issues_path.exists()
 
 
-# A parent with a real interior hole (e.g. an enclosed country like Lesotho
-# inside South Africa): two already-extended children exactly tile the outer
-# square, so the hole survives clipping without any gap the children
-# themselves created.
+# A parent with a real interior hole (e.g. Lesotho inside South Africa);
+# two already-extended children exactly tile the outer square, no self-gap.
 _ENCLAVE_PARENT_WKT = [
     (1, "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (4 4, 6 4, 6 6, 4 6, 4 4))"),
 ]

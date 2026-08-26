@@ -3,8 +3,7 @@
 from topo_tools.core.constants import SNAP_TOLERANCE
 
 # Minimum max(coverage_a, coverage_b) for two units to be spatially linked
-# (union-find edge). Ported from topo-tools-js's current default (bumped in
-# commit 420f2ad).
+# (union-find edge).
 TAU_MATCH_DEFAULT = 0.8
 
 # Minimum IoU for a 1:1 spatially-linked pair to be unchanged/renamed rather

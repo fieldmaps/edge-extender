@@ -1,8 +1,7 @@
 """Runs extend's pipeline once per parent group, in an isolated subprocess.
 
 Data crosses the process boundary as small Parquet files, never a shared
-connection (DuckDB files are single-writer). Clipping to each group's
-parent happens later, batched, in `_03_clip.py`, not here.
+connection (DuckDB files are single-writer).
 """
 
 import contextlib
@@ -164,9 +163,8 @@ def _append_to_reassembly(
     exists = conn.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [f"{name}_03a"]
     ).fetchone()
-    # Parquet round-trips an untagged geom column as 'OGC:CRS84', which
-    # core.clip's subprocess output (explicitly tagged 'EPSG:4326') then
-    # can't INSERT INTO without a matching tag on this table's own schema.
+    # Parquet round-trips an untagged geom column as 'OGC:CRS84'; re-tag to
+    # match this table's own schema before INSERT INTO can accept it.
     if exists is None:
         conn.execute(f"""--sql
             CREATE TABLE "{name}_03a" AS

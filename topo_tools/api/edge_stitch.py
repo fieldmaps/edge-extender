@@ -42,10 +42,8 @@ def stitch(  # noqa: C901, PLR0913
 ) -> None:
     """Close seams in an already-tiled polygon layer via coverage-clean.
 
-    input_path MAY be a list of multiple already-tiled files, combined
-    internally into one layer before the clean pass; output_path is then
-    required, since there's no single filename to default from. With a
-    single input_path, output_path defaults to it with a "_stitched" suffix.
+    input_path MAY be a list of files (output_path then required, no single
+    name to default from); a single path defaults output to a "_stitched" suffix.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"

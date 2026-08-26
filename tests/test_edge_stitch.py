@@ -1,8 +1,7 @@
 """Portability smoke tests: does stitch() run to completion on this machine.
 
-Not a topology/correctness suite: outputs.main already raises RuntimeError
-on coverage violations, so a run that completes without raising has already
-been vetted for correctness by the pipeline itself.
+Not a correctness suite: outputs.main already raises RuntimeError on
+coverage violations, so a clean run is already vetted by the pipeline itself.
 """
 
 from pathlib import Path

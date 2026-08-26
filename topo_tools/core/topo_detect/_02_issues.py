@@ -39,12 +39,7 @@ def _build_gaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
 
 def _build_overlaps(conn: DuckDBPyConnection, tmp: str, table: str) -> None:
     # ST_Overlaps/ST_Contains, not ST_Intersects: skips merely-touching
-    # adjacent pairs; ST_Contains alone catches full containment.
-    #
-    # Projecting to (fid, geom) before the self-join avoids DuckDB's
-    # single-threaded fallback on a wide table. Bbox columns are precomputed
-    # here, not called inline in the join: DuckDB re-evaluates an inline
-    # envelope call per comparison, not once per row.
+    # adjacent pairs; a narrow (fid, geom) projection avoids a wide-table self-join.
     narrow = f"{table}_narrow"
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{narrow}" AS

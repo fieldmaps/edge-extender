@@ -40,10 +40,8 @@ def assign_many(  # noqa: PLR0913
         FROM parts
     """)
 
-    # Shared area per (child, parent) fid pair, summed across all part-pairs:
-    # a multi-part child can overlap a multi-part parent in more than one
-    # place. Ranked in an equal-area CRS; only the intersection geometry (not
-    # the whole layer) is transformed, to bound the cost.
+    # Shared area per (child, parent) fid pair, summed across all part-pairs;
+    # ranked in an equal-area CRS, transforming only the intersection geometry.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_02_pairs" AS
         SELECT c.fid AS child_fid, p.fid AS parent_fid,
@@ -75,10 +73,8 @@ def assign_many(  # noqa: PLR0913
     """)
 
     if parent_match_column and child_match_column:
-        # Code candidate per child, restricted to a parent it overlaps at
-        # all (guards against a stale/wrong code pointing at an unrelated
-        # parent); ties (a code shared by more than one parent) broken by
-        # lowest parent fid.
+        # Code candidate per child, restricted to a parent it overlaps at all
+        # (guards against a stale code); ties broken by lowest parent fid.
         conn.execute(f"""--sql
             CREATE OR REPLACE TABLE "{name}_02_tmp4" AS
             SELECT child_fid, parent_fid FROM (

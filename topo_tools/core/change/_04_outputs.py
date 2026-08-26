@@ -22,11 +22,8 @@ def main(
     No topology hard-gate here (unlike extend/match/clean): change is a
     read-only comparison, not a fix, so there's nothing to validate against.
     """
-    # Every new-version unit, tagged with its relationship_class, plus every
-    # old-version unit classed "removed" (gone in the new version, so no new
-    # polygon stands in for it), together these tile the comparison area
-    # exactly once, colored by what happened. Ported from topo-tools-js's
-    # pipeline/render.ts:stageRender.
+    # Every new-version unit plus every "removed" old-version unit (no new
+    # polygon stands in for it), together tiling the comparison area once.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_04" AS
         SELECT b.geom AS geom, pc.cluster_id AS cluster_id,

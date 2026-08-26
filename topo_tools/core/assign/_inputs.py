@@ -12,9 +12,8 @@ def load_children(
 ) -> None:
     """Load/combine the (possibly multi-file) children, uncleaned.
 
-    Each child part is tagged with its own full path as `source_file`, since
-    basename alone can't distinguish same-named files across directories.
-    Combined via one query (see `docs/adr/0044`), not a table per file.
+    Each part is tagged with its own full path as `source_file` (basename
+    alone can't distinguish same-named files across directories).
     """
     union_sql = " UNION ALL BY NAME ".join(
         f"(SELECT *, '{path}' AS source_file FROM ({reproject_select_sql(conn, path)}))"

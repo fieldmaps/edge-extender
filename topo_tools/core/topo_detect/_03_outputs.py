@@ -12,9 +12,7 @@ def main(
 ) -> None:
     """Export `{name}_02` to dest.
 
-    No topology hard-gate here (unlike extend/match/clean/stitch): detect
-    is read-only inspection, not a fix, so there's nothing to validate
-    against.
+    No topology hard-gate here: detect is read-only inspection, not a fix.
     """
     export_geometry_table(conn, f"{name}_02", dest, exclude_fid=False)
 

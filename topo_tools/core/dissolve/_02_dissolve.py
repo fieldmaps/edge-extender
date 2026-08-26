@@ -15,10 +15,8 @@ def _distinct_counts(
 ) -> dict[str, int]:
     """Return {column: max distinct count in any group}.
 
-    Collapses the per-group counts to one summary row in SQL, so the result
-    size is proportional to the number of `columns`, never to the number of
-    groups (a global admin4 dissolve can have hundreds of thousands of
-    groups).
+    Collapses per-group counts to one summary row in SQL, so result size
+    scales with `columns`, never with group count (can be hundreds of thousands).
     """
     if not columns:
         return {}
@@ -47,11 +45,8 @@ def main(
 ) -> None:
     """Dissolve table_in into table_out, grouping by `group_by`, unioning geometry.
 
-    A NULL value in a `group_by` column forms its own group like any other
-    value (DuckDB's native GROUP BY semantics, matching GDAL's `combine
-    --group-by`). Every non-`group_by` column is kept (any_value) if it's
-    constant within every group, dropped (with a warning naming every
-    dropped column) if not.
+    A NULL `group_by` value forms its own group (matching GDAL's
+    `combine --group-by`); other columns are kept if constant per group, else dropped.
     """
     always_excluded = {*group_by, "fid", "geom"}
     all_cols = {row[0] for row in conn.execute(f'DESCRIBE "{table_in}"').fetchall()}

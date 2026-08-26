@@ -172,11 +172,8 @@ def main(  # noqa: C901, PLR0912, PLR0913, PLR0915 (ported classification algori
     claimed_b: set[int] = set()
     passing_pairs: list[_Pair] = []
 
-    # Phase 1, identity: claim a pair ahead of spatial matching only if
-    # every other spatial tau_match neighbor of both fids is also
-    # identity-covered. Otherwise a genuine split (A -> B1 keeps the code, B2
-    # is new) would be incorrectly collapsed into a false 1:1 identity match
-    # instead of falling through to Phase 2's spatial clustering.
+    # Phase 1, identity: claim a pair only if every other spatial neighbor of
+    # both fids is also identity-covered, else fall through to Phase 2.
     if link_by_code or link_by_name:
         for p in pairs:
             if not _identity_match(p, **identity_kwargs):

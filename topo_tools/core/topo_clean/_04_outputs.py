@@ -15,10 +15,8 @@ logger = getLogger(__name__)
 def _add_outcome_columns(conn: DuckDBPyConnection, name: str) -> None:
     """Extend `{name}_02` with what actually happened to each issue during the fix.
 
-    `fixed` is TRUE for every overlap row unconditionally: `check_invalid_edges`
-    already gated `{name}_03` as overlap-free before this runs, so any
-    overlap reaching here was necessarily resolved. For a gap row it's the
-    same point-in-union containment test `_warn_on_unfilled_gaps` reports on.
+    `fixed` is TRUE for every overlap row unconditionally, since `{name}_03`
+    is already gated overlap-free; a gap row uses point-in-union containment.
     """
     m2_per_deg2 = m2_per_deg2_factor(conn, f"{name}_01")
     conn.execute(f"""--sql

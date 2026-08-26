@@ -43,10 +43,8 @@ def dissolve(  # noqa: PLR0913
 ) -> None:
     """Aggregate a polygon layer into a coarser one, grouping on `group_by` columns.
 
-    A NULL value in a `group_by` column forms its own group like any other
-    value, matching GDAL's `combine --group-by`. Every other column is kept
-    via any_value if it's actually constant within every group, dropped
-    (with a warning) if not.
+    A NULL `group_by` value forms its own group, matching GDAL's
+    `combine --group-by`; every other column is kept if constant per group.
     """
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"

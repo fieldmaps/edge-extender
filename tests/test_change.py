@@ -1,9 +1,7 @@
 """Portability smoke tests: does change() run to completion on this machine.
 
-Not a topology suite: the union-find/classification logic in
-core/change/_03_classify.py is new and non-obvious enough (ported from
-topo-tools-js's classify.ts) that several of these tests assert on specific
-classification outcomes, not just "did it run."
+Not a topology suite: `_03_classify.py`'s ported classification logic is
+non-obvious enough that tests assert specific outcomes, not just "did it run."
 """
 
 import duckdb
@@ -13,45 +11,38 @@ from click.testing import CliRunner
 from topo_tools.api.change import change
 from topo_tools.cli.main import cli
 
-# Nine spatially-separated regions, each exercising one relationship class (or
-# a pair of classes) in isolation. pcode is the sole attribute column, doubling
-# as the fixture for column auto-detection (matches _columns.py's "*code$"
-# pattern) and as each region's stable identity key across old/new.
-#   U1: identical geometry and code, classified unchanged.
-#   N1/N1B: identical geometry, code differs; classified unchanged with no
-#     linking, renamed under --link-by-code.
-#   M1: new geometry shrunk 10% (IoU 0.9, still passes tau_match via
-#     coverage_b=1.0); classified modified at default thresholds.
-#   SP1/SP2: one old unit splits into two new ones; classified split.
-#   MG1/MG2: two old units merge into one new one; classified merge.
-#   CR1: new-only, classified created. RM1: old-only, classified removed.
-#   RL1: new geometry shifted so only ~10% overlaps (below tau_match);
-#     classified removed+created with no linking, relocated under
-#     --link-by-code (the pair still touches, just below tau_match).
-#   GD1/GD2: a genuine split where only one new unit inherits the old code;
-#     exercises the identity-claim guard, must stay split under
-#     --link-by-code rather than collapsing into a false 1:1 identity pair.
+# Nine spatially-separated regions, one relationship class (or pair) each.
+# pcode is the sole attribute column (matches _columns.py's "*code$" pattern).
 _OLD_WKT = [
     ("U1", "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"),
+    # unchanged; code -> N1B, renamed under --link-by-code
     ("N1", "POLYGON((10 0, 11 0, 11 1, 10 1, 10 0))"),
+    # modified: new shrinks 10%, still passes tau_match
     ("M1", "POLYGON((20 0, 21 0, 21 1, 20 1, 20 0))"),
+    # split: becomes SP1+SP2 in new
     ("SP1", "POLYGON((30 0, 33 0, 33 1, 30 1, 30 0))"),
+    # merge: MG1+MG2 combine into one new unit
     ("MG1", "POLYGON((40 0, 41 0, 41 1, 40 1, 40 0))"),
     ("MG2", "POLYGON((41 0, 43 0, 43 1, 41 1, 41 0))"),
-    ("RM1", "POLYGON((60 0, 61 0, 61 1, 60 1, 60 0))"),
+    ("RM1", "POLYGON((60 0, 61 0, 61 1, 60 1, 60 0))"),  # removed: old-only
+    # relocated under --link-by-code: shifts to ~10% overlap
     ("RL1", "POLYGON((70 0, 71 0, 71 1, 70 1, 70 0))"),
+    # split: only one new unit keeps the code (identity-claim guard)
     ("GD1", "POLYGON((90 0, 93 0, 93 1, 90 1, 90 0))"),
 ]
 
 _NEW_WKT = [
     ("U1", "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"),
-    ("N1B", "POLYGON((10 0, 11 0, 11 1, 10 1, 10 0))"),
+    ("N1B", "POLYGON((10 0, 11 0, 11 1, 10 1, 10 0))"),  # code differs from old N1
+    # modified: shrunk 10% from old, still passes tau_match
     ("M1", "POLYGON((20 0, 21 0, 21 0.9, 20 0.9, 20 0))"),
-    ("SP1", "POLYGON((30 0, 31 0, 31 1, 30 1, 30 0))"),
-    ("SP2", "POLYGON((31 0, 33 0, 33 1, 31 1, 31 0))"),
-    ("MG1", "POLYGON((40 0, 43 0, 43 1, 40 1, 40 0))"),
-    ("CR1", "POLYGON((50 0, 51 0, 51 1, 50 1, 50 0))"),
+    ("SP1", "POLYGON((30 0, 31 0, 31 1, 30 1, 30 0))"),  # split from old SP1
+    ("SP2", "POLYGON((31 0, 33 0, 33 1, 31 1, 31 0))"),  # split from old SP1
+    ("MG1", "POLYGON((40 0, 43 0, 43 1, 40 1, 40 0))"),  # merge of old MG1+MG2
+    ("CR1", "POLYGON((50 0, 51 0, 51 1, 50 1, 50 0))"),  # created: new-only
+    # relocated: ~10% overlap with old RL1
     ("RL1", "POLYGON((70.9 0, 71.9 0, 71.9 1, 70.9 1, 70.9 0))"),
+    # split from old GD1: GD1 keeps the code, GD2 gets a new one (identity guard)
     ("GD1", "POLYGON((90 0, 91 0, 91 1, 90 1, 90 0))"),
     ("GD2", "POLYGON((91 0, 93 0, 93 1, 91 1, 91 0))"),
 ]
@@ -116,9 +107,8 @@ def test_change_full_run(old_layer, new_layer, tmp_path):
     assert output_path.exists()
     assert overlay_path.exists()
     rows = _read_changelog(output_path)
-    # code/name columns come from --code-column-a/-b, which default to
-    # unresolved (None) unless a link flag is set: geometry-only mode still
-    # classifies correctly, but code_a/code_b are NULL throughout this run.
+    # code_a/code_b are NULL (no --code-column-a/-b set); geometry-only
+    # classification still works, this only checks classes, not code linkage.
     classes = {row[4] for row in rows}
     assert classes == {"unchanged", "modified", "split", "merge", "created", "removed"}
 
@@ -139,9 +129,8 @@ def test_change_default_output_paths(old_layer, new_layer):
 def test_change_tau_match_threshold(old_layer, new_layer, tmp_path):
     """RL1's ~10% overlap is below the default tau_match; lowering it links the pair.
 
-    code_column_a/-b are passed explicitly (without a --link-by-code flag) so
-    the changelog's display columns are populated for row lookup, this has
-    no effect on classification, which stays purely spatial here.
+    code_column_a/-b are set (no --link-by-code) purely so the changelog's
+    display columns populate for row lookup; classification stays spatial-only.
     """
     default_out = tmp_path / "default.csv"
     change(

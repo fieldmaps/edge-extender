@@ -230,9 +230,8 @@ def assign_one(  # noqa: PLR0913
         ) WHERE rn = 1
     """)
     if parent_match_column and child_match_column:
-        # Per-child code candidate, restricted to a parent it overlaps at
-        # all, then rolled up to a per-file majority (mirrors the spatial
-        # file-vote above), preserving one-parent-per-file.
+        # Per-child code candidate, restricted to a parent it overlaps at all,
+        # rolled up to a per-file majority, preserving one-parent-per-file.
         conn.execute(f"""--sql
             CREATE OR REPLACE TABLE "{name}_02_tmp3" AS
             SELECT c.source_file, p.fid AS parent_fid,

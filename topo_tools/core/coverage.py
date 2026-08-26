@@ -33,9 +33,8 @@ def check_invalid_edges(conn: DuckDBPyConnection, table: str) -> None:
 def gap_geometries_sql(table: str) -> str:
     """Build SQL for a subquery of individual fully-enclosed interior-hole geometries.
 
-    Dumps the union into parts first: ST_NumInteriorRings silently returns
-    NULL on a MultiPolygon, and ST_Difference needs one polygon's own
-    exterior ring, not the whole union's.
+    Dumps the union into parts first: ST_NumInteriorRings returns NULL on a
+    MultiPolygon, and ST_Difference needs one polygon's own exterior ring.
     """
     return f"""(
         WITH u AS (
@@ -83,14 +82,8 @@ def gap_issues_sql(
 def assign_issue_rows_sql(name: str, *, source_file_expr: str = "NULL::VARCHAR") -> str:
     """Build SQL for `{name}_02_assign`'s code-join issue rows, in the shared schema.
 
-    Only valid when `assign_many`/`assign_one` was called with
-    `parent_match_column`/`child_match_column` (the `assignment_method`/
-    `spatial_agrees` columns those add to `{name}_02_assign` are required
-    here). `source_file_expr` MUST be a real column reference (e.g.
-    `c.source_file`) when the caller's child table carries one, else the
-    default null literal.
-
-    Standalone or as one arm of a `UNION ALL BY NAME` with other issue kinds.
+    Requires `assignment_method`/`spatial_agrees` (assign_one/assign_many
+    called with match columns); `source_file_expr` needs a real column or NULL.
     """
     return f"""
         SELECT 'code-mismatch-' || a.child_fid AS key, 'code-mismatch' AS kind,
@@ -126,9 +119,8 @@ def has_gaps(
 ) -> bool:
     """Return True if `table.geom` has an interior hole at or below gap_maximum_width.
 
-    A wider hole may be a real geographic absence (e.g. one country fully
-    enclosing another), not a coverage defect. gap_maximum_width=0
-    tolerates no hole of any size.
+    A wider hole may be a real geographic absence, not a defect;
+    gap_maximum_width=0 tolerates no hole of any size.
     """
     if gap_maximum_width == 0:
         max_interior_rings = conn.execute(f"""--sql

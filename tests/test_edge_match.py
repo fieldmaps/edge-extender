@@ -1,8 +1,7 @@
 """Portability smoke tests: does match() run to completion on this machine.
 
-Not a topology/correctness suite: outputs.main already raises RuntimeError
-on coverage violations, so a run that completes without raising has already
-been vetted for correctness by the pipeline itself.
+Not a correctness suite: outputs.main already raises RuntimeError on
+coverage violations, so a clean run is already vetted by the pipeline itself.
 """
 
 import logging
@@ -321,9 +320,8 @@ def test_match_issues_file_absent_when_nothing_dropped(tmp_path):
     assert not issues_path.exists()
 
 
-# A parent with a real interior hole (e.g. an enclosed country like Lesotho
-# inside South Africa): two children exactly tile the outer square, so the
-# hole survives clipping without any gap the children themselves created.
+# A parent with a real interior hole (e.g. Lesotho inside South Africa);
+# two children exactly tile the outer square, so no gap is self-inflicted.
 _ENCLAVE_PARENT_WKT = [
     (1, "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (4 4, 6 4, 6 6, 4 6, 4 4))"),
 ]
@@ -400,9 +398,8 @@ def test_record_dropped_group():
 def test_match_clip_step_aborts_on_bad_parent_fid(tmp_path):
     """A single bad parent_fid in the clip step aborts the whole run.
 
-    Documents the accepted simplification vs. match's old per-group
-    continue-past-failure behavior: clip's own hard-fail-on-first-bad-
-    parent_fid semantics now apply uniformly to match too.
+    clip's hard-fail-on-first-bad-parent_fid semantics apply uniformly to
+    match too, not match's old per-group continue-past-failure behavior.
     """
     with duckdb.connect() as conn:
         conn.execute("INSTALL spatial; LOAD spatial;")

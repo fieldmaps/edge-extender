@@ -118,9 +118,8 @@ def get_connection(
 ) -> ProfiledConnection:
     """Create a file-backed DuckDB connection with spatial loaded."""
     conn = duckdb_connect(str(tmp_dir / f"{name}.duckdb"))
-    # LOAD alone does not autoinstall, fails outright on a machine that has
-    # never cached the spatial extension, network or not. INSTALL is a cheap
-    # no-op (~40ms, no network) once it's already cached.
+    # LOAD alone does not autoinstall, fails on a machine with no cached
+    # spatial extension; INSTALL is a cheap no-op once already cached.
     conn.execute("INSTALL spatial")
     conn.execute("LOAD spatial")
     conn.execute("SET enable_progress_bar = false")
@@ -135,9 +134,8 @@ def get_connection(
 def worker_result(result_queue: "multiprocessing.Queue") -> Iterator[None]:
     """Wrap a spawned worker's body, must not let an exception escape uncaught.
 
-    A freshly-spawned process's exception would otherwise vanish silently
-    instead of surfacing in the parent; puts None on success or an error
-    string on any exception instead.
+    A spawned process's exception would otherwise vanish silently; puts
+    None on success or an error string on any exception instead.
     """
     try:
         yield

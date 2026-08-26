@@ -119,10 +119,8 @@ def change(  # noqa: C901, PLR0912, PLR0913
     check_overwrite(output_path, overwrite=overwrite)
     check_overwrite(overlay_path, overwrite=overwrite)
 
-    # "_changelog" keeps every table/file this call creates distinct from an
-    # edge_extend()/edge_match()/topo_clean() run against the same old_path/tmp_dir,
-    # same collision-avoidance reasoning as edge_match's "_edge_match" and
-    # topo_clean's "_topo_clean".
+    # "_changelog" avoids colliding with another tool's tables/files against
+    # the same old_path/tmp_dir, same reasoning as edge_match's "_edge_match".
     name = input_basename(old_path).replace(".", "_") + "_changelog"
 
     with (
