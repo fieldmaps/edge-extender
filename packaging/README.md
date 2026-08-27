@@ -1,7 +1,7 @@
 # Multi-platform distribution prep
 
 Local prep for `topo-tools`' pipx/uv (done, README already updated),
-conda-forge, Homebrew, and winget channels. See
+conda-forge, and Homebrew channels. See
 `/Users/computer/.claude/plans/can-you-look-into-generic-puppy.md` for the
 full plan this implements.
 
@@ -67,22 +67,3 @@ merges unattended). That job needs a `HOMEBREW_TAP_TOKEN` repository secret
 (a fine-grained PAT scoped to `OCHA-DAP/homebrew-topo-tools` with
 `Contents: Read and write` and `Pull requests: Read and write`), set up
 once by a repo admin.
-
-## winget (`packaging/winget/`)
-
-`entrypoint.py` + `topo-tools.spec`: a verified PyInstaller `--onedir` build
-(not `--onefile`, see the plan for why). Spiked locally on macOS (can't
-cross-build a Windows exe from here): `pyinstaller-hooks-contrib` ships a
-`hook-duckdb.py` already, no custom hook needed. The frozen bundle ran a
-real `topo-detect` command against `tests/fixtures/edge_stitch_coincident_
-boundary.parquet` and produced correct output, so `duckdb` and its spatial
-extension both load correctly from inside the bundle.
-
-`build-windows-exe.yml`: a draft CI job (`windows-latest`, needed since
-PyInstaller doesn't cross-compile) that repeats this build in CI and zips
-the result. Not wired into `.github/workflows/publish.yml` yet, review and
-paste it in alongside the existing `build`/`publish` jobs.
-
-Next steps: wire the job in, add a release-asset upload step, then submit
-the initial manifest to `microsoft/winget-pkgs` via `wingetcreate`, and add
-a `wingetcreate update` step to automate future version bumps.
