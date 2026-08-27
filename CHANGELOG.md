@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-27
+
+### Changed
+
+- Build backend is now `hatchling` (pure Python), not `uv_build`, so building
+  the package from source (Homebrew, and any other from-source packaging
+  channel) no longer needs a Rust toolchain. `uv`-based workflows
+  (`uv sync`/`uv build`/`uv run`/`uv tool install`) are unaffected.
+
 ### Fixed
 
 - `pyproject.toml` now declares `license-files = ["LICENSE"]`, so `uv
@@ -338,7 +347,8 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.4.0...v0.5.0

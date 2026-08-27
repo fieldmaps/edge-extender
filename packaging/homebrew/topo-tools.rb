@@ -9,13 +9,12 @@ class TopoTools < Formula
 
   depends_on "cmake" => :build
   depends_on "ninja" => :build
-  depends_on "rust" => :build
   depends_on "libyaml"
   depends_on "python@3.14"
 
-  resource "uv-build" do
-    url "https://files.pythonhosted.org/packages/06/43/f0b537aaa1d5ee5898cc18ca69b72cbc4733ee378255893b634e2abc9252/uv_build-0.12.6.tar.gz"
-    sha256 "4756f1771d342ff8ff50b529ae23c58d58f14f097c243ca50d3778d0a23d24f0"
+  resource "hatchling" do
+    url "https://files.pythonhosted.org/packages/69/08/33331757185504aae48b8d9bd78cec03a76e3aecfb52e549d05a2347c0dd/hatchling-1.32.0.tar.gz"
+    sha256 "0bdbde4a52b06c37e3eca395f85a762bf0ef06fe374fd8ae429dc6be10230f5f"
   end
 
   resource "click" do

@@ -42,26 +42,17 @@ tap and its test install are already cleaned up from this machine.
 
 `duckdb`'s sdist compiles from source, needing `depends_on "cmake" =>
 :build` and `depends_on "ninja" => :build` (Homebrew's pip helper disables
-binary wheels for declared resources, so this is expected). Less expected:
-`topo-tools`' own build backend, `uv_build`, is itself a Rust/maturin
-package, so Homebrew building it from its declared resource needs
-`depends_on "rust" => :build` too, else the nested `maturin` build fails.
-(A wheel-based main `url`, skipping `uv_build` entirely, looked like a
-cleaner fix and was tried first, but Homebrew's pip helper unpacks any `url`
-as a source tree and forces `--no-binary`, so it always tries to rebuild a
-wheel's contents as if they were an sdist and fails; the `rust` dependency
-is the one that actually works.) `pyyaml` additionally needed `depends_on
-"libyaml"` per `brew audit`. Resource names must match Homebrew's PyPI-name
-normalization (`uv-build`, not `uv_build`), and the main `url` must be the
-long `files.pythonhosted.org` hash-path form, not the short `/packages/
+binary wheels for declared resources, so this is expected). `topo-tools`'
+own build backend is `hatchling` (pure Python), declared as `resource
+"hatchling"`, so no Rust toolchain dependency is needed. `pyyaml`
+additionally needed `depends_on "libyaml"` per `brew audit`. Resource names
+must match Homebrew's PyPI-name normalization, and the main `url` must be
+the long `files.pythonhosted.org` hash-path form, not the short `/packages/
 source/...` form conda-forge prefers, `brew audit --strict` catches both if
-missed.
-
-If the extra Rust toolchain dependency is worth avoiding, the actual fix
-would be switching `topo-tools`' own build backend from `uv_build` to a
-pure-Python one (`hatchling`/`flit-core`), which removes this class of
-problem from every packaging channel, not just Homebrew, worth considering
-separately rather than folded into this prep.
+missed. (A wheel-based main `url` looks like a cleaner way to skip building
+the sdist entirely, but doesn't work: Homebrew's pip helper unpacks any
+`url` as a source tree and forces `--no-binary`, so it always tries to
+rebuild a wheel's contents as if they were an sdist and fails.)
 
 Next steps: cut 0.5.3, update the formula's `url`/`sha256`, create
 `OCHA-DAP/homebrew-topo-tools`, push `Formula/topo-tools.rb` there. Install
