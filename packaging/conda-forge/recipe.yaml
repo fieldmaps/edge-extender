@@ -1,7 +1,7 @@
 schema_version: 1
 
 context:
-  version: "0.5.2"
+  version: "0.5.3"
 
 package:
   name: topo-tools
@@ -9,7 +9,7 @@ package:
 
 source:
   url: https://pypi.org/packages/source/t/topo-tools/topo_tools-${{ version }}.tar.gz
-  sha256: 721565f496fe2ddde0e69f733915159b31b64894ea73e93c4566cc62a2d5d4ca
+  sha256: 989f95a7fc276d725085f58fe91f9dc5912b368511066744c3c090aed18a9d7a
 
 build:
   number: 0
@@ -22,7 +22,7 @@ build:
 requirements:
   host:
     - python ${{ python_min }}.*
-    - uv-build >=0.11.27,<0.13.0
+    - hatchling
     - pip
   run:
     - python >=${{ python_min }}
