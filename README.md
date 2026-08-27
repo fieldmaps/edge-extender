@@ -24,21 +24,25 @@ tools, usable from the CLI or as a Python package:
 
 ## Installation
 
+Install with `uv` (recommended):
+
 ```sh
-uv tool install topo-tools   # CLI (recommended)
+uv tool install topo-tools   # CLI
 uv add topo-tools            # Python library
 ```
 
-Or with pipx:
+Or with `pip`/`pipx`:
 
 ```sh
-pipx install topo-tools
+pip install topo-tools       # CLI or library
+pipx install topo-tools      # CLI
 ```
 
-Or with pip:
+On macOS/Linux, `topo-tools` is also available via Homebrew, no Python
+tooling required:
 
 ```sh
-pip install topo-tools
+brew install OCHA-DAP/topo-tools/topo-tools
 ```
 
 Each linked doc above covers that tool's CLI/Python usage, options, and examples.

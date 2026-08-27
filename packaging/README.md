@@ -54,11 +54,19 @@ the sdist entirely, but doesn't work: Homebrew's pip helper unpacks any
 `url` as a source tree and forces `--no-binary`, so it always tries to
 rebuild a wheel's contents as if they were an sdist and fails.)
 
-Next steps: cut 0.5.3, update the formula's `url`/`sha256`, create
-`OCHA-DAP/homebrew-topo-tools`, push `Formula/topo-tools.rb` there. Install
-command for users: `brew install OCHA-DAP/topo-tools/topo-tools` (Homebrew
-≥6.0.0's tap trust auto-trusts a fully-qualified install, no separate `brew
-tap`/`brew trust` step needed).
+Live on `OCHA-DAP/homebrew-topo-tools`. Install command for users: `brew
+install OCHA-DAP/topo-tools/topo-tools` (Homebrew ≥6.0.0's tap trust
+auto-trusts a fully-qualified install, no separate `brew tap`/`brew trust`
+step needed).
+
+Version bumps are automated: `.github/workflows/publish.yml`'s
+`update-homebrew-tap` job runs `brew bump-formula-pr` after each PyPI
+publish, opening a PR against the tap with the new `url`/`sha256` and
+regenerated resource blocks (review and merge like any other PR, nothing
+merges unattended). That job needs a `HOMEBREW_TAP_TOKEN` repository secret
+(a fine-grained PAT scoped to `OCHA-DAP/homebrew-topo-tools` with
+`Contents: Read and write` and `Pull requests: Read and write`), set up
+once by a repo admin.
 
 ## winget (`packaging/winget/`)
 

@@ -28,3 +28,29 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  update-homebrew-tap:
+    needs: publish
+    runs-on: macos-latest
+    steps:
+      - name: Derive released version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Tap OCHA-DAP/homebrew-topo-tools
+        run: brew tap OCHA-DAP/topo-tools
+
+      - name: Open Homebrew formula bump PR
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          brew bump-formula-pr \
+            --no-fork \
+            --no-browse \
+            --install-dependencies \
+            --version="${{ steps.version.outputs.version }}" \
+            OCHA-DAP/topo-tools/topo-tools

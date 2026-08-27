@@ -6,6 +6,7 @@
 - Pending trusted publisher registered at <https://pypi.org/manage/account/publishing/>: project `topo-tools`, owner `OCHA-DAP`, repo `topo-tools-py`, workflow `publish.yml`, environment `pypi`. This authorizes GitHub Actions to publish via OIDC, no long-lived API token stored anywhere.
 - **Repo moved from `fieldmaps` to `OCHA-DAP`.** If the PyPI trusted publisher still shows owner `fieldmaps`, update it at the link above before the next release; GitHub's OIDC token now asserts `OCHA-DAP` as the repo owner and the publish job's OIDC exchange will fail on a mismatch.
 - `.github/workflows/publish.yml` triggers only on `release: published`, never on push/tag alone.
+- `HOMEBREW_TAP_TOKEN` repository secret: a fine-grained PAT scoped to `OCHA-DAP/homebrew-topo-tools` (`Contents: Read and write`, `Pull requests: Read and write`), used by the `update-homebrew-tap` job to open formula-bump PRs. Expires 2027-08-27; renew it before then or that job starts failing.
 
 None of the above needs to be redone for future releases. It's specific to real PyPI; TestPyPI (below) is a fully separate service with its own account/tokens and isn't wired into this workflow.
 
