@@ -65,8 +65,10 @@ three-layer split (`core/` → `api/` → `cli/`) and the rule that `core/` and
 
 ## Reporting bugs / requesting features
 
-Use the issue templates. A failing test that reproduces the bug is the most
-useful bug report you can give us.
+Use the issue templates. The most useful bug report is a failing test:
+add it to the matching `tests/test_<tool>.py` file (e.g. a dissolve bug
+goes in `tests/test_dissolve.py`), following that file's synthetic-fixture
+pattern, small in-test DuckDB fixtures, not committed binary files.
 
 ## Security issues
 

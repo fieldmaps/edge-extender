@@ -6,7 +6,21 @@ body:
     id: description
     attributes:
       label: What happened
-      description: What did you expect, and what actually happened?
+      description: >
+        What did you observe? For a crash, describe the traceback. For a
+        data-pipeline bug with no error (wrong schema, wrong row count,
+        wrong column set), describe the actual output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: >
+        What did you expect instead? For a silent data-mismatch bug this is
+        often the most important field, e.g. expected row count/schema vs.
+        actual.
     validations:
       required: true
 
@@ -17,18 +31,21 @@ body:
       description: >
         Ideally the exact command/code you ran. If the bug depends on input
         data, a small synthetic example (a few polygons) is more useful
-        than a large real-world file — see `tests/test_extend.py` for the
-        pattern.
+        than a large real-world file (see `tests/test_edge_extend.py` for
+        the pattern).
       placeholder: |
-        topo-tools extend example.geojson out.geojson
+        topo-tools edge-extend example.geojson out.geojson
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Error output
-      description: Full traceback or error message. Run with `--debug` if possible.
+      label: Error output (optional, crash bugs only)
+      description: >
+        Full traceback or error message, if the bug produced one. Run with
+        `--debug` if possible. Leave blank for a silent data-mismatch bug
+        with no error.
       render: shell
 
   - type: input
