@@ -244,3 +244,10 @@ name = "schema_fill may depend on schema_map; schema_map must not depend on sche
 type = "forbidden"
 source_modules = ["topo_tools.core.schema_map"]
 forbidden_modules = ["topo_tools.core.schema_fill"]
+
+[[tool.importlinter.contracts]]
+id = "dissolve-may-use-schema_map-not-reverse"
+name = "dissolve may depend on schema_map; schema_map must not depend on dissolve"
+type = "forbidden"
+source_modules = ["topo_tools.core.schema_map"]
+forbidden_modules = ["topo_tools.core.dissolve"]

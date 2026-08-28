@@ -5,9 +5,8 @@ from pathlib import Path
 from duckdb import DuckDBPyConnection
 
 from topo_tools.core.io import read_and_reproject
+from topo_tools.core.schema_map._levels import detect_levels
 from topo_tools.core.schema_map._target_schema import TargetSchema
-
-from ._levels import detect_levels
 
 
 def main(

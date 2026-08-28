@@ -28,10 +28,16 @@ Run `topo-tools dissolve --help` for the full, always-current option list.
    `core.io.read_and_reproject`, then validates that every `group_by`
    column actually exists in the input's schema, raising early rather than
    failing deep inside the aggregate query.
-2. **`_02_dissolve`**: resolves every non-`group_by` column automatically:
-   a single combined query checks whether each one is constant within
-   every group, retaining it (`any_value`) if so and dropping it (with a
-   warning naming every dropped column) if not. It then runs one
+2. **`_02_dissolve`**: `exclude` and, when `target_schema` is given, every
+   column `_schema_derived_exclusions()` finds at a level finer than
+   `group_by`'s own detected level (via `core/schema_map/_levels.py`'s
+   `detect_levels()`/`column_families()`) are folded into the always-excluded
+   set unconditionally, before anything else runs, so neither triggers the
+   dropped-column warning below. Every remaining non-`group_by` column then
+   resolves automatically: a single combined query checks whether each one
+   is constant within every group, retaining it (`any_value`) if so and
+   dropping it (with a warning naming every dropped column) if not. It then
+   runs one
    `GROUP BY` + `ST_Union_Agg` + `ST_MakeValid` query — the same
    `ST_MakeValid(ST_Union_Agg(...)) ... GROUP BY` shape already used
    internally by `core/edge_extend/_04_voronoi.py`, generalized from a fixed
@@ -53,12 +59,16 @@ Run `topo-tools dissolve --help` for the full, always-current option list.
 was built for: dissolving a fine layer into a coarser one, where ancestor
 name/pcode columns at or above the target level are genuinely constant per
 group and the finer level's own columns are not. `dissolve` checks every
-column itself, with no column-selection flags for the caller to configure:
-a `COUNT(DISTINCT ...)` per group, collapsed to one summary row per column
-via SQL aggregation so the check scales with the number of columns, not the
-number of groups (a global admin4 dissolve can have hundreds of thousands
-of groups). A column that's constant everywhere is kept; one that isn't is
-dropped, with a warning naming it.
+remaining column itself: a `COUNT(DISTINCT ...)` per group, collapsed to
+one summary row per column via SQL aggregation so the check scales with
+the number of columns, not the number of groups (a global admin4 dissolve
+can have hundreds of thousands of groups). A column that's constant
+everywhere is kept; one that isn't is dropped, with a warning naming it.
+`exclude`/`target_schema` (see `docs/adr/0092`) only let a caller drop a
+column *before* this check runs, for the one real gap the check itself
+can't resolve (an all-NULL column carries no constancy signal distinguishing
+a genuine finer-level field from a legitimate always-null one); they don't
+add a way to force a varying column to survive.
 
 There's no `keep`/aggregate-function override, and no way to force a
 column to survive despite varying within a group (e.g. summing a per-child
@@ -71,13 +81,20 @@ through `dissolve` itself.
 
 ## No hardcoded admin-hierarchy naming convention
 
-`dissolve` never inspects column names to infer which are "ancestor"
-columns; it inspects the data itself (constancy per group). This keeps it
-schema-agnostic in the same spirit as `schema-map`, whose target schema is
-itself a user-supplied YAML, not a naming convention fixed inside
-`topo-tools`. A pipeline using any column-naming convention gets the same
-automatic behavior without `dissolve` needing to know the convention
-exists.
+By default, `dissolve` never inspects column names to infer which are
+"ancestor" columns; it inspects the data itself (constancy per group).
+This keeps it schema-agnostic in the same spirit as `schema-map`, whose
+target schema is itself a user-supplied YAML, not a naming convention
+fixed inside `topo-tools`. A pipeline using any column-naming convention
+gets the same automatic behavior without `dissolve` needing to know the
+convention exists.
+
+`target_schema` is the one explicit, opt-in exception: when a caller
+supplies it, `dissolve` does match column names against that schema's
+`code_field`/`name_field` templates, via the same
+`core/schema_map/_levels.py` helpers `schema-fill` uses (see
+`docs/adr/0092`). This only ever runs when a caller hands `dissolve` a
+schema; the default, schema-free behavior above is unchanged.
 
 ## Portolan-scale profiling
 

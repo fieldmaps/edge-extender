@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `dissolve` (API and CLI) gains `exclude` and `target_schema` options
+  that drop columns unconditionally, before the constancy auto-keep check
+  runs. `target_schema` auto-derives every column at a level finer than
+  `group_by`'s own detected level from a target-schema YAML.
+
 ## [0.5.3] - 2026-08-27
 
 ### Changed

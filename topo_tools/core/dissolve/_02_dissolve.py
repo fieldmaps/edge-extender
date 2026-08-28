@@ -4,6 +4,13 @@ from logging import getLogger
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.schema_map._levels import (
+    column_families,
+    detect_levels,
+    level_prefix,
+)
+from topo_tools.core.schema_map._target_schema import TargetSchema
+
 logger = getLogger(__name__)
 
 
@@ -36,19 +43,55 @@ def _distinct_counts(
     return dict(zip(columns, row, strict=True))
 
 
-def main(
+def _schema_derived_exclusions(
+    conn: DuckDBPyConnection,
+    table: str,
+    group_by: list[str],
+    schema: TargetSchema,
+) -> set[str]:
+    """Return every column at a level finer than group_by's own detected level."""
+    columns = [row[0] for row in conn.execute(f'DESCRIBE "{table}"').fetchall()]
+    levels = detect_levels(conn, table, schema)
+
+    target_level = None
+    for level in sorted(levels, reverse=True):
+        if schema.code_field.format(n=level) in group_by or (
+            schema.name_field.format(n=level) in group_by
+        ):
+            target_level = level
+            break
+    if target_level is None:
+        msg = (
+            "target_schema given but no group_by column matches any "
+            f"detected level: {group_by}"
+        )
+        raise ValueError(msg)
+
+    finer_levels = [level for level in levels if level > target_level]
+    prefix = level_prefix(schema)
+    families = column_families(columns, finer_levels, prefix)
+    return {column for per_level in families.values() for column in per_level.values()}
+
+
+def main(  # noqa: PLR0913
     conn: DuckDBPyConnection,
     table_in: str,
     table_out: str,
     *,
     group_by: list[str],
+    exclude: list[str] | None = None,
+    target_schema: TargetSchema | None = None,
 ) -> None:
     """Dissolve table_in into table_out, grouping by `group_by`, unioning geometry.
 
     A NULL `group_by` value forms its own group (matching GDAL's
     `combine --group-by`); other columns are kept if constant per group, else dropped.
     """
-    always_excluded = {*group_by, "fid", "geom"}
+    always_excluded = {*group_by, "fid", "geom", *(exclude or [])}
+    if target_schema is not None:
+        always_excluded |= _schema_derived_exclusions(
+            conn, table_in, group_by, target_schema
+        )
     all_cols = {row[0] for row in conn.execute(f'DESCRIBE "{table_in}"').fetchall()}
     candidate_cols = sorted(all_cols - always_excluded)
 

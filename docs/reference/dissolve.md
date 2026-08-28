@@ -17,10 +17,13 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   group like any other value (DuckDB's native `GROUP BY` semantics,
   matching GDAL's `combine --group-by`); `dissolve` MUST NOT raise or
   filter rows based on `group_by` nullness.
-- Every column not in `group_by` MUST be resolved automatically:
-  `dissolve` MUST verify the column has at most one distinct non-NULL
-  value within every group, retaining it (`any_value`) if so and dropping
-  it (logging a warning naming every dropped column) if not.
+- Every column not in `group_by`, `exclude`, or (when `target_schema` is
+  given) a schema-derived finer-level column MUST be resolved
+  automatically: `dissolve` MUST verify the column has at most one
+  distinct non-NULL value within every group, retaining it (`any_value`)
+  if so and dropping it (logging a warning naming every dropped column) if
+  not. `exclude` and schema-derived columns MUST be dropped unconditionally,
+  before this check runs, and MUST NOT trigger the dropped-column warning.
 
 ## Outputs
 
@@ -50,3 +53,13 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   exists and overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `dissolve`, `outputs`; any
   other value MUST raise `ValueError`.
+- `exclude`, if given, MUST be a list of column names dropped
+  unconditionally before the constancy check; a name not present in the
+  input's schema MUST be ignored, not raise. The CLI's `--exclude` MAY be
+  repeated and/or comma-separated.
+- `target_schema_path` (`api.dissolve.dissolve()`; CLI: `--target-schema`),
+  if given, MUST be a target-schema YAML path (the same format
+  `schema-map`/`schema-fill` use). `dissolve` MUST detect
+  `group_by`'s own deepest matching level and unconditionally exclude
+  every column at a finer level, raising `ValueError` if no `group_by`
+  column matches any detected level.

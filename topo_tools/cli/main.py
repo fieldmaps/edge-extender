@@ -257,6 +257,21 @@ def topo_detect(  # noqa: PLR0913, PLR0917
     "comma-separated].",
 )
 @click.option(
+    "--exclude",
+    "exclude",
+    envvar="EXCLUDE",
+    multiple=True,
+    help="Column name(s) to drop unconditionally, before the constancy check "
+    "[may be repeated, and each value MAY be comma-separated].",
+)
+@click.option(
+    "--target-schema",
+    envvar="TARGET_SCHEMA",
+    default=None,
+    help="Target-schema YAML path; auto-excludes every column at a level finer "
+    "than --group-by's own detected level.",
+)
+@click.option(
     "--issues-file",
     envvar="ISSUES_FILE",
     default=None,
@@ -296,6 +311,8 @@ def dissolve(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
     group_by: tuple[str, ...],
+    exclude: tuple[str, ...],
+    target_schema: str | None,
     issues_file: str | None,
     overwrite: bool,  # noqa: FBT001
     threads: int | None,
@@ -309,7 +326,8 @@ def dissolve(  # noqa: PLR0913, PLR0917
     Every column not in --group-by is kept via any_value if it's actually
     constant within every group, dropped (with a warning) if not. A NULL
     value in a --group-by column forms its own group like any other value,
-    matching GDAL's `combine --group-by`.
+    matching GDAL's `combine --group-by`. --exclude and --target-schema both
+    drop columns unconditionally, before that constancy check ever runs.
 
     \b
     Examples:
@@ -317,6 +335,18 @@ def dissolve(  # noqa: PLR0913, PLR0917
       # (e.g. adm1_name) are kept automatically, adm3's own columns are
       # dropped automatically since they vary within each admin2 group
       topo-tools dissolve adm3.geojson --group-by adm2_pcode
+
+      \b
+      # Drop a known all-NULL finer-level column explicitly
+      topo-tools dissolve adm3.geojson --group-by adm2_pcode \
+        --exclude adm3_name1,adm3_name2
+
+      \b
+      # Auto-exclude every column finer than each call's own group-by level
+      topo-tools dissolve adm3.geojson adm2.geojson --group-by adm2_pcode \
+        --target-schema schema.yaml
+      topo-tools dissolve adm3.geojson adm1.geojson --group-by adm1_pcode \
+        --target-schema schema.yaml
     """
     logger.info("--debug=%s", debug)
     try:
@@ -325,6 +355,8 @@ def dissolve(  # noqa: PLR0913, PLR0917
             Path(output_file) if output_file is not None else None,
             Path(issues_file) if issues_file is not None else None,
             group_by=_split_commas(group_by),
+            exclude=_split_commas(exclude) or None,
+            target_schema_path=target_schema,
             threads=threads,
             tmp_dir=tmp_dir,
             overwrite=overwrite,
