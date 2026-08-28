@@ -6,7 +6,7 @@
 - Pending trusted publisher registered at <https://pypi.org/manage/account/publishing/>: project `topo-tools`, owner `OCHA-DAP`, repo `topo-tools-py`, workflow `publish.yml`, environment `pypi`. This authorizes GitHub Actions to publish via OIDC, no long-lived API token stored anywhere.
 - **Repo moved from `fieldmaps` to `OCHA-DAP`.** If the PyPI trusted publisher still shows owner `fieldmaps`, update it at the link above before the next release; GitHub's OIDC token now asserts `OCHA-DAP` as the repo owner and the publish job's OIDC exchange will fail on a mismatch.
 - `.github/workflows/publish.yml` triggers only on `release: published`, never on push/tag alone.
-- `HOMEBREW_TAP_TOKEN` repository secret: a fine-grained PAT scoped to `OCHA-DAP/homebrew-topo-tools` (`Contents: Read and write`, `Pull requests: Read and write`), used by the `update-homebrew-tap` job to open formula-bump PRs. Expires 2027-08-27; renew it before then or that job starts failing.
+- `HOMEBREW_TAP_TOKEN` repository secret: a fine-grained PAT scoped to `OCHA-DAP/homebrew-topo-tools` (`Contents: Read and write`, `Pull requests: Read and write`), used by `.github/workflows/homebrew-tap.yml` to open formula-bump PRs. Expires 2027-08-27; renew it before then or that job starts failing.
 
 None of the above needs to be redone for future releases. It's specific to real PyPI; TestPyPI (below) is a fully separate service with its own account/tokens and isn't wired into this workflow.
 
@@ -17,6 +17,7 @@ None of the above needs to be redone for future releases. It's specific to real 
 3. Merge to `main` (release-triggered workflows run from the default branch).
 4. GitHub → Releases → Draft a new release → tag it (e.g. `v0.1.1`) → Publish release.
 5. Approve the `publish` job in the Actions run (the required-reviewer gate from the environment setup above).
+6. `.github/workflows/homebrew-tap.yml` picks up the new version on its next daily run and opens a formula-bump PR against `OCHA-DAP/homebrew-topo-tools` if the tap is behind; review and merge it there. No manual step needed here, but `brew bump-formula-pr --install-dependencies` requires the PyPI upload to be more than 24h old, so a same-day `workflow_dispatch` re-run can still fail.
 
 Version numbers, once uploaded, are permanent: PyPI never allows re-uploading the same filename again, even after deletion. Staying in `0.x` (SemVer's "no compatibility promises yet" range) means there's no expectation of a steady cadence or of never breaking the CLI/API between releases.
 
