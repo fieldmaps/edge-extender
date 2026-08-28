@@ -1,0 +1,207 @@
+[importlinter]
+root_package = topo_tools
+include_external_packages = True
+
+[importlinter:contract:core-no-click]
+name = Core modules must not import Click
+type = forbidden
+source_modules =
+    topo_tools.core
+forbidden_modules =
+    click
+
+[importlinter:contract:api-no-cli]
+name = API modules must not import CLI
+type = forbidden
+source_modules =
+    topo_tools.api
+forbidden_modules =
+    topo_tools.cli
+
+[importlinter:contract:edge_match-may-use-edge_extend-not-reverse]
+name = edge_match may depend on edge_extend; edge_extend must not depend on edge_match
+type = forbidden
+source_modules =
+    topo_tools.core.edge_extend
+forbidden_modules =
+    topo_tools.core.edge_match
+
+[importlinter:contract:change-independent-of-edge_extend]
+name = change and edge_extend must not depend on each other
+type = independence
+modules =
+    topo_tools.core.change
+    topo_tools.core.edge_extend
+
+[importlinter:contract:edge_mosaic-independent-of-edge_extend]
+name = edge_mosaic and edge_extend must not depend on each other
+type = independence
+modules =
+    topo_tools.core.edge_mosaic
+    topo_tools.core.edge_extend
+
+[importlinter:contract:edge_mosaic-independent-of-edge_match]
+name = edge_mosaic and edge_match must not depend on each other
+type = independence
+modules =
+    topo_tools.core.edge_mosaic
+    topo_tools.core.edge_match
+
+[importlinter:contract:core-constants-is-leaf]
+name = core.constants must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.constants
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-coverage-is-leaf]
+name = core.coverage must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.coverage
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-io-is-leaf]
+name = core.io must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.io
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-duckdb-utils-is-leaf]
+name = core.duckdb_utils must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.duckdb_utils
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-assign-is-leaf]
+name = core.assign must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.assign
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-edge_clip-is-leaf]
+name = core.edge_clip must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.edge_clip
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-edge_stitch-is-leaf]
+name = core.edge_stitch must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.edge_stitch
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-topo_detect-is-leaf]
+name = core.topo_detect must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.topo_detect
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-units-is-leaf]
+name = core.units must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.units
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:core-dissolve-is-leaf]
+name = core.dissolve must not depend on any tool package
+type = forbidden
+source_modules =
+    topo_tools.core.dissolve
+forbidden_modules =
+    topo_tools.core.edge_extend
+    topo_tools.core.edge_match
+    topo_tools.core.topo_clean
+    topo_tools.core.change
+    topo_tools.core.edge_mosaic
+
+[importlinter:contract:schema_crosswalk-may-use-schema_map-not-reverse]
+name = schema_crosswalk may depend on schema_map; schema_map must not depend on schema_crosswalk
+type = forbidden
+source_modules =
+    topo_tools.core.schema_map
+forbidden_modules =
+    topo_tools.core.schema_crosswalk
+
+[importlinter:contract:schema_crosswalk-may-use-schema_refactor-not-reverse]
+name = schema_crosswalk may depend on schema_refactor; schema_refactor must not depend on schema_crosswalk
+type = forbidden
+source_modules =
+    topo_tools.core.schema_refactor
+forbidden_modules =
+    topo_tools.core.schema_crosswalk
+
+[importlinter:contract:schema_map-independent-of-schema_refactor]
+name = schema_map and schema_refactor must not depend on each other
+type = independence
+modules =
+    topo_tools.core.schema_map
+    topo_tools.core.schema_refactor
+
+[importlinter:contract:schema_fill-may-use-schema_map-not-reverse]
+name = schema_fill may depend on schema_map; schema_map must not depend on schema_fill
+type = forbidden
+source_modules =
+    topo_tools.core.schema_map
+forbidden_modules =
+    topo_tools.core.schema_fill
+
+[importlinter:contract:dissolve-may-use-schema_map-not-reverse]
+name = dissolve may depend on schema_map; schema_map must not depend on dissolve
+type = forbidden
+source_modules =
+    topo_tools.core.schema_map
+forbidden_modules =
+    topo_tools.core.dissolve
