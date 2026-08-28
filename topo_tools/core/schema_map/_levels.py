@@ -1,10 +1,10 @@
-"""Derives each admin hierarchy level's code column from a target schema + table."""
+"""Derives admin hierarchy levels and column families from a target schema + table."""
 
 import re
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.schema_map._target_schema import TargetSchema
+from ._target_schema import TargetSchema
 
 
 def field_prefix(template: str) -> str:
@@ -30,7 +30,7 @@ def detect_levels(
     found = sorted({int(m.group(1)) for c in columns if (m := pattern.match(c))})
     found = [n for n in found if n >= 1]
     if not found:
-        msg = f"schema-fill: no {prefix!r}-prefixed level column found in {table}"
+        msg = f"no {prefix!r}-prefixed level column found in {table}"
         raise ValueError(msg)
 
     max_level = found[-1]
@@ -41,10 +41,27 @@ def detect_levels(
     ]
     if missing:
         cols = [schema.code_field.format(n=n) for n in missing]
-        msg = f"schema-fill: missing code column(s) for level(s) {missing}: {cols}"
+        msg = f"missing code column(s) for level(s) {missing}: {cols}"
         raise ValueError(msg)
 
     levels = list(range(1, max_level + 1))
     if schema.code_field.format(n=0) in columns:
         levels.insert(0, 0)
     return levels
+
+
+def column_families(
+    columns: list[str], levels: list[int], prefix: str
+) -> dict[str, dict[int, str]]:
+    """Group level columns by suffix, e.g. {"_pcode": {1: "adm1_pcode", ...}}."""
+    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)(.*)$")
+    families: dict[str, dict[int, str]] = {}
+    for column in columns:
+        match = pattern.match(column)
+        if not match:
+            continue
+        level, suffix = int(match.group(1)), match.group(2)
+        if level not in levels:
+            continue
+        families.setdefault(suffix, {})[level] = column
+    return families

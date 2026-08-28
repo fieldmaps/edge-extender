@@ -1,29 +1,13 @@
 """Fills NULL adm{n}<suffix> columns down and stamps each row's real depth."""
 
-import re
-
 from duckdb import DuckDBPyConnection
 
+from topo_tools.core.schema_map._levels import (
+    column_families,
+    field_prefix,
+    level_prefix,
+)
 from topo_tools.core.schema_map._target_schema import TargetSchema
-
-from ._levels import field_prefix, level_prefix
-
-
-def _column_families(
-    columns: list[str], levels: list[int], prefix: str
-) -> dict[str, dict[int, str]]:
-    """Group level columns by suffix, e.g. {"_pcode": {1: "adm1_pcode", ...}}."""
-    pattern = re.compile(rf"^{re.escape(prefix)}(\d+)(.*)$")
-    families: dict[str, dict[int, str]] = {}
-    for column in columns:
-        match = pattern.match(column)
-        if not match:
-            continue
-        level, suffix = int(match.group(1)), match.group(2)
-        if level not in levels:
-            continue
-        families.setdefault(suffix, {})[level] = column
-    return families
 
 
 def _depth_column_sql(code_columns: dict[int, str], depth_column: str) -> str:
@@ -55,7 +39,7 @@ def main(  # noqa: PLR0913
     filled_select_parts: list[str] = []
     code_columns: dict[int, str] = {}
     for prefix in dict.fromkeys([code_prefix, name_prefix]):
-        families = _column_families(columns, levels, prefix)
+        families = column_families(columns, levels, prefix)
         if prefix == code_prefix:
             code_columns = families.get(code_suffix, {})
         for per_level in families.values():

@@ -17,6 +17,7 @@ from topo_tools.core.io import (
     input_basename,
     resolve_input_path,
 )
+from topo_tools.core.schema_map._target_schema import load_target_schema
 
 logger = getLogger(__name__)
 
@@ -35,6 +36,8 @@ def dissolve(  # noqa: PLR0913
     issues_path: str | Path | None = None,
     *,
     group_by: list[str],
+    exclude: list[str] | None = None,
+    target_schema_path: str | Path | None = None,
     threads: int | None = None,
     tmp_dir: str | Path | None = None,
     overwrite: bool = True,
@@ -52,6 +55,11 @@ def dissolve(  # noqa: PLR0913
     if not group_by:
         msg = "group_by must be a non-empty list of column names"
         raise ValueError(msg)
+    loaded_schema = (
+        load_target_schema(target_schema_path)
+        if target_schema_path is not None
+        else None
+    )
 
     single_path = resolve_input_path(input_path)
 
@@ -87,7 +95,14 @@ def dissolve(  # noqa: PLR0913
             if s == "inputs":
                 inputs.main(conn, name, single_path, group_by=group_by)
             elif s == "dissolve":
-                dissolve_stage.main(conn, f"{name}_01", f"{name}_02", group_by=group_by)
+                dissolve_stage.main(
+                    conn,
+                    f"{name}_01",
+                    f"{name}_02",
+                    group_by=group_by,
+                    exclude=exclude,
+                    target_schema=loaded_schema,
+                )
             elif s == "outputs":
                 outputs.main(conn, name, output_path, issues_path, debug=debug)
         maybe_export_debug_tables(

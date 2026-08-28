@@ -6,6 +6,7 @@ coverage violations, so a clean run is already vetted by the pipeline itself.
 
 import duckdb
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from topo_tools.api.dissolve import dissolve
@@ -106,6 +107,47 @@ def _describe_columns(path) -> set[str]:
         }
 
 
+def _write_schema(path, name_field, code_field):
+    path.write_text(yaml.dump({"name_field": name_field, "code_field": code_field}))
+    return path
+
+
+_HIERARCHY_ROWS = [
+    {
+        "adm1_pcode": "P1",
+        "adm1_name": "Province1",
+        "adm2_pcode": "A1",
+        "adm2_name": "Alpha",
+        "adm2_name2": None,
+        "population": 100,
+        "wkt": "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
+    },
+    {
+        "adm1_pcode": "P1",
+        "adm1_name": "Province1",
+        "adm2_pcode": "A2",
+        "adm2_name": "Beta",
+        "adm2_name2": None,
+        "population": 80,
+        "wkt": "POLYGON((0 1, 1 1, 1 2, 0 2, 0 1))",
+    },
+]
+
+
+@pytest.fixture
+def admin2_hierarchy_input(tmp_path):
+    path = tmp_path / "admin2_hierarchy.parquet"
+    _write_synthetic(path, _HIERARCHY_ROWS)
+    return path
+
+
+@pytest.fixture
+def pcode_target_schema(tmp_path):
+    return _write_schema(
+        tmp_path / "schema.yaml", name_field="adm{n}_name", code_field="adm{n}_pcode"
+    )
+
+
 def test_cli_help():
     result = CliRunner().invoke(cli, ["dissolve", "--help"])
     assert result.exit_code == 0
@@ -154,6 +196,108 @@ def test_dissolve_auto_drops_inconsistent_column_with_warning(
     assert "adm2_name" not in _describe_columns(output_path)
     assert "adm1_name" in _describe_columns(output_path)
     assert any("adm2_name" in record.message for record in caplog.records)
+
+
+def test_dissolve_exclude_drops_column_unconditionally(
+    admin2_hierarchy_input, tmp_path, caplog
+):
+    output_path = tmp_path / "out.parquet"
+    with caplog.at_level("WARNING"):
+        dissolve(
+            admin2_hierarchy_input,
+            output_path,
+            group_by=["adm1_pcode"],
+            exclude=["adm2_name2"],
+            overwrite=True,
+        )
+
+    assert "adm2_name2" not in _describe_columns(output_path)
+    assert not any("adm2_name2" in record.message for record in caplog.records)
+
+
+def test_dissolve_exclude_unknown_column_ignored(admin3_input, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    dissolve(
+        admin3_input,
+        output_path,
+        group_by=["adm2_pcode", "adm1_pcode"],
+        exclude=["does_not_exist"],
+        overwrite=True,
+    )
+
+    assert output_path.exists()
+
+
+def test_dissolve_target_schema_drops_finer_level_columns(
+    admin2_hierarchy_input, pcode_target_schema, tmp_path, caplog
+):
+    output_path = tmp_path / "out.parquet"
+    with caplog.at_level("WARNING"):
+        dissolve(
+            admin2_hierarchy_input,
+            output_path,
+            group_by=["adm1_pcode"],
+            target_schema_path=pcode_target_schema,
+            overwrite=True,
+        )
+
+    columns = _describe_columns(output_path)
+    assert not {"adm2_pcode", "adm2_name", "adm2_name2"} & columns
+    assert "adm1_name" in columns
+    assert not any(
+        "adm2" in record.message
+        for record in caplog.records
+        if "dropping" in record.message
+    )
+
+
+def test_dissolve_target_schema_no_matching_level_raises(
+    admin2_hierarchy_input, pcode_target_schema
+):
+    with pytest.raises(ValueError, match="no group_by column matches"):
+        dissolve(
+            admin2_hierarchy_input,
+            group_by=["population"],
+            target_schema_path=pcode_target_schema,
+            overwrite=True,
+        )
+
+
+def test_cli_exclude_and_target_schema_options(
+    admin2_hierarchy_input, pcode_target_schema, tmp_path
+):
+    exclude_out = tmp_path / "exclude_out.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "dissolve",
+            str(admin2_hierarchy_input),
+            str(exclude_out),
+            "--group-by",
+            "adm1_pcode",
+            "--exclude",
+            "adm2_name2",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "adm2_name2" not in _describe_columns(exclude_out)
+    assert "adm2_pcode" not in _describe_columns(exclude_out)
+
+    schema_out = tmp_path / "schema_out.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "dissolve",
+            str(admin2_hierarchy_input),
+            str(schema_out),
+            "--group-by",
+            "adm1_pcode",
+            "--target-schema",
+            str(pcode_target_schema),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert not {"adm2_pcode", "adm2_name", "adm2_name2"} & _describe_columns(schema_out)
 
 
 def test_dissolve_null_group_forms_own_group(admin3_with_null, tmp_path):

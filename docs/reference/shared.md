@@ -21,6 +21,10 @@ instead of repeating them.
 - The `schema-crosswalk` tool MAY reuse `schema-map`'s and `schema-refactor`'s logic directly;
   neither `schema-map` nor `schema-refactor` MUST depend on `schema-crosswalk`, or on each
   other (see `docs/explanation/schema_crosswalk.md`).
+- `schema-fill` and `dissolve` MAY both depend on `schema-map`'s
+  target-schema/level-detection helpers (`core/schema_map/_levels.py`);
+  `schema-map` MUST NOT depend on either (see `docs/adr/0075`,
+  `docs/adr/0092`).
 
 ## Coverage-topology checks
 

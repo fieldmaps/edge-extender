@@ -17,7 +17,7 @@ from topo_tools.core.io import (
 from topo_tools.core.schema_fill import _01_inputs as inputs
 from topo_tools.core.schema_fill import _02_fill as fill_stage
 from topo_tools.core.schema_fill import _03_outputs as outputs
-from topo_tools.core.schema_fill._levels import detect_levels
+from topo_tools.core.schema_map._levels import detect_levels
 from topo_tools.core.schema_map._target_schema import (
     DEFAULT_TARGET_SCHEMA_PATH,
     load_target_schema,

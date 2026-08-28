@@ -18,7 +18,7 @@ below them:
 - **edge-clip**: assigns each child to its parent (always `assign-one`), then clips it to that parent's geometry, one `parent_fid` at a time in its own subprocess; a strict one-children-file/one-parent-file/one-output primitive (`edge-mosaic` owns batching many children files against one shared parent load, see `docs/adr/0080`). See `docs/explanation/edge_clip.md`.
 - **edge-stitch**: closes seams in an already-tiled layer with one whole-table `ST_CoverageClean` pass. See `docs/explanation/edge_stitch.md`.
 - **topo-detect**: scans a single polygon layer for gap/overlap coverage defects and reports them, without fixing anything. See `docs/explanation/topo_detect.md`.
-- **dissolve**: aggregates a polygon layer into a coarser one by grouping on attribute columns and unioning geometry per group, auto-keeping every other column that's constant per group and dropping the rest. See `docs/explanation/dissolve.md`.
+- **dissolve**: aggregates a polygon layer into a coarser one by grouping on attribute columns and unioning geometry per group, auto-keeping every other column that's constant per group and dropping the rest (opt-in `exclude`/`target_schema` drop columns unconditionally before that check, see `docs/adr/0092`). See `docs/explanation/dissolve.md`.
 - **edge-match**: `assign-one` (default, forcing the whole input file onto one majority-vote parent; opt into per-child `assign-many` via `--multi-parent` for files whose children genuinely scatter across multiple parents, see `docs/adr/0082`) → per-group `edge-extend` (own subprocess) → batched `edge-clip` → `edge-stitch`, fitting a child layer into a coarser parent/clip layer (e.g. admin4 into admin0). The children role MAY span multiple raw files per call, combined via a memory-bounded per-file `inputs`+`assign` loop, groups/clip/stitch/outputs running once over the combined result so cross-file children sharing a parent extend together (`--multi-parent`/`step` rejected outright for a multi-file call, see `docs/adr/0084`). Also accepts an opt-in `--merge` (a plain boolean, plus `--parent-include`/`--parent-exclude`/`--child-include`/`--child-exclude`/`--prefer` narrowing flags, the same design `edge-mosaic` uses), which both groups every child with no parent overlap at all into one orphan group of its own (sentinel `PASSTHROUGH_PARENT_FID`), extending it like any other group and keeping it unclipped in the output (materially weaker safety profile than `edge-mosaic`'s own child passthrough, see `docs/adr/0081`), and gap-fills a parent matched by zero children via the shared `fill_unmatched_parents()` helper, identically to `edge-mosaic` (see `docs/adr/0088`). See `docs/explanation/edge_match.md`.
 - **edge-mosaic**: `assign-one` → `edge-clip` → `edge-stitch`, fitting an already-extended child layer (a prior `edge_extend()` output) into a new/different parent/clip layer, skipping Voronoi extension entirely. See `docs/explanation/edge_mosaic.md`.
 - **topo-clean**: `topo-detect` → fixes the reported coverage defects (gaps, overlaps) with `ST_CoverageClean`, reporting the fix outcome in the issues file for manual review. See `docs/explanation/topo_clean.md`.
@@ -60,12 +60,14 @@ split):
   `core.edge_clip`/`core.edge_stitch`/`core.topo_detect`/`core.dissolve` are
   themselves neutral leaves, alongside `core.constants`/`core.coverage`/
   `core.io`/`core.duckdb_utils`/`core.units`; every tool package may import
-  any of these ten, none of them may import back. `core.schema_map` is not
-  a neutral leaf but MAY be imported by `core.schema_fill` specifically
-  (the target-schema YAML mechanism), never the reverse (see
-  `docs/adr/0075`); `schema-fill` does not call `core.dissolve` itself,
-  a caller runs `dissolve` separately, once per level, after filling (see
-  `docs/explanation/schema_fill.md`).
+  any of these ten, none of them may import back, except `core.dissolve`'s
+  one narrow, explicit carve-out below. `core.schema_map` is not
+  a neutral leaf but MAY be imported by `core.schema_fill` and
+  `core.dissolve` specifically (the target-schema YAML/level-detection
+  mechanism, `core/schema_map/_levels.py`), never the reverse (see
+  `docs/adr/0075`, `docs/adr/0092`); `schema-fill` does not call
+  `core.dissolve` itself, a caller runs `dissolve` separately, once per
+  level, after filling (see `docs/explanation/schema_fill.md`).
 - `topo_tools/api/{edge_extend,edge_clip,edge_stitch,topo_detect,dissolve,schema_fill,edge_match,edge_mosaic,topo_clean,change}.py`:
   public API functions; each chains its own tool's stages for exactly one
   file (or file pair) per call, except `edge-mosaic`'s and `edge-match`'s

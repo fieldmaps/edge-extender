@@ -55,7 +55,7 @@ from yet.
    calls `detect_levels()` to raise early if any level 1..N is missing its
    own code column.
 2. **`_02_fill`** (`core/schema_fill/_02_fill.py`): groups every level
-   column by shared suffix (`_column_families()`), run once against
+   column by shared suffix (`column_families()`, `core/schema_map/_levels.py`), run once against
    `code_field`'s own prefix and once against `name_field`'s own prefix
    (skipping the second pass when they're the same prefix), builds a
    `COALESCE` chain per family from the deepest requested level up to
@@ -71,7 +71,8 @@ from yet.
 
 ## Level detection
 
-`detect_levels()` (`core/schema_fill/_levels.py`) reuses the schema's own
+`detect_levels()` (`core/schema_map/_levels.py`, shared with `dissolve`'s
+`target_schema` option, see `docs/explanation/dissolve.md`) reuses the schema's own
 `code_field` prefix (the literal text before its `{n}` placeholder, e.g.
 `"adm"`) to find every present level via a regex match against the
 table's columns, then requires every level in `1..max_level` to have its
