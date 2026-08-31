@@ -32,3 +32,12 @@ row from an admin2 group that only ever went as deep as admin1.
 ### Example 5: custom depth column name
 
     topo-tools schema-fill leaf.parquet filled.parquet --depth-column adm_depth
+
+### Example 6: pin the fill to a known reference level
+
+If a country's real depth is known to be admin2, and admin1/admin2 are
+already correct source data (any NULL there is genuine, not a fill
+artifact), pin the cascade so admin3+ duplicates admin2 verbatim instead
+of COALESCE-searching back up to admin1:
+
+    topo-tools schema-fill leaf.parquet filled.parquet --cascade-from-level 2
