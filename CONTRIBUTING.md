@@ -66,7 +66,8 @@ protected and only accepts merges via PR.
 - [ ] `uv run pytest` passes
 - [ ] `uv run ruff format && uv run ruff check` clean
 - [ ] Docs updated (README, `CLAUDE.md`, or `docs/*.md`) if user-facing
-      behavior changed
+      behavior changed; a new public API/CLI option gets an example in
+      `docs/tutorials/{tool}.md`
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]` for user-visible
       changes
 
