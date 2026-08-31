@@ -171,6 +171,18 @@ def reproject_select_sql(
     """
 
 
+def sort_paths_by_column_count_desc(
+    conn: DuckDBPyConnection, paths: list[Path | str]
+) -> list[Path | str]:
+    """Order paths by column count descending (ties by path), widest schema first."""
+
+    def _column_count(path: Path | str) -> int:
+        select_sql = reproject_select_sql(conn, path)
+        return len(conn.execute(f"DESCRIBE ({select_sql})").fetchall())
+
+    return sorted(paths, key=lambda p: (-_column_count(p), str(p)))
+
+
 def read_and_reproject(
     conn: DuckDBPyConnection, name: str, path: Path | str, layer: str | None = None
 ) -> None:

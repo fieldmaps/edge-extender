@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted.
+Accepted. Superseded by ADR-0093 (the default fill's
+COALESCE-through-every-shallower-level description only; schema-fill's
+split from dissolve-hierarchy, TargetSchema reuse, and level detection
+remain current).
 
 ## Context
 

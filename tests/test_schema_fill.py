@@ -243,7 +243,7 @@ def test_mismatched_name_code_prefixes_both_fill(tmp_path):
         result = conn.execute(
             f"SELECT NAME_2, adm_lvl FROM '{output_path}' ORDER BY GID_2"
         ).fetchall()
-    assert result == [("District1", _LEVEL_2), ("Region1", _LEVEL_2)]
+    assert result == [("District1", _LEVEL_2), (None, _LEVEL_2)]
 
 
 def test_custom_depth_column_name(leaf_input, tmp_path):
@@ -373,8 +373,8 @@ def test_falls_back_to_level_zero_when_present(tmp_path):
     ]
 
 
-def test_cascade_from_level_pins_reference_level(tmp_path):
-    """A NULL at the pinned level propagates verbatim, not backfilled further up."""
+def test_pins_to_each_rows_own_real_depth_by_default(tmp_path):
+    """A NULL at a row's own real depth stays NULL, not backfilled further up."""
     rows = [
         {
             "adm1_code": "DZ",
@@ -398,63 +398,76 @@ def test_cascade_from_level_pins_reference_level(tmp_path):
     input_path = tmp_path / "dza_leaf.parquet"
     _write_synthetic(input_path, rows)
 
-    unpinned_path = tmp_path / "dza_unpinned.parquet"
-    fill(input_path, output_path=unpinned_path, overwrite=True)
-    pinned_path = tmp_path / "dza_pinned.parquet"
-    fill(
-        input_path,
-        output_path=pinned_path,
-        overwrite=True,
-        cascade_from_level=_LEVEL_2,
-    )
-
-    where = "WHERE adm2_code = 'DZ01'"
-    with duckdb.connect() as conn:
-        conn.execute("LOAD spatial")
-        unpinned = conn.execute(
-            f"SELECT adm2_name, adm3_code, adm3_name, adm_lvl "
-            f"FROM '{unpinned_path}' {where}"
-        ).fetchone()
-        pinned = conn.execute(
-            f"SELECT adm2_name, adm3_code, adm3_name, adm_lvl "
-            f"FROM '{pinned_path}' {where}"
-        ).fetchone()
-
-    assert unpinned == ("Algeria", "DZ01", "Algeria", _LEVEL_2)
-    assert pinned == (None, "DZ01", None, _LEVEL_2)
-
-
-def test_cascade_from_level_rejects_undetected_level(tmp_path):
-    rows = [{k: v for k, v in row.items() if k != "adm3_code"} for row in _LEAF_ROWS]
-    rows = [{k: v for k, v in row.items() if k != "adm3_name"} for row in rows]
-    path = tmp_path / "two_level.parquet"
-    _write_synthetic(path, rows)
-    with pytest.raises(ValueError, match="cascade_from_level must be one of"):
-        fill(path, overwrite=True, cascade_from_level=_LEVEL_3)
-
-
-def test_cli_cascade_from_level(leaf_input, tmp_path):
-    output_path = tmp_path / "cli_pinned.parquet"
-    result = CliRunner().invoke(
-        cli,
-        [
-            "schema-fill",
-            str(leaf_input),
-            str(DEFAULT_TARGET_SCHEMA_PATH),
-            str(output_path),
-            "--cascade-from-level",
-            str(_LEVEL_2),
-        ],
-    )
-    assert result.exit_code == 0, result.output
+    output_path = tmp_path / "dza_out.parquet"
+    fill(input_path, output_path=output_path, overwrite=True)
 
     with duckdb.connect() as conn:
         conn.execute("LOAD spatial")
         row = conn.execute(
-            f"SELECT adm3_name FROM '{output_path}' WHERE adm1_code = 'AA' "
-            "AND adm2_code = 'AA02'"
+            "SELECT adm2_name, adm3_code, adm3_name, adm_lvl "
+            f"FROM '{output_path}' WHERE adm2_code = 'DZ01'"
         ).fetchone()
-    assert row == ("Prov2",)
+
+    assert row == (None, "DZ01", None, _LEVEL_2)
+
+
+def test_per_row_depth_scoping(tmp_path):
+    """Each row's own real depth governs its own fill; no shared file-wide level."""
+    rows = [
+        {
+            "adm1_code": "AA",
+            "adm1_name": "Country A",
+            "adm2_code": None,
+            "adm2_name": None,
+            "adm3_code": None,
+            "adm3_name": None,
+            "wkt": "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
+        },
+        {
+            "adm1_code": "BB",
+            "adm1_name": "Country B",
+            "adm2_code": "BB01",
+            "adm2_name": None,
+            "adm3_code": None,
+            "adm3_name": None,
+            "wkt": "POLYGON((0 1, 1 1, 1 2, 0 2, 0 1))",
+        },
+        {
+            "adm1_code": "CC",
+            "adm1_name": "Country C",
+            "adm2_code": "CC01",
+            "adm2_name": "Prov1",
+            "adm3_code": "CC0101",
+            "adm3_name": "Dist1",
+            "wkt": "POLYGON((5 5, 6 5, 6 6, 5 6, 5 5))",
+        },
+    ]
+    input_path = tmp_path / "mixed_depth_leaf.parquet"
+    _write_synthetic(input_path, rows)
+
+    output_path = tmp_path / "mixed_depth_out.parquet"
+    fill(input_path, output_path=output_path, overwrite=True)
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        result = conn.execute(
+            "SELECT adm1_code, adm2_name, adm3_name, adm_lvl "
+            f"FROM '{output_path}' ORDER BY adm1_code"
+        ).fetchall()
+
+    assert result == [
+        ("AA", "Country A", "Country A", _LEVEL_1),
+        ("BB", None, None, _LEVEL_2),
+        ("CC", "Prov1", "Dist1", _LEVEL_3),
+    ]
+
+
+def test_depth_column_collision_raises(tmp_path):
+    rows = [{**row, "adm_lvl": 1} for row in _LEAF_ROWS]
+    path = tmp_path / "collision.parquet"
+    _write_synthetic(path, rows)
+    with pytest.raises(ValueError, match=r"adm_lvl.*already exists"):
+        fill(path, overwrite=True)
 
 
 def test_cli_positional_args(leaf_input, tmp_path):

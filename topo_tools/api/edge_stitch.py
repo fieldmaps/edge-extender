@@ -3,6 +3,7 @@
 from logging import getLogger
 from pathlib import Path
 
+from topo_tools.api._schema_fill_compose import apply_optional_fill, validate_fill_flags
 from topo_tools.core.duckdb_utils import (
     maybe_export_debug_tables,
     pipeline_connection,
@@ -39,6 +40,9 @@ def stitch(  # noqa: C901, PLR0913
     overwrite: bool = True,
     debug: bool = False,
     step: str | None = None,
+    fill_schema: bool = False,
+    target_schema_path: str | Path | None = None,
+    depth_column: str = "adm_lvl",
 ) -> None:
     """Close seams in an already-tiled polygon layer via coverage-clean.
 
@@ -48,6 +52,7 @@ def stitch(  # noqa: C901, PLR0913
     if step is not None and step not in _STEP_ORDER:
         msg = f"step must be one of {_STEP_ORDER}, got {step!r}"
         raise ValueError(msg)
+    validate_fill_flags(fill_schema=fill_schema, target_schema_path=target_schema_path)
 
     if isinstance(input_path, (str, Path)):
         paths = [resolve_input_path(input_path)]
@@ -98,6 +103,15 @@ def stitch(  # noqa: C901, PLR0913
             elif s == "clean":
                 clean.main(conn, f"{name}_01", f"{name}_02")
             elif s == "outputs":
+                apply_optional_fill(
+                    conn,
+                    name,
+                    f"{name}_02",
+                    requested=fill_schema,
+                    target_schema_path=target_schema_path,
+                    depth_column=depth_column,
+                    debug=debug,
+                )
                 outputs.main(conn, name, output_path, issues_path, debug=debug)
         maybe_export_debug_tables(
             conn, tmp_dir_path, name, step, _STEP_TABLES, debug=debug

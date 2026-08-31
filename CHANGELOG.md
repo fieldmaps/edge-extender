@@ -9,10 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `schema-fill` (API and CLI) gains `cascade_from_level`/
-  `--cascade-from-level`, pinning the fill to one reference level: every
-  finer level gets that level's value duplicated verbatim (NULL included)
-  instead of searching further up the ancestor chain.
+- `edge-stitch`, `edge-match`, and `edge-mosaic` (API and CLI) gain an
+  opt-in `fill_schema`/`--fill-schema` flag, cascading admin-hierarchy
+  columns and stamping each row's real depth right after their own merge,
+  before export, reusing `schema-fill`'s own logic from the `api` layer.
+  Narrow it with `target_schema_path`/`--target-schema` and
+  `depth_column`/`--depth-column`.
+
+### Fixed
+
+- `schema-fill` (API and CLI) now pins the fill to each row's own real
+  depth by default: a genuinely NULL value at a row's own real terminal
+  level is left NULL rather than backfilled from a shallower ancestor.
+  `cascade_from_level`/`--cascade-from-level` (never released) is removed;
+  the pin is now automatic and per-row instead of a caller-supplied,
+  file-wide reference level.
+- `edge-stitch`, `edge-match`, and `edge-mosaic`'s multi-file combine step
+  now sorts inputs by column count descending (ties by filename) before
+  unioning/folding, so output column order no longer depends on
+  caller-supplied file order.
 
 ## [0.5.4] - 2026-08-28
 

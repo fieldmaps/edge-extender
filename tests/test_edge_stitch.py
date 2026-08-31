@@ -13,9 +13,11 @@ from click.testing import CliRunner
 from topo_tools.api.edge_stitch import stitch
 from topo_tools.cli.main import cli
 from topo_tools.core.coverage import has_invalid_edges
+from topo_tools.core.schema_map._target_schema import DEFAULT_TARGET_SCHEMA_PATH
 
 _STEPS = ["inputs", "clean", "outputs"]
 _FIXTURES_DIR = Path(__file__).parent / "fixtures"
+_LEVEL_1, _LEVEL_2 = 1, 2
 
 
 def _frame_wkt(gap: float) -> list[tuple[int, str]]:
@@ -201,6 +203,49 @@ def test_stitch_multi_file_api(tiny_gap_split, tmp_path):
     assert row_count == expected_row_count
 
 
+def test_multi_file_column_order_is_deterministic_regardless_of_input_order(tmp_path):
+    """UNION ALL BY NAME must not let caller-supplied file order pick the schema."""
+    tiles = _frame_wkt(1e-9)
+
+    deep_path = tmp_path / "deep.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE deep AS SELECT * FROM (VALUES
+                (1, 'A1', 'B1', 'C1', ST_GeomFromText('{tiles[0][1]}')),
+                (2, 'A1', 'B1', 'C1', ST_GeomFromText('{tiles[1][1]}'))
+            ) AS t(id, adm1_name, adm2_name, adm3_name, geom)
+        """)
+        conn.execute(f"COPY deep TO '{deep_path}'")
+
+    shallow_path = tmp_path / "shallow.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE shallow AS SELECT * FROM (VALUES
+                (3, 'B2', ST_GeomFromText('{tiles[2][1]}')),
+                (4, 'B2', ST_GeomFromText('{tiles[3][1]}'))
+            ) AS t(id, adm2_name, geom)
+        """)
+        conn.execute(f"COPY shallow TO '{shallow_path}'")
+
+    def _columns(paths, tag):
+        output_path = tmp_path / f"out_{tag}.parquet"
+        issues_path = tmp_path / f"issues_{tag}.parquet"
+        stitch(list(paths), output_path, issues_path, overwrite=True)
+        with duckdb.connect() as conn:
+            conn.execute("LOAD spatial")
+            return [
+                row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+            ]
+
+    forward = _columns([deep_path, shallow_path], "forward")
+    reverse = _columns([shallow_path, deep_path], "reverse")
+    assert forward == reverse
+    assert "adm1_name" in forward
+    assert "adm3_name" in forward
+
+
 def test_coincident_boundary_fixture_is_invalid_at_default_tolerance():
     """Guards the fixture itself: it must still repro INVALID_EDGES pre-fix."""
     path = _FIXTURES_DIR / "edge_stitch_coincident_boundary.parquet"
@@ -269,3 +314,154 @@ def test_cli_glob_no_matches(tmp_path):
     )
     assert result.exit_code != 0
     assert "no files matched" in result.output
+
+
+def _write_admin_synthetic(path, rows: list[dict]) -> None:
+    cols = [k for k in rows[0] if k != "wkt"]
+    col_list = ", ".join([*cols, "geom"])
+    values = ", ".join(
+        "("
+        + ", ".join(
+            "NULL"
+            if r[c] is None
+            else f"'{r[c]}'"
+            if isinstance(r[c], str)
+            else str(r[c])
+            for c in cols
+        )
+        + f", ST_GeomFromText('{r['wkt']}'))"
+        for r in rows
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t({col_list})"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+
+
+_ADMIN_ROWS = [
+    {
+        "adm1_code": "AA",
+        "adm1_name": "Country A",
+        "adm2_code": "AA01",
+        "adm2_name": "Prov1",
+        "wkt": _frame_wkt(1e-9)[0][1],
+    },
+    {
+        "adm1_code": "AA",
+        "adm1_name": "Country A",
+        "adm2_code": "AA02",
+        "adm2_name": "Prov2",
+        "wkt": _frame_wkt(1e-9)[1][1],
+    },
+    {
+        "adm1_code": "BB",
+        "adm1_name": "Country B",
+        "adm2_code": None,
+        "adm2_name": None,
+        "wkt": _frame_wkt(1e-9)[2][1],
+    },
+    {
+        "adm1_code": "BB",
+        "adm1_name": "Country B",
+        "adm2_code": None,
+        "adm2_name": None,
+        "wkt": _frame_wkt(1e-9)[3][1],
+    },
+]
+
+
+@pytest.fixture
+def admin_input(tmp_path):
+    path = tmp_path / "admin.parquet"
+    _write_admin_synthetic(path, _ADMIN_ROWS)
+    return path
+
+
+def _columns_and_rows(path):
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        cols = [row[0] for row in conn.execute(f"DESCRIBE '{path}'").fetchall()]
+        rows = conn.execute(
+            f"SELECT * FROM '{path}' ORDER BY adm1_code, adm2_code"
+        ).fetchall()
+    return cols, rows
+
+
+def test_fill_schema_off_by_default_leaves_output_unchanged(admin_input, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    stitch(admin_input, output_path, overwrite=True)
+    cols, _ = _columns_and_rows(output_path)
+    assert "adm_lvl" not in cols
+
+
+def test_fill_schema_stamps_depth_and_fills(admin_input, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    stitch(admin_input, output_path, overwrite=True, fill_schema=True)
+    cols, rows = _columns_and_rows(output_path)
+    assert "adm_lvl" in cols
+    lvl = cols.index("adm_lvl")
+    name2 = cols.index("adm2_name")
+
+    by_code = {
+        (r[cols.index("adm1_code")], r[cols.index("adm2_code")]): r for r in rows
+    }
+    assert by_code[("AA", "AA01")][lvl] == _LEVEL_2
+    assert by_code[("AA", "AA02")][lvl] == _LEVEL_2
+    for r in rows:
+        if r[cols.index("adm1_code")] == "BB":
+            assert r[lvl] == _LEVEL_1
+            assert r[name2] == "Country B"
+
+
+def test_cli_fill_schema_flag(admin_input, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    result = CliRunner().invoke(
+        cli, ["edge-stitch", str(admin_input), str(output_path), "--fill-schema"]
+    )
+    assert result.exit_code == 0, result.output
+    cols, _ = _columns_and_rows(output_path)
+    assert "adm_lvl" in cols
+
+
+def test_fill_schema_without_admin_columns_raises(tiny_gap_input, tmp_path):
+    with pytest.raises(ValueError, match=r"no .*level column found"):
+        stitch(
+            tiny_gap_input,
+            tmp_path / "out.parquet",
+            overwrite=True,
+            fill_schema=True,
+        )
+
+
+def test_fill_depth_column_flag(admin_input, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    stitch(
+        admin_input,
+        output_path,
+        overwrite=True,
+        fill_schema=True,
+        depth_column="adm_depth",
+    )
+    cols, _ = _columns_and_rows(output_path)
+    assert "adm_depth" in cols
+    assert "adm_lvl" not in cols
+
+
+def test_depth_column_collision_raises(tmp_path):
+    rows = [{**row, "adm_lvl": 99} for row in _ADMIN_ROWS]
+    path = tmp_path / "collide.parquet"
+    _write_admin_synthetic(path, rows)
+    with pytest.raises(ValueError, match=r"adm_lvl.*already exists"):
+        stitch(path, tmp_path / "out.parquet", overwrite=True, fill_schema=True)
+
+
+def test_target_schema_path_requires_fill_schema(admin_input, tmp_path):
+    with pytest.raises(ValueError, match="requires fill_schema"):
+        stitch(
+            admin_input,
+            tmp_path / "out.parquet",
+            overwrite=True,
+            target_schema_path=DEFAULT_TARGET_SCHEMA_PATH,
+        )

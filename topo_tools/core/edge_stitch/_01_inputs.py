@@ -4,7 +4,11 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
-from topo_tools.core.io import read_and_reproject, reproject_select_sql
+from topo_tools.core.io import (
+    read_and_reproject,
+    reproject_select_sql,
+    sort_paths_by_column_count_desc,
+)
 
 
 def main(
@@ -19,8 +23,9 @@ def main(
         read_and_reproject(conn, name, path)
         return
 
+    ordered = sort_paths_by_column_count_desc(conn, path)
     union_sql = " UNION ALL BY NAME ".join(
-        f"({reproject_select_sql(conn, p)})" for p in path
+        f"({reproject_select_sql(conn, p)})" for p in ordered
     )
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_01" AS

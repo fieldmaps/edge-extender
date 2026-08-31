@@ -49,3 +49,10 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   exists and overwriting wasn't requested.
 - `step`, if given, MUST be one of `inputs`, `topo-clean`, `outputs`; any other
   value MUST raise `ValueError`.
+- `edge-stitch` MAY opt into cascading admin-hierarchy columns via
+  `fill_schema`/`--fill-schema`, right after cleaning and before export.
+  `target_schema_path`/`--target-schema` (default: the bundled generic
+  schema) and `depth_column`/`--depth-column` (default `adm_lvl`) narrow it;
+  both MUST raise `ValueError` if given without `fill_schema=True`.
+  `edge-stitch` MUST raise `ValueError` if `depth_column` already names an
+  existing column when `fill_schema` is set (see `docs/adr/0095`).

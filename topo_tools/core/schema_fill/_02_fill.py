@@ -27,14 +27,16 @@ def main(  # noqa: PLR0913
     levels: list[int],
     schema: TargetSchema,
     depth_column: str,
-    cascade_from_level: int | None = None,
 ) -> None:
-    """Build table_out: fill each name/code column family, stamp the depth column."""
+    """Build table_out: stamp each row's real depth, fill every column family to it."""
     code_prefix = level_prefix(schema)
     name_prefix = field_prefix(schema.name_field)
     code_suffix = schema.code_field.split("{n}", 1)[1]
 
     columns = [row[0] for row in conn.execute(f'DESCRIBE "{table_in}"').fetchall()]
+    if depth_column in columns:
+        msg = f"depth_column {depth_column!r} already exists on {table_in!r}"
+        raise ValueError(msg)
 
     filled_columns: set[str] = set()
     filled_select_parts: list[str] = []
@@ -45,35 +47,33 @@ def main(  # noqa: PLR0913
             code_columns = families.get(code_suffix, {})
         for per_level in families.values():
             filled_columns.update(per_level.values())
-            pin_column = (
-                per_level.get(cascade_from_level)
-                if cascade_from_level is not None
-                else None
+            if len(per_level) == 1:
+                (only_column,) = per_level.values()
+                filled_select_parts.append(f'"{only_column}"')
+                continue
+            fallback_cases = "\n".join(
+                f'WHEN "{depth_column}" >= {lvl} THEN "{per_level[lvl]}"'
+                for lvl in sorted(per_level, reverse=True)
             )
-            for level in sorted(per_level):
-                if pin_column is not None:
-                    if level > cascade_from_level:
-                        filled_select_parts.append(
-                            f'"{pin_column}" AS "{per_level[level]}"'
-                        )
-                    else:
-                        filled_select_parts.append(f'"{per_level[level]}"')
-                    continue
-                chain = [per_level[k] for k in sorted(per_level) if k <= level]
-                if len(chain) > 1:
-                    coalesce = ", ".join(f'"{c}"' for c in reversed(chain))
-                    filled_select_parts.append(
-                        f'COALESCE({coalesce}) AS "{per_level[level]}"'
-                    )
-                else:
-                    filled_select_parts.append(f'"{per_level[level]}"')
+            fallback = f"CASE {fallback_cases} END"
+            for level, column in sorted(per_level.items()):
+                filled_select_parts.append(
+                    f'CASE WHEN "{depth_column}" >= {level} '
+                    f'THEN "{column}" ELSE ({fallback}) END AS "{column}"'
+                )
 
-    select_parts = [
-        f'"{c}"' for c in columns if c not in filled_columns
-    ] + filled_select_parts
-    select_parts.append(_depth_column_sql(code_columns, depth_column))
+    select_parts = (
+        [f'"{c}"' for c in columns if c not in filled_columns]
+        + filled_select_parts
+        + [f'"{depth_column}"']
+    )
 
     select_sql = ", ".join(select_parts)
     conn.execute(f"""--sql
-        CREATE OR REPLACE TABLE "{table_out}" AS SELECT {select_sql} FROM "{table_in}"
+        CREATE OR REPLACE TABLE "{table_out}" AS
+        WITH "depth" AS (
+            SELECT *, {_depth_column_sql(code_columns, depth_column)}
+            FROM "{table_in}"
+        )
+        SELECT {select_sql} FROM "depth"
     """)

@@ -17,6 +17,9 @@ from topo_tools.core.coverage import has_gaps
 from topo_tools.core.edge_match import _01_inputs
 from topo_tools.core.edge_match import _03_clip as match_clip
 from topo_tools.core.edge_match._02_groups import _record_dropped_group
+from topo_tools.core.schema_map._target_schema import DEFAULT_TARGET_SCHEMA_PATH
+
+_LEVEL_1, _LEVEL_2 = 1, 2
 
 # Parent A contains children 1 & 2, Parent B contains only child 3, child 4
 # is far from both; --multi-parent restores this per-child grouping.
@@ -913,6 +916,43 @@ def test_match_multi_file_api(synthetic_children_split, synthetic_parents, tmp_p
     assert [r[0] for r in rows] == [1, 2]
 
 
+def test_match_multi_file_column_order_is_deterministic(synthetic_parents, tmp_path):
+    """UNION ALL BY NAME must not let caller-supplied file order pick the schema."""
+    deep_path = tmp_path / "deep.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE deep AS SELECT * FROM (VALUES
+                (1, 'A1', 'B1', ST_GeomFromText('{_CHILD_WKT[0][1]}'))
+            ) AS t(id, adm1_name, adm2_name, geom)
+        """)
+        conn.execute(f"COPY deep TO '{deep_path}'")
+
+    shallow_path = tmp_path / "shallow.parquet"
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(f"""--sql
+            CREATE TABLE shallow AS SELECT * FROM (VALUES
+                (2, 'B2', ST_GeomFromText('{_CHILD_WKT[1][1]}'))
+            ) AS t(id, adm2_name, geom)
+        """)
+        conn.execute(f"COPY shallow TO '{shallow_path}'")
+
+    def _columns(paths, tag):
+        output_path = tmp_path / f"out_{tag}.parquet"
+        match(list(paths), synthetic_parents, output_path, overwrite=True)
+        with duckdb.connect() as conn:
+            conn.execute("LOAD spatial")
+            return [
+                row[0] for row in conn.execute(f"DESCRIBE '{output_path}'").fetchall()
+            ]
+
+    forward = _columns([deep_path, shallow_path], "forward")
+    reverse = _columns([shallow_path, deep_path], "reverse")
+    assert forward == reverse
+    assert "adm1_name" in forward
+
+
 def test_match_multi_file_rejects_multi_parent(
     synthetic_children_split, synthetic_parents, tmp_path
 ):
@@ -1032,3 +1072,178 @@ def test_cli_edge_match_glob_no_matches(synthetic_parents, tmp_path):
     )
     assert result.exit_code != 0
     assert "no files matched" in result.output
+
+
+def _write_admin_synthetic(path, rows: list[dict]) -> None:
+    cols = [k for k in rows[0] if k != "wkt"]
+    col_list = ", ".join([*cols, "geom"])
+    values = ", ".join(
+        "("
+        + ", ".join(
+            "NULL"
+            if r[c] is None
+            else f"'{r[c]}'"
+            if isinstance(r[c], str)
+            else str(r[c])
+            for c in cols
+        )
+        + f", ST_GeomFromText('{r['wkt']}'))"
+        for r in rows
+    )
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute(
+            f"CREATE TABLE synth AS SELECT * FROM (VALUES {values}) AS t({col_list})"
+        )
+        conn.execute(f"COPY synth TO '{path}'")
+
+
+_ADMIN_CHILD_ROWS = [
+    {
+        "adm1_code": "AA",
+        "adm1_name": "Country A",
+        "adm2_code": "AA01",
+        "adm2_name": "Prov1",
+        "wkt": _CHILD_WKT[0][1],
+    },
+    {
+        "adm1_code": "AA",
+        "adm1_name": "Country A",
+        "adm2_code": None,
+        "adm2_name": None,
+        "wkt": _CHILD_WKT[1][1],
+    },
+]
+
+
+@pytest.fixture
+def admin_children(tmp_path):
+    path = tmp_path / "admin_children.parquet"
+    _write_admin_synthetic(path, _ADMIN_CHILD_ROWS)
+    return path
+
+
+def _columns_and_rows(path):
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        cols = [row[0] for row in conn.execute(f"DESCRIBE '{path}'").fetchall()]
+        rows = conn.execute(f"SELECT * FROM '{path}' ORDER BY adm2_code").fetchall()
+    return cols, rows
+
+
+def test_fill_schema_off_by_default_leaves_output_unchanged(
+    admin_children, synthetic_parents, tmp_path
+):
+    output_path = tmp_path / "out.parquet"
+    match(admin_children, synthetic_parents, output_path, overwrite=True)
+    cols, _ = _columns_and_rows(output_path)
+    assert "adm_lvl" not in cols
+
+
+def test_fill_schema_stamps_depth_and_fills(
+    admin_children, synthetic_parents, tmp_path
+):
+    output_path = tmp_path / "out.parquet"
+    match(
+        admin_children, synthetic_parents, output_path, overwrite=True, fill_schema=True
+    )
+    cols, rows = _columns_and_rows(output_path)
+    assert "adm_lvl" in cols
+    lvl = cols.index("adm_lvl")
+    name2 = cols.index("adm2_name")
+
+    by_level = {r[lvl]: r for r in rows}
+    assert by_level[_LEVEL_2][name2] == "Prov1"
+    assert by_level[_LEVEL_1][name2] == "Country A"
+
+
+def test_cli_fill_schema_flag(admin_children, synthetic_parents, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "edge-match",
+            str(admin_children),
+            str(synthetic_parents),
+            str(output_path),
+            "--fill-schema",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    cols, _ = _columns_and_rows(output_path)
+    assert "adm_lvl" in cols
+
+
+def test_fill_schema_without_admin_columns_raises(
+    synthetic_children, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match=r"no .*level column found"):
+        match(
+            synthetic_children,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            overwrite=True,
+            fill_schema=True,
+        )
+
+
+def test_fill_depth_column_flag(admin_children, synthetic_parents, tmp_path):
+    output_path = tmp_path / "out.parquet"
+    match(
+        admin_children,
+        synthetic_parents,
+        output_path,
+        overwrite=True,
+        fill_schema=True,
+        depth_column="adm_depth",
+    )
+    cols, _ = _columns_and_rows(output_path)
+    assert "adm_depth" in cols
+    assert "adm_lvl" not in cols
+
+
+def test_depth_column_collision_raises(synthetic_parents, tmp_path):
+    rows = [{**row, "adm_lvl": 99} for row in _ADMIN_CHILD_ROWS]
+    path = tmp_path / "collide.parquet"
+    _write_admin_synthetic(path, rows)
+    with pytest.raises(ValueError, match=r"adm_lvl.*already exists"):
+        match(
+            path,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            overwrite=True,
+            fill_schema=True,
+        )
+
+
+def test_target_schema_path_requires_fill_schema(
+    admin_children, synthetic_parents, tmp_path
+):
+    with pytest.raises(ValueError, match="requires fill_schema"):
+        match(
+            admin_children,
+            synthetic_parents,
+            tmp_path / "out.parquet",
+            overwrite=True,
+            target_schema_path=DEFAULT_TARGET_SCHEMA_PATH,
+        )
+
+
+def test_fill_schema_multi_file(synthetic_parents, tmp_path):
+    """Second insertion point: _match_multi_file()'s own outputs branch."""
+    path_a = tmp_path / "child_a.parquet"
+    path_b = tmp_path / "child_b.parquet"
+    _write_admin_synthetic(path_a, [_ADMIN_CHILD_ROWS[0]])
+    _write_admin_synthetic(path_b, [_ADMIN_CHILD_ROWS[1]])
+    output_path = tmp_path / "out.parquet"
+    match(
+        [path_a, path_b],
+        synthetic_parents,
+        output_path,
+        overwrite=True,
+        fill_schema=True,
+    )
+    cols, rows = _columns_and_rows(output_path)
+    assert "adm_lvl" in cols
+    lvl = cols.index("adm_lvl")
+    assert {r[lvl] for r in rows} == {_LEVEL_1, _LEVEL_2}
