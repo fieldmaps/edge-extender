@@ -28,7 +28,10 @@ Issues = "https://github.com/OCHA-DAP/topo-tools-py/issues"
 topo-tools = "topo_tools.cli.main:cli"
 
 [dependency-groups]
-dev = ["import-linter", "pre-commit", "pytest", "ruff"]
+dev = ["import-linter", "pre-commit", "pytest", "pytest-xdist", "ruff"]
+
+[tool.pytest.ini_options]
+addopts = "-n auto"
 
 [build-system]
 requires = ["hatchling"]
