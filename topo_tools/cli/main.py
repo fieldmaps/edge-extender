@@ -94,6 +94,43 @@ def _add_merge_options(f):  # noqa: ANN001, ANN202
     return f
 
 
+_FILL_OPTIONS = (
+    click.option(
+        "--fill-schema",
+        envvar="FILL_SCHEMA",
+        is_flag=True,
+        help=(
+            "Cascade admin-hierarchy columns down and stamp each row's real "
+            "depth, right before export. Narrow the target schema with "
+            "--target-schema; rename the stamped depth column with "
+            "--depth-column."
+        ),
+    ),
+    click.option(
+        "--target-schema",
+        envvar="TARGET_SCHEMA",
+        default=None,
+        help="Target-schema YAML path (requires --fill-schema; default: "
+        "the bundled generic schema).",
+    ),
+    click.option(
+        "--depth-column",
+        envvar="DEPTH_COLUMN",
+        default="adm_lvl",
+        show_default=True,
+        help="Name of the new column stamping each row's real depth "
+        "(requires --fill-schema).",
+    ),
+)
+
+
+def _add_fill_options(f):  # noqa: ANN001, ANN202
+    """Apply the shared --fill-schema option set to a command function."""
+    for option in reversed(_FILL_OPTIONS):
+        f = option(f)
+    return f
+
+
 @click.group()
 @click.version_option(package_name="topo-tools", prog_name="topo-tools")
 def cli() -> None:
@@ -734,6 +771,7 @@ def change(  # noqa: PLR0913, PLR0917
         "Rejected when more than one children file resolves."
     ),
 )
+@_add_fill_options
 def edge_match(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -755,6 +793,9 @@ def edge_match(  # noqa: PLR0913, PLR0917
     child_exclude: str | None,
     prefer: str | None,
     multi_parent: bool,  # noqa: FBT001
+    fill_schema: bool,  # noqa: FBT001
+    target_schema: str | None,
+    depth_column: str,
 ) -> None:
     r"""Match one or more children layers to parents by largest overlap.
 
@@ -828,6 +869,9 @@ def edge_match(  # noqa: PLR0913, PLR0917
             child_exclude=_split_columns(child_exclude),
             prefer=prefer,
             multi_parent=multi_parent,
+            fill_schema=fill_schema,
+            target_schema_path=target_schema,
+            depth_column=depth_column,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -906,6 +950,7 @@ def edge_match(  # noqa: PLR0913, PLR0917
     help="Child-side code column, when it's named differently than the parent's.",
 )
 @_add_merge_options
+@_add_fill_options
 def edge_mosaic(  # noqa: PLR0913, PLR0917
     input_file: str,
     clip_file: str,
@@ -926,6 +971,9 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
     child_include: str | None,
     child_exclude: str | None,
     prefer: str | None,
+    fill_schema: bool,  # noqa: FBT001
+    target_schema: str | None,
+    depth_column: str,
 ) -> None:
     r"""Fit an already-extended children layer into a new parent/clip layer.
 
@@ -996,6 +1044,9 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
             child_include=_split_columns(child_include),
             child_exclude=_split_columns(child_exclude),
             prefer=prefer,
+            fill_schema=fill_schema,
+            target_schema_path=target_schema,
+            depth_column=depth_column,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -1050,6 +1101,7 @@ def edge_mosaic(  # noqa: PLR0913, PLR0917
     default=None,
     help="Run only one named stage.",
 )
+@_add_fill_options
 def edge_stitch(  # noqa: PLR0913, PLR0917
     input_file: str,
     output_file: str | None,
@@ -1060,6 +1112,9 @@ def edge_stitch(  # noqa: PLR0913, PLR0917
     debug: bool,  # noqa: FBT001
     tmp_dir: str | None,
     step: str | None,
+    fill_schema: bool,  # noqa: FBT001
+    target_schema: str | None,
+    depth_column: str,
 ) -> None:
     r"""Close seams in an already-tiled polygon layer via coverage-clean.
 
@@ -1113,6 +1168,9 @@ def edge_stitch(  # noqa: PLR0913, PLR0917
             overwrite=overwrite,
             debug=debug,
             step=step,
+            fill_schema=fill_schema,
+            target_schema_path=target_schema,
+            depth_column=depth_column,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
@@ -1174,7 +1232,7 @@ def schema_fill(  # noqa: PLR0913, PLR0917
 ) -> None:
     r"""Cascade each admin-hierarchy column down from its nearest shallower level.
 
-    Stamps a new depth column (default "adm_lvl") with each row's real depth.
+    Pinned to each row's own real depth; stamps a new depth column ("adm_lvl").
     """
     logger.info("--debug=%s", debug)
     try:

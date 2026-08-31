@@ -5,6 +5,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.api._schema_fill_compose import apply_optional_fill, validate_fill_flags
 from topo_tools.core.assign import (
     assign_one,
     child_bbox_extent,
@@ -28,6 +29,7 @@ from topo_tools.core.io import (
     default_output_path,
     input_basename,
     resolve_input_path,
+    sort_paths_by_column_count_desc,
 )
 
 logger = getLogger(__name__)
@@ -63,6 +65,9 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
     child_include: list[str] | None = None,
     child_exclude: list[str] | None = None,
     prefer: str | None = None,
+    fill_schema: bool = False,
+    target_schema_path: str | Path | None = None,
+    depth_column: str = "adm_lvl",
 ) -> None:
     """Fit one or more already-extended children layers into a new parent/clip layer."""
     if match_column is not None and (parent_match_column or child_match_column):
@@ -85,6 +90,7 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
         child_exclude=child_exclude,
         prefer=prefer,
     )
+    validate_fill_flags(fill_schema=fill_schema, target_schema_path=target_schema_path)
     passthrough = merge
 
     if isinstance(input_paths, (str, Path)):
@@ -149,6 +155,9 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 child_include=child_include,
                 child_exclude=child_exclude,
                 prefer=prefer,
+                fill_schema=fill_schema,
+                target_schema_path=target_schema_path,
+                depth_column=depth_column,
             )
         else:
             resolved_parent_columns: list[str] | None = None
@@ -234,6 +243,15 @@ def mosaic(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 elif s == "stitch":
                     stitch.main(conn, name, debug=debug)
                 elif s == "outputs":
+                    apply_optional_fill(
+                        conn,
+                        name,
+                        f"{name}_04",
+                        requested=fill_schema,
+                        target_schema_path=target_schema_path,
+                        depth_column=depth_column,
+                        debug=debug,
+                    )
                     outputs.main(
                         conn,
                         name,
@@ -291,12 +309,16 @@ def _mosaic_multi_file(  # noqa: C901, PLR0913, PLR0915, PLR0917
     child_include: list[str] | None,
     child_exclude: list[str] | None,
     prefer: str | None,
+    fill_schema: bool,
+    target_schema_path: str | Path | None,
+    depth_column: str,
 ) -> None:
     """Assign/clip one children file at a time, sharing one already-loaded parent."""
     load_parent(conn, name, clip_path)
     conn.execute(f"""--sql
         CREATE TABLE "{name}_parent_full" AS SELECT * FROM "{name}_parent_01"
     """)
+    paths = sort_paths_by_column_count_desc(conn, paths)
 
     combined_bbox: tuple[float, float, float, float] | None = None
     resolved_parent_columns: list[str] | None = None
@@ -414,6 +436,15 @@ def _mosaic_multi_file(  # noqa: C901, PLR0913, PLR0915, PLR0917
         conn.execute(f'DROP TABLE IF EXISTS "{name}_02_parent_tiles"')
 
     stitch.main(conn, name, debug=debug)
+    apply_optional_fill(
+        conn,
+        name,
+        f"{name}_04",
+        requested=fill_schema,
+        target_schema_path=target_schema_path,
+        depth_column=depth_column,
+        debug=debug,
+    )
     outputs.main(
         conn,
         name,

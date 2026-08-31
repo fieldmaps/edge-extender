@@ -21,17 +21,22 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
 
 ## Filling
 
-- For each admin-hierarchy column family sharing a level prefix and suffix
-  (matched independently against the schema's own `name_field` prefix and
-  `code_field` prefix, e.g. every `adm{n}_pcode`, every `adm{n}_name`),
-  `schema-fill` MUST fill a NULL value at level `k` from the nearest
-  non-NULL shallower level (`COALESCE` over levels `k, k-1, ..., 1`),
-  leaving a value that is already non-NULL untouched.
 - `schema-fill` MUST append one new column, named by `depth_column`
   (`--depth-column` on the CLI, defaulting to `adm_lvl`), stamping each
   row with the deepest level whose *original* (pre-fill) code column was
   non-NULL. This is the only signal distinguishing a genuine leaf-level
   row from a coarser row whose deeper columns were only ever filled down.
+- `schema-fill` MUST raise `ValueError` if `depth_column` already names an
+  existing column on the input.
+- For each admin-hierarchy column family sharing a level prefix and suffix
+  (matched independently against the schema's own `name_field` prefix and
+  `code_field` prefix, e.g. every `adm{n}_pcode`, every `adm{n}_name`),
+  `schema-fill` MUST pin every level past a row's own `depth_column` value
+  to the family's own value at that row's real depth (or the nearest
+  shallower level the family itself has a column for), leaving a value at
+  or before a row's own real depth untouched, NULL included. This is a
+  per-row pin: two rows in the same input file at different real depths are
+  each filled relative to their own depth, never a single file-wide level.
 - `schema-fill` MUST NOT touch geometry, and MUST NOT drop or rename any
   column other than adding `depth_column`.
 

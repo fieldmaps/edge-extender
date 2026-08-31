@@ -25,6 +25,18 @@ instead of repeating them.
   target-schema/level-detection helpers (`core/schema_map/_levels.py`);
   `schema-map` MUST NOT depend on either (see `docs/adr/0075`,
   `docs/adr/0092`).
+- `edge-stitch`, `edge-match`, and `edge-mosaic` MAY opt into `schema-fill`'s
+  fill logic from their own `api.*` layer only, via the private
+  `api._schema_fill_compose` helper; `core.edge_stitch`, `core.edge_match`,
+  and `core.edge_mosaic` themselves MUST NOT depend on `core.schema_fill`
+  or `core.schema_map` (see `docs/adr/0095`).
+
+## Multi-file combine ordering
+
+- `edge-stitch`, `edge-match`, and `edge-mosaic` MUST sort multi-file inputs
+  by column count descending (ties by filename) before unioning/folding
+  them. Output column order MUST NOT depend on caller-supplied file order
+  (see `docs/adr/0094`).
 
 ## Coverage-topology checks
 

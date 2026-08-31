@@ -108,3 +108,15 @@ thinness ratio) and a warning log, the same generalization of ADR-0027's
 "a hole may be a legitimate absence, not a defect" reasoning that
 `docs/adr/0035` applies to `edge-match`/`edge-mosaic`. No file is written at all
 when the pass leaves zero such gaps.
+
+## Opt-in `schema-fill` composition (`fill_schema`)
+
+`edge-stitch` MAY invoke `schema-fill`'s own fill logic itself, right after
+the coverage-clean pass and before export, via `fill_schema=True`
+(CLI: `--fill-schema`). This lives entirely in `api/edge_stitch.py`,
+calling `core.schema_fill._02_fill.main()` directly through the private
+`api._schema_fill_compose` helper; `core.edge_stitch` itself is
+unchanged and still MUST NOT depend on `core.schema_fill`/
+`core.schema_map` (see `docs/reference/shared.md`, `docs/adr/0095`). It is
+opt-in, not default, since stitching a purely geometric layer with no
+admin-hierarchy columns has nothing to fill.

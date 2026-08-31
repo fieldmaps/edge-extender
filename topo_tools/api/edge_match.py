@@ -5,6 +5,7 @@ from pathlib import Path
 
 from duckdb import DuckDBPyConnection
 
+from topo_tools.api._schema_fill_compose import apply_optional_fill, validate_fill_flags
 from topo_tools.core.assign import (
     assign_many,
     assign_one,
@@ -30,6 +31,7 @@ from topo_tools.core.io import (
     default_output_path,
     input_basename,
     resolve_input_path,
+    sort_paths_by_column_count_desc,
 )
 
 logger = getLogger(__name__)
@@ -68,6 +70,9 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
     child_exclude: list[str] | None = None,
     prefer: str | None = None,
     multi_parent: bool = False,
+    fill_schema: bool = False,
+    target_schema_path: str | Path | None = None,
+    depth_column: str = "adm_lvl",
 ) -> None:
     """Match one or more children layers to their best-overlapping parent."""
     if match_column is not None and (parent_match_column or child_match_column):
@@ -90,6 +95,7 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
         child_exclude=child_exclude,
         prefer=prefer,
     )
+    validate_fill_flags(fill_schema=fill_schema, target_schema_path=target_schema_path)
     passthrough = merge
 
     if isinstance(input_paths, (str, Path)):
@@ -156,6 +162,9 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 child_include=child_include,
                 child_exclude=child_exclude,
                 prefer=prefer,
+                fill_schema=fill_schema,
+                target_schema_path=target_schema_path,
+                depth_column=depth_column,
             )
         else:
             resolved_parent_columns: list[str] | None = None
@@ -256,6 +265,15 @@ def match(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 elif s == "stitch":
                     stitch.main(conn, name, debug=debug)
                 elif s == "outputs":
+                    apply_optional_fill(
+                        conn,
+                        name,
+                        f"{name}_05",
+                        requested=fill_schema,
+                        target_schema_path=target_schema_path,
+                        depth_column=depth_column,
+                        debug=debug,
+                    )
                     outputs.main(
                         conn,
                         name,
@@ -313,6 +331,9 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
     child_include: list[str] | None,
     child_exclude: list[str] | None,
     prefer: str | None,
+    fill_schema: bool,
+    target_schema_path: str | Path | None,
+    depth_column: str,
 ) -> None:
     """Load/assign one children file at a time, sharing one already-loaded parent.
 
@@ -323,6 +344,7 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
     conn.execute(f"""--sql
         CREATE TABLE "{name}_parent_full" AS SELECT * FROM "{name}_parent_01"
     """)
+    paths = sort_paths_by_column_count_desc(conn, paths)
 
     combined_bbox: tuple[float, float, float, float] | None = None
     resolved_parent_columns: list[str] | None = None
@@ -427,6 +449,15 @@ def _match_multi_file(  # noqa: PLR0913, PLR0917
             parent_snapshot_table=f"{name}_parent_01",
         )
     stitch.main(conn, name, debug=debug)
+    apply_optional_fill(
+        conn,
+        name,
+        f"{name}_05",
+        requested=fill_schema,
+        target_schema_path=target_schema_path,
+        depth_column=depth_column,
+        debug=debug,
+    )
     outputs.main(
         conn,
         name,

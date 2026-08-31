@@ -169,3 +169,24 @@ cross-provenance risk above, not instead of it. Stitch gets a chance to
 resolve it like any other seam, and the hard gate still raises if it
 can't, but a passthrough run is worth the same visual spot-check as a
 multi-provenance one.
+
+## Opt-in `schema-fill` composition (`fill_schema`)
+
+`edge-mosaic` MAY invoke `schema-fill`'s own fill logic itself, right
+after stitching and before export, via `fill_schema=True` (CLI:
+`--fill-schema`). This lives entirely in `api/edge_mosaic.py`, at both
+insertion points (the single-file step loop's `outputs` branch and
+`_mosaic_multi_file()`'s own final stage), calling
+`core.schema_fill._02_fill.main()` directly through the private
+`api._schema_fill_compose` helper; `core.edge_mosaic` itself is
+unchanged and still MUST NOT depend on `core.schema_fill`/
+`core.schema_map` (see `docs/reference/shared.md`, `docs/adr/0095`).
+
+`fill_schema` and `merge` are conceptually complementary but
+independently gated flags, not aliases: `merge`'s own
+`fill_unmatched_parents()` (`docs/adr/0083`) fills a *geometry-coverage*
+gap, a parent with zero matched children, by keeping its own unclipped
+geometry in the output; `fill_schema` fills a *schema-depth* gap, a row
+whose admin-hierarchy columns don't reach as deep as some other row's,
+by cascading each column family down to the row's own real depth. Both
+can be set together freely; neither implies the other.

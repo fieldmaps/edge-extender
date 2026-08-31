@@ -18,3 +18,7 @@ pass.
 ### Example 4: combine every already-clipped file into one global output
 
     topo-tools edge-stitch "tmp/clipped/*.parquet" stitched.parquet
+
+### Example 5: cascade admin-hierarchy columns and stamp each row's depth before export
+
+    topo-tools edge-stitch tiled.parquet stitched.parquet --fill-schema

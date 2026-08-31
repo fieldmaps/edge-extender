@@ -155,3 +155,15 @@ tools.
   `child_include`/`child_exclude` (see `docs/reference/shared.md`,
   `docs/adr/0077`, `docs/adr/0079`, `docs/adr/0083`, `docs/adr/0088`;
   supersedes the child-orphan passthrough of `docs/adr/0078`).
+- `edge-mosaic` MAY opt into cascading admin-hierarchy columns via
+  `fill_schema`/`--fill-schema`, right after stitching and before export
+  (both the single-file step loop and the multi-file combine path).
+  `target_schema_path`/`--target-schema` (default: the bundled generic
+  schema) and `depth_column`/`--depth-column` (default `adm_lvl`) narrow
+  it; both MUST raise `ValueError` if given without `fill_schema=True`.
+  `edge-mosaic` MUST raise `ValueError` if `depth_column` already names an
+  existing column when `fill_schema` is set. `fill_schema` is independent
+  of `merge`: it fills a per-row schema-depth gap left by the input data
+  itself, while `merge`'s own gap-fill (`fill_unmatched_parents()`, see
+  `docs/adr/0083`) fills a per-parent geometry-coverage gap left by the
+  mosaic; the two compose freely (see `docs/adr/0095`).
