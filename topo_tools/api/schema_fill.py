@@ -45,6 +45,7 @@ def fill(  # noqa: PLR0913
     debug: bool = False,
     step: str | None = None,
     depth_column: str = "adm_lvl",
+    cascade_from_level: int | None = None,
 ) -> None:
     """Cascade admin-hierarchy columns down for one input file.
 
@@ -87,6 +88,12 @@ def fill(  # noqa: PLR0913
             elif s == "fill":
                 schema = load_target_schema(target_schema_path)
                 levels = detect_levels(conn, f"{name}_01", schema)
+                if cascade_from_level is not None and cascade_from_level not in levels:
+                    msg = (
+                        f"cascade_from_level must be one of {levels}, "
+                        f"got {cascade_from_level!r}"
+                    )
+                    raise ValueError(msg)
                 fill_stage.main(
                     conn,
                     f"{name}_01",
@@ -94,6 +101,7 @@ def fill(  # noqa: PLR0913
                     levels=levels,
                     schema=schema,
                     depth_column=depth_column,
+                    cascade_from_level=cascade_from_level,
                 )
             elif s == "outputs":
                 outputs.main(conn, name, output_path, debug=debug)

@@ -27,6 +27,12 @@ See `docs/reference/README.md` for the MUST/SHOULD/MAY convention, and
   `schema-fill` MUST fill a NULL value at level `k` from the nearest
   non-NULL shallower level (`COALESCE` over levels `k, k-1, ..., 1`),
   leaving a value that is already non-NULL untouched.
+- `schema-fill` MAY accept `cascade_from_level`/`--cascade-from-level`,
+  pinning the fill to that one reference level: it MUST raise `ValueError`
+  if the given level wasn't detected. Every level at or below the pin is
+  left untouched (no `COALESCE`, even against shallower levels of its own);
+  every level above the pin gets the pinned level's own value duplicated
+  verbatim, NULL included, without searching any further up the chain.
 - `schema-fill` MUST append one new column, named by `depth_column`
   (`--depth-column` on the CLI, defaulting to `adm_lvl`), stamping each
   row with the deepest level whose *original* (pre-fill) code column was

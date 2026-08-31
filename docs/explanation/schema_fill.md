@@ -89,3 +89,17 @@ gap for datasets like `fieldmaps/admin-boundaries`, where a territory has
 ADM0 geometry but zero sub-national source rows: `adm1_id`..`adm4_id` fall
 back to `adm0_id` and `adm_lvl` reads `0`, through the same COALESCE-family
 machinery used for every other level (see `docs/adr/0091`).
+
+## Pinning the cascade to one reference level
+
+`cascade_from_level`/`--cascade-from-level` is for a caller that already
+knows a country's real, published depth is exactly level `N` and wants
+every finer level to be an exact copy of `N`'s row, NULL values included,
+rather than a fresh COALESCE search back up the ancestor chain. Without
+the pin, a genuinely NULL value at level `N` (a real gap in the source
+data, not a fill artifact) gets silently backfilled from a shallower
+ancestor once it's duplicated into level `N+1`, changing a value that may
+already be published elsewhere. With the pin, level `N` and every
+shallower level stay completely untouched, and every level past `N`
+mirrors level `N` verbatim, column by column, across every family
+(`code_field`, `name_field`, and any other shared-prefix suffix).

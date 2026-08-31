@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `schema-fill` (API and CLI) gains `cascade_from_level`/
+  `--cascade-from-level`, pinning the fill to one reference level: every
+  finer level gets that level's value duplicated verbatim (NULL included)
+  instead of searching further up the ancestor chain.
+
 ## [0.5.4] - 2026-08-28
 
 ### Added

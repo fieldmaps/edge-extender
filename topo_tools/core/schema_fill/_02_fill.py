@@ -27,6 +27,7 @@ def main(  # noqa: PLR0913
     levels: list[int],
     schema: TargetSchema,
     depth_column: str,
+    cascade_from_level: int | None = None,
 ) -> None:
     """Build table_out: fill each name/code column family, stamp the depth column."""
     code_prefix = level_prefix(schema)
@@ -44,7 +45,20 @@ def main(  # noqa: PLR0913
             code_columns = families.get(code_suffix, {})
         for per_level in families.values():
             filled_columns.update(per_level.values())
+            pin_column = (
+                per_level.get(cascade_from_level)
+                if cascade_from_level is not None
+                else None
+            )
             for level in sorted(per_level):
+                if pin_column is not None:
+                    if level > cascade_from_level:
+                        filled_select_parts.append(
+                            f'"{pin_column}" AS "{per_level[level]}"'
+                        )
+                    else:
+                        filled_select_parts.append(f'"{per_level[level]}"')
+                    continue
                 chain = [per_level[k] for k in sorted(per_level) if k <= level]
                 if len(chain) > 1:
                     coalesce = ", ".join(f'"{c}"' for c in reversed(chain))

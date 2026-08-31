@@ -373,6 +373,90 @@ def test_falls_back_to_level_zero_when_present(tmp_path):
     ]
 
 
+def test_cascade_from_level_pins_reference_level(tmp_path):
+    """A NULL at the pinned level propagates verbatim, not backfilled further up."""
+    rows = [
+        {
+            "adm1_code": "DZ",
+            "adm1_name": "Algeria",
+            "adm2_code": "DZ01",
+            "adm2_name": None,
+            "adm3_code": None,
+            "adm3_name": None,
+            "wkt": "POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))",
+        },
+        {
+            "adm1_code": "DZ",
+            "adm1_name": "Algeria",
+            "adm2_code": "DZ02",
+            "adm2_name": "Oran",
+            "adm3_code": "DZ0201",
+            "adm3_name": "Es Senia",
+            "wkt": "POLYGON((0 1, 1 1, 1 2, 0 2, 0 1))",
+        },
+    ]
+    input_path = tmp_path / "dza_leaf.parquet"
+    _write_synthetic(input_path, rows)
+
+    unpinned_path = tmp_path / "dza_unpinned.parquet"
+    fill(input_path, output_path=unpinned_path, overwrite=True)
+    pinned_path = tmp_path / "dza_pinned.parquet"
+    fill(
+        input_path,
+        output_path=pinned_path,
+        overwrite=True,
+        cascade_from_level=_LEVEL_2,
+    )
+
+    where = "WHERE adm2_code = 'DZ01'"
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        unpinned = conn.execute(
+            f"SELECT adm2_name, adm3_code, adm3_name, adm_lvl "
+            f"FROM '{unpinned_path}' {where}"
+        ).fetchone()
+        pinned = conn.execute(
+            f"SELECT adm2_name, adm3_code, adm3_name, adm_lvl "
+            f"FROM '{pinned_path}' {where}"
+        ).fetchone()
+
+    assert unpinned == ("Algeria", "DZ01", "Algeria", _LEVEL_2)
+    assert pinned == (None, "DZ01", None, _LEVEL_2)
+
+
+def test_cascade_from_level_rejects_undetected_level(tmp_path):
+    rows = [{k: v for k, v in row.items() if k != "adm3_code"} for row in _LEAF_ROWS]
+    rows = [{k: v for k, v in row.items() if k != "adm3_name"} for row in rows]
+    path = tmp_path / "two_level.parquet"
+    _write_synthetic(path, rows)
+    with pytest.raises(ValueError, match="cascade_from_level must be one of"):
+        fill(path, overwrite=True, cascade_from_level=_LEVEL_3)
+
+
+def test_cli_cascade_from_level(leaf_input, tmp_path):
+    output_path = tmp_path / "cli_pinned.parquet"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "schema-fill",
+            str(leaf_input),
+            str(DEFAULT_TARGET_SCHEMA_PATH),
+            str(output_path),
+            "--cascade-from-level",
+            str(_LEVEL_2),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    with duckdb.connect() as conn:
+        conn.execute("LOAD spatial")
+        row = conn.execute(
+            f"SELECT adm3_name FROM '{output_path}' WHERE adm1_code = 'AA' "
+            "AND adm2_code = 'AA02'"
+        ).fetchone()
+    assert row == ("Prov2",)
+
+
 def test_cli_positional_args(leaf_input, tmp_path):
     output_path = tmp_path / "cli_out.parquet"
     result = CliRunner().invoke(

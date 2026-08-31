@@ -1161,6 +1161,17 @@ def edge_stitch(  # noqa: PLR0913, PLR0917
     show_default=True,
     help="Name of the new column stamping each row's real, pre-fill depth.",
 )
+@click.option(
+    "--cascade-from-level",
+    envvar="CASCADE_FROM_LEVEL",
+    type=int,
+    default=None,
+    help=(
+        "Pin the fill to this one reference level: every finer level gets "
+        "its value duplicated verbatim (NULL included) instead of "
+        "searching further up the ancestor chain."
+    ),
+)
 def schema_fill(  # noqa: PLR0913, PLR0917
     input_file: str,
     target_schema_file: str | None,
@@ -1171,6 +1182,7 @@ def schema_fill(  # noqa: PLR0913, PLR0917
     tmp_dir: str | None,
     step: str | None,
     depth_column: str,
+    cascade_from_level: int | None,
 ) -> None:
     r"""Cascade each admin-hierarchy column down from its nearest shallower level.
 
@@ -1188,6 +1200,7 @@ def schema_fill(  # noqa: PLR0913, PLR0917
             debug=debug,
             step=step,
             depth_column=depth_column,
+            cascade_from_level=cascade_from_level,
         )
     except (FileExistsError, RuntimeError, ValueError) as e:
         raise click.ClickException(str(e)) from e
