@@ -53,6 +53,13 @@ three-layer split (`core/` → `api/` → `cli/`) and the rule that `core/` and
 `api/` must never import `click`. New tools should follow the same
 `core/api/cli` layering as `edge-extend`.
 
+## Workflow
+
+Work on an issue starts on its own branch off `main`, before any
+exploration or research, not just before the first commit. Open a PR
+referencing the issue once the checklist below is met; `main` is
+protected and only accepts merges via PR.
+
 ## What a finished PR looks like
 
 - [ ] Tests added/updated for the change
