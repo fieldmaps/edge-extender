@@ -27,4 +27,5 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --python ${{ matrix.python-version }}
+      - run: uv run python -c "import duckdb; duckdb.connect().execute('INSTALL spatial')"
       - run: uv run pytest
