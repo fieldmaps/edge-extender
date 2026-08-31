@@ -18,3 +18,7 @@ new/different parent/clip layer, skipping Voronoi extension entirely.
 
     topo-tools edge-mosaic afg.parquet world_adm0.geojson out.parquet \
       --input ago.parquet,are.parquet
+
+### Example 4: cascade admin-hierarchy columns and stamp each row's depth before export
+
+    topo-tools edge-mosaic adm3_extended.parquet adm0_new.geojson adm3_mosaicked.parquet --fill-schema

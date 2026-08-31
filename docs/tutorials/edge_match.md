@@ -15,3 +15,7 @@ and clipping each child to its own parent group.
 
     topo-tools edge-match adm3.gpkg adm2.gpkg adm3_matched.gpkg \
       --issues-file match_report.gpkg
+
+### Example 4: cascade admin-hierarchy columns and stamp each row's depth before export
+
+    topo-tools edge-match adm3.gpkg adm2.gpkg adm3_matched.gpkg --fill-schema
