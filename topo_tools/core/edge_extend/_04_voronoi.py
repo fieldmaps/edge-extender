@@ -2,6 +2,8 @@
 
 from duckdb import DuckDBPyConnection
 
+from ._constants import WORLD_BOUNDS_WKT
+
 
 def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
     """Create Voronoi polygons from points."""
@@ -12,15 +14,26 @@ def main(conn: DuckDBPyConnection, name: str, *, debug: bool = False) -> None:
         SELECT row_number() OVER () AS point_id, fid, geom FROM "{name}_03b"
     """)
 
-    # Voronoi diagram from all input points
+    # Clipped per-cell, after the dump, only when a cell actually exceeds
+    # bounds: see docs/adr/0096 for why a global or unconditional clip breaks.
     conn.execute(f"""--sql
         CREATE OR REPLACE TABLE "{name}_04_tmp1" AS
-        SELECT UNNEST(ST_Dump(
-            ST_CollectionExtract(
-                ST_VoronoiDiagram(ST_Collect(list(geom))), 3
+        SELECT CASE
+            WHEN ST_XMin(geom) < -180 OR ST_XMax(geom) > 180
+              OR ST_YMin(geom) < -90 OR ST_YMax(geom) > 90
+            THEN ST_CollectionExtract(
+                ST_Intersection(geom, ST_GeomFromText('{WORLD_BOUNDS_WKT}')), 3
             )
-        )).geom AS geom
-        FROM "{name}_04_tmp0"
+            ELSE geom
+        END AS geom
+        FROM (
+            SELECT UNNEST(ST_Dump(
+                ST_CollectionExtract(
+                    ST_VoronoiDiagram(ST_Collect(list(geom))), 3
+                )
+            )).geom AS geom
+            FROM "{name}_04_tmp0"
+        )
     """)
 
     # ST_Intersects (not ST_Within) catches generators landing exactly on a
