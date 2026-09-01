@@ -116,6 +116,12 @@ def test_extend_steps(synthetic_input, tmp_path):
     assert output_path.exists()
 
 
+# An isolated point's unbounded Voronoi cell, closed by GEOS's own envelope,
+# lands outside valid WGS84 range without _04_voronoi.py's clip.
+_ISOLATED_EXCLAVE_POINTS = [
+    (0, x, y) for x in range(-70, -10, 10) for y in range(-40, 10, 10)
+] + [(1, -68, -85)]
+
 # A degenerate near-collinear cluster where GEOS's ST_VoronoiDiagram drops a
 # generator point's cell, reproducing the risk _04_voronoi.py's check guards.
 _DEGENERATE_POINTS = [
@@ -179,6 +185,26 @@ def test_voronoi_raises_on_incomplete_assignment():
         )
         with pytest.raises(RuntimeError, match="Voronoi assignment incomplete"):
             voronoi.main(conn, "synth", debug=True)
+
+
+def test_voronoi_clips_isolated_cell_to_world_bounds():
+    lon_min, lon_max, lat_min, lat_max = -180, 180, -90, 90
+    with duckdb.connect() as conn:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        values = ", ".join(
+            f"({fid}, ST_Point({x}, {y}))" for fid, x, y in _ISOLATED_EXCLAVE_POINTS
+        )
+        conn.execute(
+            f"CREATE TABLE synth_03b AS SELECT * FROM (VALUES {values}) AS t(fid, geom)"
+        )
+        voronoi.main(conn, "synth", debug=False)
+        bounds = conn.execute(
+            "SELECT ST_XMin(geom), ST_XMax(geom), ST_YMin(geom), ST_YMax(geom) "
+            "FROM synth_04"
+        ).fetchall()
+    for xmin, xmax, ymin, ymax in bounds:
+        assert lon_min <= xmin <= xmax <= lon_max
+        assert lat_min <= ymin <= ymax <= lat_max
 
 
 def test_extend_renames_reserved_source_columns(tmp_path):
