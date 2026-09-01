@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-09-01
+
+### Fixed
+
+- `edge-extend` no longer produces coordinates outside valid WGS84 range
+  for a file with a peripheral boundary point far from the rest of its
+  point cloud (e.g. a remote exclave or polar-adjacent territory): its
+  Voronoi step now clips such a cell to `-180/-90/180/90` when its own
+  bbox exceeds it.
+
 ## [0.5.5] - 2026-08-31
 
 ### Added
@@ -380,7 +390,8 @@ Initial release: four tools, CLI + Python API for each.
   unit as unchanged/renamed/modified/relocated/split/merge/complex/created/
   removed, via spatial overlap and optional code/name identity linking.
 
-[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/OCHA-DAP/topo-tools-py/compare/v0.5.2...v0.5.3
