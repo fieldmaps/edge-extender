@@ -9,6 +9,9 @@ jobs:
   update-homebrew-tap:
     runs-on: macos-latest
     steps:
+      - name: Checkout topo-tools-py
+        uses: actions/checkout@v7
+
       - name: Latest PyPI version
         id: pypi
         run: |
@@ -37,6 +40,29 @@ jobs:
             --install-dependencies \
             --version="${{ steps.pypi.outputs.version }}" \
             OCHA-DAP/topo-tools/topo-tools
+
+      - name: Sync duckdb wheel resource on bump branch
+        if: steps.pypi.outputs.version != steps.tap.outputs.version
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="bump-topo-tools-${{ steps.pypi.outputs.version }}"
+          workdir="$(mktemp -d)"
+
+          git clone --branch "$branch" --single-branch --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/OCHA-DAP/homebrew-topo-tools.git" \
+            "$workdir"
+
+          python3 "$GITHUB_WORKSPACE/.github/scripts/sync_duckdb_wheel.py" \
+            "$workdir/Formula/topo-tools.rb"
+
+          git -C "$workdir" \
+            -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "duckdb: pin to prebuilt macOS universal2 wheel"
+
+          git -C "$workdir" push origin "HEAD:$branch"
 
       - name: Merge Homebrew formula bump PR
         if: steps.pypi.outputs.version != steps.tap.outputs.version

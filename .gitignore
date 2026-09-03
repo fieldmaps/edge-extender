@@ -13,4 +13,5 @@ inputs/
 old_*
 outputs/
 scripts/
+!.github/scripts/
 tmp/
