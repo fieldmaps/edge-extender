@@ -37,3 +37,12 @@ jobs:
             --install-dependencies \
             --version="${{ steps.pypi.outputs.version }}" \
             OCHA-DAP/topo-tools/topo-tools
+
+      - name: Merge Homebrew formula bump PR
+        if: steps.pypi.outputs.version != steps.tap.outputs.version
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          gh pr merge --squash --delete-branch \
+            --repo OCHA-DAP/homebrew-topo-tools \
+            "bump-topo-tools-${{ steps.pypi.outputs.version }}"
